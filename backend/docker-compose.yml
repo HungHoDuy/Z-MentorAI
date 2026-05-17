@@ -1,0 +1,36 @@
+services:
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8080"
+    environment:
+      - PROFILE_SCANNER_URL=http://profile-scanner:8080
+      - MARKET_SCOUT_URL=http://market-scout:8080
+      - ACADEMIC_ARCHITECT_URL=http://academic-architect:8080
+    depends_on:
+      - profile-scanner
+      - market-scout
+      - academic-architect
+
+  profile-scanner:
+    build:
+      context: ./profile_scanner
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8080"
+
+  market-scout:
+    build:
+      context: ./market_scout
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8080"
+
+  academic-architect:
+    build:
+      context: ./academic_architect
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8080"
