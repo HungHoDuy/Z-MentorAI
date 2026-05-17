@@ -5,10 +5,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8080"
+    env_file:
+      - .env
     environment:
       - PROFILE_SCANNER_URL=http://profile-scanner:8080
       - MARKET_SCOUT_URL=http://market-scout:8080
       - ACADEMIC_ARCHITECT_URL=http://academic-architect:8080
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     depends_on:
       - profile-scanner
       - market-scout

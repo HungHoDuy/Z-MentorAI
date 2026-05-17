@@ -1,83 +1,102 @@
 import os
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import httpx
-import asyncio
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
 
 app = FastAPI(title="Orchestrator Agent")
 
-# Environment variables for service URLs (defaults for docker-compose)
+# Environment variables for service URLs
 PROFILE_SCANNER_URL = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
 MARKET_SCOUT_URL = os.getenv("MARKET_SCOUT_URL", "http://market-scout:8080")
 ACADEMIC_ARCHITECT_URL = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080")
 
-class OrchestratorRequest(BaseModel):
-    user_id: str
-    background_info: str
-    industry: str
-    target_role: str
-    career_goal: str
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str = "default_session"
 
-class OrchestratorResponse(BaseModel):
-    status: str
-    profile_analysis: dict
-    market_data: dict
-    academic_plan: dict
-    final_summary: str
+class ChatResponse(BaseModel):
+    response: str
 
-async def fetch_data(client, url, endpoint, payload):
+# Helper to make HTTP requests
+def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
-        response = await client.post(f"{url}{endpoint}", json=payload, timeout=10.0)
+        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=10.0)
         response.raise_for_status()
         return response.json()
-    except httpx.RequestError as exc:
-        print(f"An error occurred while requesting {exc.request.url!r}.")
-        return {"error": str(exc)}
-    except httpx.HTTPStatusError as exc:
-        print(f"Error response {exc.response.status_code} while requesting {exc.request.url!r}.")
+    except Exception as exc:
         return {"error": str(exc)}
 
-@app.post("/orchestrate", response_model=OrchestratorResponse)
-async def run_orchestrator(request: OrchestratorRequest):
-    async with httpx.AsyncClient() as client:
-        # Step 1: Profile Scanner
-        profile_task = fetch_data(client, PROFILE_SCANNER_URL, "/scan", {
-            "user_id": request.user_id,
-            "background_info": request.background_info
-        })
+# Define LangChain Tools
+@tool
+def profile_scanner(user_id: str, background_info: str) -> dict:
+    """Use this tool to scan a user's CV or background to identify their likeliness, profession, and skills. 
+    Call this agent if you want to know more about the user's current profile."""
+    return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
+        "user_id": user_id,
+        "background_info": background_info
+    })
+
+@tool
+def market_scout(industry: str, target_role: str) -> dict:
+    """Use this tool to find market trends, current jobs, and salary expectations. 
+    Call this agent if you need information about the job market for a specific role and industry."""
+    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", {
+        "industry": industry,
+        "target_role": target_role
+    })
+
+@tool
+def academic_architect(career_goal: str, current_skills: str) -> dict:
+    """Use this tool to create a roadmap to achieve a certain job description or career goal. 
+    It will provide data on courses needed to complete and skills needed to acquire."""
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
+        "career_goal": career_goal,
+        "current_skills": current_skills
+    })
+
+tools = [profile_scanner, market_scout, academic_architect]
+
+# Set up the LLM
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
+
+# System prompt
+system_message = SystemMessage(content=(
+    "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
+    "You have access to 3 specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
+    "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
+    "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
+    "If you need more information from the user before you can use a tool, ask them directly."
+))
+
+# Create the Agent
+agent = create_react_agent(llm, tools)
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_with_orchestrator(request: ChatRequest):
+    try:
+        # Run the agent
+        messages = [system_message, HumanMessage(content=request.message)]
+        result = await agent.ainvoke({"messages": messages})
         
-        # Step 2: Market Scout
-        market_task = fetch_data(client, MARKET_SCOUT_URL, "/scout", {
-            "industry": request.industry,
-            "target_role": request.target_role
-        })
+        # The final response is the last message from the AI
+        content = result["messages"][-1].content
         
-        # Step 3: Academic Architect
-        architect_task = fetch_data(client, ACADEMIC_ARCHITECT_URL, "/architect", {
-            "career_goal": request.career_goal,
-            # Ideally this would depend on the output of the profile scanner,
-            # but we run them in parallel for this simple test if possible.
-            # To simulate a pipeline, we might await profile_task first.
-            # Let's just pass the background info as current_skills for now.
-            "current_skills": request.background_info
-        })
-
-        # Run all requests
-        profile_res, market_res, architect_res = await asyncio.gather(
-            profile_task, market_task, architect_task
-        )
-
-    # Langchain could be used here to summarize the results.
-    # For now, we mock the final summary.
-    final_summary = "Orchestration complete. Gathered profile, market, and academic data."
-
-    return OrchestratorResponse(
-        status="success",
-        profile_analysis=profile_res,
-        market_data=market_res,
-        academic_plan=architect_res,
-        final_summary=final_summary
-    )
+        if isinstance(content, list):
+            # Gemini sometimes returns a list of content blocks
+            final_response = "".join(
+                block.get("text", "") if isinstance(block, dict) else str(block) 
+                for block in content
+            )
+        else:
+            final_response = str(content)
+            
+        return ChatResponse(response=final_response)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():

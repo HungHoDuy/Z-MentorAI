@@ -4,3 +4,4 @@ langchain
 langchain-core
 pydantic
 httpx
+langchain-google-genai
