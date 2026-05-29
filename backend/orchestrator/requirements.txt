@@ -7,3 +7,4 @@ httpx
 langchain-google-genai
 langchain-mcp-adapters
 mcp
+google-auth

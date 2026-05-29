@@ -10,6 +10,8 @@ services:
     environment:
       - MCP_SERVER_URL=http://mcp-server:8080/sse
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    volumes:
+      - ./orchestrator/users_db.json:/app/users_db.json
     depends_on:
       - mcp-server
 
