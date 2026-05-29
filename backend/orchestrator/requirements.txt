@@ -5,3 +5,5 @@ langchain-core
 pydantic
 httpx
 langchain-google-genai
+langchain-mcp-adapters
+mcp
