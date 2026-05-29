@@ -1,18 +1,11 @@
 import os
-import httpx
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import tool
-
-app = FastAPI(title="Orchestrator Agent")
-
-# Environment variables for service URLs
-PROFILE_SCANNER_URL = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
-MARKET_SCOUT_URL = os.getenv("MARKET_SCOUT_URL", "http://market-scout:8080")
-ACADEMIC_ARCHITECT_URL = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080")
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 class ChatRequest(BaseModel):
     message: str
@@ -21,59 +14,49 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
-# Helper to make HTTP requests
-def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
-    try:
-        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=10.0)
-        response.raise_for_status()
-        return response.json()
-    except Exception as exc:
-        return {"error": str(exc)}
-
-# Define LangChain Tools
-@tool
-def profile_scanner(user_id: str, background_info: str) -> dict:
-    """Use this tool to scan a user's CV or background to identify their likeliness, profession, and skills. 
-    Call this agent if you want to know more about the user's current profile."""
-    return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
-        "user_id": user_id,
-        "background_info": background_info
-    })
-
-@tool
-def market_scout(industry: str, target_role: str) -> dict:
-    """Use this tool to find market trends, current jobs, and salary expectations. 
-    Call this agent if you need information about the job market for a specific role and industry."""
-    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", {
-        "industry": industry,
-        "target_role": target_role
-    })
-
-@tool
-def academic_architect(career_goal: str, current_skills: str) -> dict:
-    """Use this tool to create a roadmap to achieve a certain job description or career goal. 
-    It will provide data on courses needed to complete and skills needed to acquire."""
-    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
-        "career_goal": career_goal,
-        "current_skills": current_skills
-    })
-
-tools = [profile_scanner, market_scout, academic_architect]
-
 # Set up the LLM
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
+
+agent = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global agent
+    MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-server:8080/sse")
+    
+    # Initialize MultiServerMCPClient to connect to the MCP server
+    client = MultiServerMCPClient({
+        "agents": {
+            "url": MCP_SERVER_URL,
+            "transport": "sse",
+        }
+    })
+    
+    # Fetch tools with retry mechanism to handle container startup race conditions
+    import asyncio
+    for attempt in range(10):
+        try:
+            tools = await client.get_tools()
+            agent = create_react_agent(llm, tools)
+            print("Successfully retrieved tools from MCP server.")
+            break
+        except Exception as e:
+            print(f"Attempt {attempt + 1}/10: Failed to fetch tools from MCP server: {e}")
+            if attempt == 9:
+                raise e
+            await asyncio.sleep(2)
+    yield
+
+app = FastAPI(title="Orchestrator Agent", lifespan=lifespan)
 
 # System prompt
 system_message = SystemMessage(content=(
     "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
-    "You have access to 3 specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
+    "You have access to specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
     "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
     "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
     "If you need more information from the user before you can use a tool, ask them directly."
 ))
-
-# Create the Agent
-agent = create_react_agent(llm, tools)
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_orchestrator(request: ChatRequest):
