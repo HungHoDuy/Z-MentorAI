@@ -12,6 +12,7 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     volumes:
       - ./orchestrator/users_db.json:/app/users_db.json
+      - ./orchestrator/chat_history_db.json:/app/chat_history_db.json
     depends_on:
       - mcp-server
 

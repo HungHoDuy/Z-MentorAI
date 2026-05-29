@@ -14,7 +14,10 @@ import {
   Network,
   LogOut,
   Upload,
-  User
+  User,
+  Plus,
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 import './App.css';
 
@@ -123,11 +126,14 @@ export default function App() {
     const savedUser = localStorage.getItem('z_mentor_user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
+  
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [googleClientId, setGoogleClientId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState(null);
   const [activeAgents, setActiveAgents] = useState([]);
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
 
@@ -181,6 +187,117 @@ export default function App() {
     }
   }, [user, googleClientId]);
 
+  // Fetch User's Chat Sessions on Login
+  useEffect(() => {
+    if (user) {
+      fetchSessions();
+    }
+  }, [user]);
+
+  const fetchSessions = async (keepActiveSession = false) => {
+    try {
+      const res = await fetch(`${backendUrl}/sessions`, {
+        headers: { 'X-User-Id': user.google_id }
+      });
+      if (!res.ok) throw new Error("Failed to load sessions");
+      const data = await res.json();
+      setSessions(data);
+      
+      // Auto-load last active session, or create one if none exist
+      if (data.length > 0) {
+        if (keepActiveSession && activeSessionId) {
+          // Just keep the current selected session active
+          return;
+        }
+        const lastSessionId = localStorage.getItem(`z_mentor_active_session_${user.google_id}`) || data[0].id;
+        const exists = data.some(s => s.id === lastSessionId);
+        const targetSessionId = exists ? lastSessionId : data[0].id;
+        handleSelectSession(targetSessionId);
+      } else {
+        handleCreateNewSession();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateNewSession = async () => {
+    if (isLoading) return;
+    try {
+      const res = await fetch(`${backendUrl}/sessions`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': user.google_id
+        },
+        body: JSON.stringify({ title: "New Chat" })
+      });
+      if (!res.ok) throw new Error("Failed to create new session");
+      const newSession = await res.json();
+      setSessions(prev => [newSession, ...prev]);
+      setActiveSessionId(newSession.id);
+      localStorage.setItem(`z_mentor_active_session_${user.google_id}`, newSession.id);
+      setMessages([]);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to initialize a new chat session.");
+    }
+  };
+
+  const handleSelectSession = async (sessionId) => {
+    if (isLoading) return;
+    try {
+      const res = await fetch(`${backendUrl}/sessions/${sessionId}`, {
+        headers: { 'X-User-Id': user.google_id }
+      });
+      if (!res.ok) throw new Error("Failed to load session details");
+      const session = await res.json();
+      
+      setActiveSessionId(sessionId);
+      localStorage.setItem(`z_mentor_active_session_${user.google_id}`, sessionId);
+      
+      const uiMessages = session.messages.map((m, idx) => ({
+        id: `msg-${idx}-${Date.now()}`,
+        role: m.role,
+        content: m.content,
+        toolCalls: []
+      }));
+      setMessages(uiMessages);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to retrieve chat session history.");
+    }
+  };
+
+  const handleDeleteSession = async (sessionId, e) => {
+    e.stopPropagation();
+    if (isLoading) return;
+    
+    if (!window.confirm("Are you sure you want to delete this chat session?")) return;
+
+    try {
+      const res = await fetch(`${backendUrl}/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: { 'X-User-Id': user.google_id }
+      });
+      if (!res.ok) throw new Error("Failed to delete session");
+      
+      const updatedSessions = sessions.filter(s => s.id !== sessionId);
+      setSessions(updatedSessions);
+      
+      if (activeSessionId === sessionId) {
+        if (updatedSessions.length > 0) {
+          handleSelectSession(updatedSessions[0].id);
+        } else {
+          handleCreateNewSession();
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete chat session.");
+    }
+  };
+
   const handleGoogleLoginResponse = async (response) => {
     setAuthLoading(true);
     try {
@@ -205,7 +322,10 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('z_mentor_user');
+    localStorage.removeItem(`z_mentor_active_session_${user?.google_id}`);
     setUser(null);
+    setSessions([]);
+    setActiveSessionId(null);
     setMessages([]);
   };
 
@@ -217,7 +337,6 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Verify file is image
     if (!file.type.startsWith('image/')) {
       alert("Please upload an image file.");
       return;
@@ -249,7 +368,7 @@ export default function App() {
 
   const handleSendMessage = async (textToSend) => {
     const query = textToSend || inputValue;
-    if (!query.trim() || isLoading) return;
+    if (!query.trim() || isLoading || !activeSessionId) return;
 
     if (!textToSend) {
       setInputValue('');
@@ -270,8 +389,14 @@ export default function App() {
     try {
       const response = await fetch(`${backendUrl}/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: query }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': user.google_id
+        },
+        body: JSON.stringify({ 
+          message: query,
+          session_id: activeSessionId
+        }),
       });
 
       if (!response.ok) {
@@ -355,6 +480,10 @@ export default function App() {
           }
         }
       }
+      
+      // Reload sessions from backend to capture Gemini-generated title
+      await fetchSessions(true);
+
     } catch (error) {
       console.error("Streaming error:", error);
       setMessages(prev => prev.map(msg => {
@@ -381,7 +510,6 @@ export default function App() {
     }
   };
 
-  // Render Login Screen if user is not authenticated
   if (!user) {
     return (
       <div className="login-screen">
@@ -393,7 +521,6 @@ export default function App() {
           <p className="login-subtitle">Navigate Your Career with Specialized AI Co-pilots</p>
           
           <div className="login-actions">
-            {/* Google Sign In container */}
             <div id="google-signin-button" className="google-btn-container"></div>
           </div>
         </div>
@@ -401,7 +528,6 @@ export default function App() {
     );
   }
 
-  // Get current avatar image (uploaded custom avatar or default google photo or user icon)
   const avatarSrc = user.custom_avatar || user.picture;
 
   return (
@@ -466,6 +592,39 @@ export default function App() {
 
       {/* Main Panel */}
       <main className="chat-main">
+        {/* Always-Open Sidebar */}
+        <aside className="sidebar">
+          <button className="new-chat-btn" onClick={handleCreateNewSession} disabled={isLoading}>
+            <Plus size={16} />
+            <span>New Chat</span>
+          </button>
+          
+          <div className="sessions-list">
+            <div className="sidebar-section-title">
+              <MessageSquare size={12} />
+              <span>Recent Chats</span>
+            </div>
+            {sessions.map((s) => (
+              <div 
+                key={s.id} 
+                className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
+                onClick={() => handleSelectSession(s.id)}
+              >
+                <div className="session-item-title">{s.title}</div>
+                <button 
+                  className="delete-session-btn" 
+                  onClick={(e) => handleDeleteSession(s.id, e)}
+                  disabled={isLoading}
+                  title="Delete Chat"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        {/* Chat Workspace */}
         <div className="chat-area">
           {messages.length === 0 ? (
             /* Welcome / Suggested Questions Page */
@@ -551,12 +710,12 @@ export default function App() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={isLoading}
+                disabled={isLoading || !activeSessionId}
               />
               <button 
                 className="send-button"
                 onClick={() => handleSendMessage()}
-                disabled={isLoading || !inputValue.trim()}
+                disabled={isLoading || !inputValue.trim() || !activeSessionId}
               >
                 <Send size={16} />
               </button>
