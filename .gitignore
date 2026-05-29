@@ -24,6 +24,7 @@ Thumbs.db
 
 # Database / User Profiles
 backend/orchestrator/users_db.json
+backend/orchestrator/chat_history_db.json
 
 # Secrets
 backend/client_secret_*.json

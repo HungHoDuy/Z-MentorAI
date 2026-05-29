@@ -25,25 +25,43 @@
 .brand-section {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+}
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--primary);
 }
 
 .brand-logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   background: var(--gradient-primary);
-  border-radius: 12px;
+  border-radius: 10px;
   color: #000;
   font-weight: 800;
-  box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.3);
 }
 
 .brand-title {
   font-family: var(--font-display);
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   margin: 0;
   background: var(--gradient-primary);
@@ -52,9 +70,15 @@
 }
 
 .agent-status-bar {
-  display: flex;
+  display: none;
   gap: 0.75rem;
   align-items: center;
+}
+
+@media (min-width: 1024px) {
+  .agent-status-bar {
+    display: flex;
+  }
 }
 
 .agent-badge {
@@ -207,6 +231,146 @@
   min-height: 0;
 }
 
+/* Left Sidebar styling */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-lg);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  height: 100%;
+}
+
+.sidebar.open {
+  width: 260px;
+  opacity: 1;
+  padding: 1.25rem;
+  margin-right: 0;
+}
+
+.sidebar.closed {
+  width: 0;
+  opacity: 0;
+  padding: 0;
+  border: none;
+  margin: 0;
+}
+
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 1.25rem;
+  flex-shrink: 0;
+}
+
+.new-chat-btn:hover:not(:disabled) {
+  background: rgba(0, 242, 254, 0.05);
+  border-color: rgba(0, 242, 254, 0.3);
+  color: var(--primary);
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.1);
+}
+
+.new-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sessions-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-right: 0.25rem;
+}
+
+.sidebar-section-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  padding-left: 0.5rem;
+  font-weight: 700;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.session-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border-color);
+}
+
+.session-item.active {
+  background: rgba(0, 242, 254, 0.05);
+  border-color: rgba(0, 242, 254, 0.2);
+}
+
+.session-item-title {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: left;
+}
+
+.session-item.active .session-item-title {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.delete-session-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 4px;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.session-item:hover .delete-session-btn {
+  opacity: 1;
+}
+
+.delete-session-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Chat Workspace */
 .chat-area {
   display: flex;
   flex-direction: column;
@@ -218,6 +382,7 @@
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   position: relative;
+  height: 100%;
 }
 
 /* Messages Feed */
@@ -233,7 +398,7 @@
 .message-wrapper {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
+  max-width: 85%;
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -698,59 +863,4 @@
   display: flex;
   justify-content: center;
   min-height: 40px;
-}
-
-.login-divider {
-  display: flex;
-  align-items: center;
-  text-align: center;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0.5rem 0;
-}
-
-.login-divider::before,
-.login-divider::after {
-  content: '';
-  flex: 1;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.login-divider:not(:empty)::before {
-  margin-right: .5em;
-}
-
-.login-divider:not(:empty)::after {
-  margin-left: .5em;
-}
-
-.mock-login-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0.8rem;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-weight: 500;
-  font-size: 0.9rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.mock-login-btn:hover:not(:disabled) {
-  background: rgba(0, 242, 254, 0.05);
-  border-color: rgba(0, 242, 254, 0.3);
-  color: var(--primary);
-  box-shadow: 0 0 15px rgba(0, 242, 254, 0.1);
-}
-
-.mock-login-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
