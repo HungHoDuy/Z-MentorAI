@@ -251,8 +251,12 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                     elif msg["role"] == "assistant":
                         history_messages.append(AIMessage(content=msg["content"]))
             
-            history_messages = trim_history(history_messages, limit=8000)
             messages = [system_message] + history_messages + [HumanMessage(content=request.message)]
+            
+            print(f"DEBUG STREAM x_user_id={x_user_id} session_id={request.session_id}")
+            print(f"DEBUG STREAM messages count={len(messages)}")
+            for m in messages:
+                print(f"  - {m.__class__.__name__}: {repr(m.content)}")
             
             assistant_content = ""
             
@@ -294,7 +298,7 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                 now = datetime.datetime.utcnow().isoformat() + "Z"
                 user_data["sessions"][request.session_id] = {
                     "id": request.session_id,
-                    "title": request.message[:40] + ("..." if len(request.message) > 40 else ""),
+                    "title": "New Chat",
                     "created_at": now,
                     "messages": []
                 }
@@ -304,7 +308,17 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
             session["messages"].append({"role": "assistant", "content": assistant_content})
             
             if session.get("title") == "New Chat":
-                session["title"] = request.message[:40] + ("..." if len(request.message) > 40 else "")
+                try:
+                    title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {request.message}"
+                    res = await llm.ainvoke(title_prompt)
+                    new_title = res.content.strip().replace('"', '').replace("'", "")
+                    if new_title:
+                        session["title"] = new_title
+                    else:
+                        session["title"] = request.message[:30] + ("..." if len(request.message) > 30 else "")
+                except Exception as e:
+                    print(f"Error generating session title: {e}")
+                    session["title"] = request.message[:30] + ("..." if len(request.message) > 30 else "")
                 
             write_chat_db(chat_db)
             
@@ -349,7 +363,7 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
             now = datetime.datetime.utcnow().isoformat() + "Z"
             user_data["sessions"][request.session_id] = {
                 "id": request.session_id,
-                "title": request.message[:40] + ("..." if len(request.message) > 40 else ""),
+                "title": "New Chat",
                 "created_at": now,
                 "messages": []
             }
@@ -359,7 +373,17 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
         session["messages"].append({"role": "assistant", "content": final_response})
         
         if session.get("title") == "New Chat":
-            session["title"] = request.message[:40] + ("..." if len(request.message) > 40 else "")
+            try:
+                title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {request.message}"
+                res = await llm.ainvoke(title_prompt)
+                new_title = res.content.strip().replace('"', '').replace("'", "")
+                if new_title:
+                    session["title"] = new_title
+                else:
+                    session["title"] = request.message[:30] + ("..." if len(request.message) > 30 else "")
+            except Exception as e:
+                print(f"Error generating session title: {e}")
+                session["title"] = request.message[:30] + ("..." if len(request.message) > 30 else "")
             
         write_chat_db(chat_db)
         

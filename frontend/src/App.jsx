@@ -17,9 +17,7 @@ import {
   User,
   Plus,
   Trash2,
-  Menu,
-  ChevronLeft,
-  ChevronRight
+  MessageSquare
 } from 'lucide-react';
 import './App.css';
 
@@ -137,7 +135,6 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [googleClientId, setGoogleClientId] = useState(null);
   const [activeAgents, setActiveAgents] = useState([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
 
   const messagesEndRef = useRef(null);
@@ -197,7 +194,7 @@ export default function App() {
     }
   }, [user]);
 
-  const fetchSessions = async () => {
+  const fetchSessions = async (keepActiveSession = false) => {
     try {
       const res = await fetch(`${backendUrl}/sessions`, {
         headers: { 'X-User-Id': user.google_id }
@@ -208,8 +205,11 @@ export default function App() {
       
       // Auto-load last active session, or create one if none exist
       if (data.length > 0) {
+        if (keepActiveSession && activeSessionId) {
+          // Just keep the current selected session active
+          return;
+        }
         const lastSessionId = localStorage.getItem(`z_mentor_active_session_${user.google_id}`) || data[0].id;
-        // Verify last active session still exists
         const exists = data.some(s => s.id === lastSessionId);
         const targetSessionId = exists ? lastSessionId : data[0].id;
         handleSelectSession(targetSessionId);
@@ -256,12 +256,11 @@ export default function App() {
       setActiveSessionId(sessionId);
       localStorage.setItem(`z_mentor_active_session_${user.google_id}`, sessionId);
       
-      // Map stored messages to UI message objects
       const uiMessages = session.messages.map((m, idx) => ({
         id: `msg-${idx}-${Date.now()}`,
         role: m.role,
         content: m.content,
-        toolCalls: [] // Tool logs are already integrated in raw text/response or simplified
+        toolCalls: []
       }));
       setMessages(uiMessages);
     } catch (err) {
@@ -271,7 +270,7 @@ export default function App() {
   };
 
   const handleDeleteSession = async (sessionId, e) => {
-    e.stopPropagation(); // Avoid selecting the deleted item
+    e.stopPropagation();
     if (isLoading) return;
     
     if (!window.confirm("Are you sure you want to delete this chat session?")) return;
@@ -286,7 +285,6 @@ export default function App() {
       const updatedSessions = sessions.filter(s => s.id !== sessionId);
       setSessions(updatedSessions);
       
-      // If deleted session was active, select another one or create new
       if (activeSessionId === sessionId) {
         if (updatedSessions.length > 0) {
           handleSelectSession(updatedSessions[0].id);
@@ -483,16 +481,9 @@ export default function App() {
         }
       }
       
-      // Update session title locally if it was renamed by backend
-      const activeSession = sessions.find(s => s.id === activeSessionId);
-      if (activeSession && activeSession.title === "New Chat") {
-        setSessions(prev => prev.map(s => {
-          if (s.id === activeSessionId) {
-            return { ...s, title: query.slice(0, 40) + (query.length > 40 ? '...' : '') };
-          }
-          return s;
-        }));
-      }
+      // Reload sessions from backend to capture Gemini-generated title
+      await fetchSessions(true);
+
     } catch (error) {
       console.error("Streaming error:", error);
       setMessages(prev => prev.map(msg => {
@@ -544,9 +535,6 @@ export default function App() {
       {/* Header */}
       <header className="app-header">
         <div className="brand-section">
-          <button className="sidebar-toggle" onClick={() => setIsSidebarOpen(!isSidebarOpen)} title="Toggle Sidebar">
-            <Menu size={20} />
-          </button>
           <div className="brand-logo">
             <Sparkles size={20} />
           </div>
@@ -604,15 +592,18 @@ export default function App() {
 
       {/* Main Panel */}
       <main className="chat-main">
-        {/* Collapsible Left Sidebar */}
-        <aside className={`sidebar ${isSidebarOpen ? 'open' : 'closed'}`}>
+        {/* Always-Open Sidebar */}
+        <aside className="sidebar">
           <button className="new-chat-btn" onClick={handleCreateNewSession} disabled={isLoading}>
             <Plus size={16} />
             <span>New Chat</span>
           </button>
           
           <div className="sessions-list">
-            <div className="sidebar-section-title">Recent Chats</div>
+            <div className="sidebar-section-title">
+              <MessageSquare size={12} />
+              <span>Recent Chats</span>
+            </div>
             {sessions.map((s) => (
               <div 
                 key={s.id} 
