@@ -227,13 +227,15 @@ async def delete_session(session_id: str, x_user_id: str = Header(...)):
     raise HTTPException(status_code=404, detail="Session not found")
 
 # System prompt
-system_message = SystemMessage(content=(
-    "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
-    "You have access to specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
-    "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
-    "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
-    "If you need more information from the user before you can use a tool, ask them directly."
-))
+def get_system_message(user_id: str) -> SystemMessage:
+    return SystemMessage(content=(
+        "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
+        "You have access to specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
+        f"The current user's User ID (Google ID) is '{user_id}'. You must use this user ID string when calling the profile_scanner tool. "
+        "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
+        "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
+        "If you need more information from the user before you can use a tool, ask them directly."
+    ))
 
 @app.post("/chat/stream")
 async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = Header(...)):
@@ -251,7 +253,7 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                     elif msg["role"] == "assistant":
                         history_messages.append(AIMessage(content=msg["content"]))
             
-            messages = [system_message] + history_messages + [HumanMessage(content=request.message)]
+            messages = [get_system_message(x_user_id)] + history_messages + [HumanMessage(content=request.message)]
             
             print(f"DEBUG STREAM x_user_id={x_user_id} session_id={request.session_id}")
             print(f"DEBUG STREAM messages count={len(messages)}")
@@ -270,7 +272,16 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                 
                 elif event_type == "on_tool_end":
                     tool_output = event["data"].get("output")
-                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': tool_output})}\n\n"
+                    # Handle cases where tool_output is a ToolMessage or other LangChain message
+                    if hasattr(tool_output, "content"):
+                        serializable_output = tool_output.content
+                    else:
+                        try:
+                            json.dumps(tool_output)
+                            serializable_output = tool_output
+                        except (TypeError, OverflowError):
+                            serializable_output = str(tool_output)
+                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': serializable_output})}\n\n"
                 
                 elif event_type == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
@@ -343,7 +354,7 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
                     history_messages.append(AIMessage(content=msg["content"]))
         
         history_messages = trim_history(history_messages, limit=8000)
-        messages = [system_message] + history_messages + [HumanMessage(content=request.message)]
+        messages = [get_system_message(x_user_id)] + history_messages + [HumanMessage(content=request.message)]
         
         result = await agent.ainvoke({"messages": messages})
         content = result["messages"][-1].content
