@@ -29,3 +29,12 @@ backend/orchestrator/chat_history_db.json
 # Secrets
 backend/client_secret_*.json
 
+# Crawled data
+backend/crawl_jobs/*.json
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
