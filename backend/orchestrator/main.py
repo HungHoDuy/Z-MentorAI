@@ -156,6 +156,21 @@ async def delete_user_session(google_id: str, session_id: str) -> bool:
         return False
 
 
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str = "default_session"
+
+class ChatResponse(BaseModel):
+    response: str
+
+class LoginRequest(BaseModel):
+    token: str
+
+class UploadAvatarRequest(BaseModel):
+    google_id: str
+    avatar_base64: str
+
+
 # Setup the LLM
 if USE_VERTEX_AI:
     from langchain_google_vertexai import ChatVertexAI
