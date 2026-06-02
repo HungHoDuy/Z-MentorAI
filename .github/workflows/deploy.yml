@@ -56,11 +56,16 @@ jobs:
         cd terraform
         terraform init
 
-    # 7. Import existing Artifact Registry Repository if it already exists
-    - name: Import existing Artifact Registry Repository if needed
+    # 7. Import existing resources if they already exist
+    - name: Import existing resources if needed
       run: |
         cd terraform
         terraform import google_artifact_registry_repository.repo projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/repositories/${{ env.REPOSITORY }} || true
+        terraform import google_cloud_run_service.profile_scanner projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/profile-scanner || true
+        terraform import google_cloud_run_service.market_scout projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/market-scout || true
+        terraform import google_cloud_run_service.academic_architect projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/academic-architect || true
+        terraform import google_cloud_run_service.mcp_server projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/mcp-server || true
+        terraform import google_cloud_run_service.orchestrator projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/orchestrator || true
 
     # 8. Bootstrap Artifact Registry Repository first
     # This prevents Cloud Run deployment failures due to missing docker images.
