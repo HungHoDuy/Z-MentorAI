@@ -1,0 +1,76 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/deploy.yml'
+
+env:
+  PROJECT_ID: z-mentorai
+  REGION: asia-southeast1
+  REPOSITORY: z-mentor-repo
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout repository
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # 2. Authenticate with Google Cloud
+    - name: Authenticate to GCP
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    # 3. Set up Google Cloud SDK
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    # 4. Configure Docker authentication
+    - name: Docker Auth Config
+      run: |
+        gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+    # 5. Build and Push Agent Images
+    - name: Build & Push Profile Scanner
+      run: |
+        docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/profile-scanner:latest ./backend/profile_scanner
+        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/profile-scanner:latest
+
+    - name: Build & Push Market Scout
+      run: |
+        docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/market-scout:latest ./backend/market_scout
+        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/market-scout:latest
+
+    - name: Build & Push Academic Architect
+      run: |
+        docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/academic-architect:latest ./backend/academic_architect
+        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/academic-architect:latest
+
+    - name: Build & Push MCP Server
+      run: |
+        docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest ./backend/mcp_server
+        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest
+
+    # 6. Build and Push Orchestrator (Multi-stage build requiring root context)
+    - name: Build & Push Orchestrator (Orch + FrontEnd)
+      run: |
+        docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest -f ./backend/orchestrator/Dockerfile .
+        docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest
+
+    # 7. Deploy to Cloud Run (updates the images on existing services)
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy profile-scanner --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/profile-scanner:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy market-scout --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/market-scout:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy academic-architect --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/academic-architect:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy mcp-server --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy orchestrator --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet

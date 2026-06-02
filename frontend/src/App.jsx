@@ -142,6 +142,7 @@ export default function App() {
   const [uploadedCv, setUploadedCv] = useState(null);
   const [cvUploadError, setCvUploadError] = useState('');
   const [cvUploading, setCvUploading] = useState(false);
+  const [backendUrl, setBackendUrl] = useState(import.meta.env.VITE_API_URL || window.location.origin);
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
