@@ -158,7 +158,11 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   location   = var.region
   project    = var.project_id
   ingress    = "INGRESS_TRAFFIC_ALL"
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.firestore_access,
+    google_project_iam_member.vertex_access
+  ]
 
   template {
     service_account = google_service_account.orchestrator_sa.email
@@ -185,7 +189,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       }
       env {
         name  = "FIRESTORE_DATABASE"
-        value = "database"
+        value = "(default)"
       }
     }
   }
