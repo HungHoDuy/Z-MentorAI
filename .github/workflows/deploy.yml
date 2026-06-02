@@ -41,25 +41,40 @@ jobs:
       with:
         terraform_version: 1.5.0
 
-    # 5. Initialize Terraform
+    # 5. Create GCS Bucket for Terraform State if it doesn't exist
+    - name: Create GCS State Bucket
+      run: |
+        gcloud storage buckets describe gs://${{ env.PROJECT_ID }}-tfstate --project=${{ env.PROJECT_ID }} || \
+        gcloud storage buckets create gs://${{ env.PROJECT_ID }}-tfstate \
+          --project=${{ env.PROJECT_ID }} \
+          --location=${{ env.REGION }} \
+          --uniform-bucket-level-access
+
+    # 6. Initialize Terraform
     - name: Terraform Init
       run: |
         cd terraform
         terraform init
 
-    # 6. Bootstrap Artifact Registry Repository first
+    # 7. Import existing Artifact Registry Repository if it already exists
+    - name: Import existing Artifact Registry Repository if needed
+      run: |
+        cd terraform
+        terraform import google_artifact_registry_repository.repo projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/repositories/${{ env.REPOSITORY }} || true
+
+    # 8. Bootstrap Artifact Registry Repository first
     # This prevents Cloud Run deployment failures due to missing docker images.
     - name: Create Artifact Registry Repository
       run: |
         cd terraform
         terraform apply -target=google_artifact_registry_repository.repo -auto-approve
 
-    # 7. Configure Docker authentication
+    # 9. Configure Docker authentication
     - name: Docker Auth Config
       run: |
         gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-    # 8. Build and Push Agent Images
+    # 10. Build and Push Agent Images
     - name: Build & Push Profile Scanner
       run: |
         docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/profile-scanner:latest ./backend/profile_scanner
@@ -80,13 +95,13 @@ jobs:
         docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest ./backend/mcp_server
         docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest
 
-    # 9. Build and Push Orchestrator (Multi-stage build requiring root context)
+    # 11. Build and Push Orchestrator (Multi-stage build requiring root context)
     - name: Build & Push Orchestrator (Orch + FrontEnd)
       run: |
         docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest -f ./backend/orchestrator/Dockerfile .
         docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest
 
-    # 10. Deploy infrastructure and Cloud Run Services via Terraform
+    # 12. Deploy infrastructure and Cloud Run Services via Terraform
     - name: Terraform Apply
       run: |
         cd terraform
