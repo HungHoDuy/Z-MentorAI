@@ -187,17 +187,19 @@ async def lifespan(app: FastAPI):
     
     # Fetch tools with retry mechanism to handle container startup race conditions
     import asyncio
-    for attempt in range(10):
+    for attempt in range(15):
         try:
             tools = await client.get_tools()
             agent = create_react_agent(llm, tools)
             print("Successfully retrieved tools from MCP server.")
             break
         except Exception as e:
-            print(f"Attempt {attempt + 1}/10: Failed to fetch tools from MCP server: {e}")
-            if attempt == 9:
-                raise e
-            await asyncio.sleep(2)
+            print(f"Attempt {attempt + 1}/15: Failed to fetch tools from MCP server: {e}")
+            if attempt == 14:
+                print(f"CRITICAL: Failed to connect to MCP server after 15 attempts. Proceeding with empty tools list: {e}")
+                agent = create_react_agent(llm, [])
+            else:
+                await asyncio.sleep(2)
     yield
 
 app = FastAPI(title="Orchestrator Agent", lifespan=lifespan)
