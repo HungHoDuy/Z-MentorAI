@@ -66,188 +66,168 @@ resource "google_project_iam_member" "vertex_access" {
   depends_on = [google_service_account.orchestrator_sa]
 }
 
-# 4. Cloud Run Services
+# 4. Cloud Run Services (V2)
 
 # A. Profile Scanner Agent
-resource "google_cloud_run_service" "profile_scanner" {
+resource "google_cloud_run_v2_service" "profile_scanner" {
   name       = "profile-scanner"
   location   = var.region
   project    = var.project_id
+  ingress    = "INGRESS_TRAFFIC_ALL"
   depends_on = [google_project_service.apis]
 
   template {
-    spec {
-      containers {
-        image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.profile_scanner_image}"
-        ports {
-          container_port = 8080
-        }
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.profile_scanner_image}"
+      ports {
+        container_port = 8080
       }
     }
-  }
-  traffic {
-    percent         = 100
-    latest_revision = true
   }
 }
 
 # B. Market Scout Agent
-resource "google_cloud_run_service" "market_scout" {
+resource "google_cloud_run_v2_service" "market_scout" {
   name       = "market-scout"
   location   = var.region
   project    = var.project_id
+  ingress    = "INGRESS_TRAFFIC_ALL"
   depends_on = [google_project_service.apis]
 
   template {
-    spec {
-      containers {
-        image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.market_scout_image}"
-        ports {
-          container_port = 8080
-        }
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.market_scout_image}"
+      ports {
+        container_port = 8080
       }
     }
-  }
-  traffic {
-    percent         = 100
-    latest_revision = true
   }
 }
 
 # C. Academic Architect Agent
-resource "google_cloud_run_service" "academic_architect" {
+resource "google_cloud_run_v2_service" "academic_architect" {
   name       = "academic-architect"
   location   = var.region
   project    = var.project_id
+  ingress    = "INGRESS_TRAFFIC_ALL"
   depends_on = [google_project_service.apis]
 
   template {
-    spec {
-      containers {
-        image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.academic_architect_image}"
-        ports {
-          container_port = 8080
-        }
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.academic_architect_image}"
+      ports {
+        container_port = 8080
       }
     }
-  }
-  traffic {
-    percent         = 100
-    latest_revision = true
   }
 }
 
 # D. MCP Server (orchestrates communication with scanner, scout, and architect)
-resource "google_cloud_run_service" "mcp_server" {
+resource "google_cloud_run_v2_service" "mcp_server" {
   name       = "mcp-server"
   location   = var.region
   project    = var.project_id
+  ingress    = "INGRESS_TRAFFIC_ALL"
   depends_on = [google_project_service.apis]
 
   template {
-    spec {
-      containers {
-        image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.mcp_server_image}"
-        ports {
-          container_port = 8080
-        }
-        env {
-          name  = "PROFILE_SCANNER_URL"
-          value = google_cloud_run_service.profile_scanner.status[0].url
-        }
-        env {
-          name  = "MARKET_SCOUT_URL"
-          value = google_cloud_run_service.market_scout.status[0].url
-        }
-        env {
-          name  = "ACADEMIC_ARCHITECT_URL"
-          value = google_cloud_run_service.academic_architect.status[0].url
-        }
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.mcp_server_image}"
+      ports {
+        container_port = 8080
+      }
+      env {
+        name  = "PROFILE_SCANNER_URL"
+        value = google_cloud_run_v2_service.profile_scanner.uri
+      }
+      env {
+        name  = "MARKET_SCOUT_URL"
+        value = google_cloud_run_v2_service.market_scout.uri
+      }
+      env {
+        name  = "ACADEMIC_ARCHITECT_URL"
+        value = google_cloud_run_v2_service.academic_architect.uri
       }
     }
-  }
-  traffic {
-    percent         = 100
-    latest_revision = true
   }
 }
 
 # E. Orchestrator Backend & Frontend host
-resource "google_cloud_run_service" "orchestrator" {
+resource "google_cloud_run_v2_service" "orchestrator" {
   name       = "orchestrator"
   location   = var.region
   project    = var.project_id
+  ingress    = "INGRESS_TRAFFIC_ALL"
   depends_on = [google_project_service.apis]
 
   template {
-    spec {
-      service_account_name = google_service_account.orchestrator_sa.email
-      containers {
-        image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.orchestrator_image}"
-        ports {
-          container_port = 8080
-        }
-        env {
-          name  = "MCP_SERVER_URL"
-          value = "${google_cloud_run_service.mcp_server.status[0].url}/sse"
-        }
-        env {
-          name  = "USE_FIRESTORE"
-          value = "true"
-        }
-        env {
-          name  = "USE_VERTEX_AI"
-          value = "true"
-        }
-        env {
-          name  = "GOOGLE_CLIENT_ID"
-          value = var.google_client_id
-        }
-        env {
-          name  = "FIRESTORE_DATABASE"
-          value = "database"
-        }
+    service_account = google_service_account.orchestrator_sa.email
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.orchestrator_image}"
+      ports {
+        container_port = 8080
+      }
+      env {
+        name  = "MCP_SERVER_URL"
+        value = "${google_cloud_run_v2_service.mcp_server.uri}/sse"
+      }
+      env {
+        name  = "USE_FIRESTORE"
+        value = "true"
+      }
+      env {
+        name  = "USE_VERTEX_AI"
+        value = "true"
+      }
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = "database"
       }
     }
   }
-  traffic {
-    percent         = 100
-    latest_revision = true
-  }
 }
 
-# 5. Make all Cloud Run Services Publicly Accessible
-resource "google_cloud_run_service_iam_member" "public_profile_scanner" {
-  service  = google_cloud_run_service.profile_scanner.name
-  location = google_cloud_run_service.profile_scanner.location
+# 5. Make all Cloud Run Services Publicly Accessible (V2 IAM resources)
+resource "google_cloud_run_v2_service_iam_member" "public_profile_scanner" {
+  project  = google_cloud_run_v2_service.profile_scanner.project
+  location = google_cloud_run_v2_service.profile_scanner.location
+  name     = google_cloud_run_v2_service.profile_scanner.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
-resource "google_cloud_run_service_iam_member" "public_market_scout" {
-  service  = google_cloud_run_service.market_scout.name
-  location = google_cloud_run_service.market_scout.location
+resource "google_cloud_run_v2_service_iam_member" "public_market_scout" {
+  project  = google_cloud_run_v2_service.market_scout.project
+  location = google_cloud_run_v2_service.market_scout.location
+  name     = google_cloud_run_v2_service.market_scout.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
-resource "google_cloud_run_service_iam_member" "public_academic_architect" {
-  service  = google_cloud_run_service.academic_architect.name
-  location = google_cloud_run_service.academic_architect.location
+resource "google_cloud_run_v2_service_iam_member" "public_academic_architect" {
+  project  = google_cloud_run_v2_service.academic_architect.project
+  location = google_cloud_run_v2_service.academic_architect.location
+  name     = google_cloud_run_v2_service.academic_architect.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
-resource "google_cloud_run_service_iam_member" "public_mcp_server" {
-  service  = google_cloud_run_service.mcp_server.name
-  location = google_cloud_run_service.mcp_server.location
+resource "google_cloud_run_v2_service_iam_member" "public_mcp_server" {
+  project  = google_cloud_run_v2_service.mcp_server.project
+  location = google_cloud_run_v2_service.mcp_server.location
+  name     = google_cloud_run_v2_service.mcp_server.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
-resource "google_cloud_run_service_iam_member" "public_orchestrator" {
-  service  = google_cloud_run_service.orchestrator.name
-  location = google_cloud_run_service.orchestrator.location
+resource "google_cloud_run_v2_service_iam_member" "public_orchestrator" {
+  project  = google_cloud_run_v2_service.orchestrator.project
+  location = google_cloud_run_v2_service.orchestrator.location
+  name     = google_cloud_run_v2_service.orchestrator.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
