@@ -135,7 +135,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [googleClientId, setGoogleClientId] = useState(null);
   const [activeAgents, setActiveAgents] = useState([]);
-  const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
+  const [backendUrl, setBackendUrl] = useState(import.meta.env.VITE_API_URL || window.location.origin);
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
