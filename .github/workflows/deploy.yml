@@ -7,7 +7,6 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
-      - 'terraform/**'
       - '.github/workflows/deploy.yml'
 
 env:
@@ -35,51 +34,12 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v1
 
-    # 4. Set up Terraform
-    - name: Set up Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.5.0
-
-    # 5. Create GCS Bucket for Terraform State if it doesn't exist
-    - name: Create GCS State Bucket
-      run: |
-        gcloud storage buckets describe gs://${{ env.PROJECT_ID }}-tfstate --project=${{ env.PROJECT_ID }} || \
-        gcloud storage buckets create gs://${{ env.PROJECT_ID }}-tfstate \
-          --project=${{ env.PROJECT_ID }} \
-          --location=${{ env.REGION }} \
-          --uniform-bucket-level-access
-
-    # 6. Initialize Terraform
-    - name: Terraform Init
-      run: |
-        cd terraform
-        terraform init
-
-    # 7. Import existing resources if they already exist
-    - name: Import existing resources if needed
-      run: |
-        cd terraform
-        terraform import google_artifact_registry_repository.repo projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/repositories/${{ env.REPOSITORY }} || true
-        terraform import google_cloud_run_v2_service.profile_scanner projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/profile-scanner || true
-        terraform import google_cloud_run_v2_service.market_scout projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/market-scout || true
-        terraform import google_cloud_run_v2_service.academic_architect projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/academic-architect || true
-        terraform import google_cloud_run_v2_service.mcp_server projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/mcp-server || true
-        terraform import google_cloud_run_v2_service.orchestrator projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/services/orchestrator || true
-
-    # 8. Bootstrap Artifact Registry Repository first
-    # This prevents Cloud Run deployment failures due to missing docker images.
-    - name: Create Artifact Registry Repository
-      run: |
-        cd terraform
-        terraform apply -target=google_artifact_registry_repository.repo -auto-approve
-
-    # 9. Configure Docker authentication
+    # 4. Configure Docker authentication
     - name: Docker Auth Config
       run: |
         gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-    # 10. Build and Push Agent Images
+    # 5. Build and Push Agent Images
     - name: Build & Push Profile Scanner
       run: |
         docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/profile-scanner:latest ./backend/profile_scanner
@@ -100,14 +60,17 @@ jobs:
         docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest ./backend/mcp_server
         docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest
 
-    # 11. Build and Push Orchestrator (Multi-stage build requiring root context)
+    # 6. Build and Push Orchestrator (Multi-stage build requiring root context)
     - name: Build & Push Orchestrator (Orch + FrontEnd)
       run: |
         docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest -f ./backend/orchestrator/Dockerfile .
         docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest
 
-    # 12. Deploy infrastructure and Cloud Run Services via Terraform
-    - name: Terraform Apply
+    # 7. Deploy to Cloud Run (updates the images on existing services)
+    - name: Deploy to Cloud Run
       run: |
-        cd terraform
-        terraform apply -auto-approve
+        gcloud run deploy profile-scanner --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/profile-scanner:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy market-scout --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/market-scout:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy academic-architect --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/academic-architect:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy mcp-server --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/mcp-server:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        gcloud run deploy orchestrator --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/orchestrator:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
