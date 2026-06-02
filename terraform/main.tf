@@ -13,40 +13,63 @@ provider "google" {
   region  = var.region
 }
 
+# 0. Automatically Enable GCP APIs
+locals {
+  gcp_services = [
+    "iam.googleapis.com",
+    "run.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "aiplatform.googleapis.com",
+    "firestore.googleapis.com"
+  ]
+}
+
+resource "google_project_service" "apis" {
+  for_each           = toset(local.gcp_services)
+  project            = var.project_id
+  service            = each.value
+  disable_on_destroy = false
+}
+
 # 1. Artifact Registry Repository
 resource "google_artifact_registry_repository" "repo" {
   location      = var.region
   repository_id = var.repository_id
   description   = "Docker repository for Z-MentorAI containers"
   format        = "DOCKER"
+  depends_on    = [google_project_service.apis]
 }
 
 # 2. Service Account for Orchestrator (Backend)
 resource "google_service_account" "orchestrator_sa" {
   account_id   = "orchestrator-runner"
   display_name = "Service Account for Z-MentorAI Orchestrator"
+  depends_on    = [google_project_service.apis]
 }
 
 # 3. Grant Firestore and Vertex AI access to Orchestrator SA
 resource "google_project_iam_member" "firestore_access" {
-  project = var.project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.orchestrator_sa.email}"
+  project    = var.project_id
+  role       = "roles/datastore.user"
+  member     = "serviceAccount:${google_service_account.orchestrator_sa.email}"
+  depends_on = [google_service_account.orchestrator_sa]
 }
 
 resource "google_project_iam_member" "vertex_access" {
-  project = var.project_id
-  role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.orchestrator_sa.email}"
+  project    = var.project_id
+  role       = "roles/aiplatform.user"
+  member     = "serviceAccount:${google_service_account.orchestrator_sa.email}"
+  depends_on = [google_service_account.orchestrator_sa]
 }
 
 # 4. Cloud Run Services
 
 # A. Profile Scanner Agent
 resource "google_cloud_run_service" "profile_scanner" {
-  name     = "profile-scanner"
-  location = var.region
-  project  = var.project_id
+  name       = "profile-scanner"
+  location   = var.region
+  project    = var.project_id
+  depends_on = [google_project_service.apis]
 
   template {
     spec {
@@ -66,9 +89,10 @@ resource "google_cloud_run_service" "profile_scanner" {
 
 # B. Market Scout Agent
 resource "google_cloud_run_service" "market_scout" {
-  name     = "market-scout"
-  location = var.region
-  project  = var.project_id
+  name       = "market-scout"
+  location   = var.region
+  project    = var.project_id
+  depends_on = [google_project_service.apis]
 
   template {
     spec {
@@ -88,9 +112,10 @@ resource "google_cloud_run_service" "market_scout" {
 
 # C. Academic Architect Agent
 resource "google_cloud_run_service" "academic_architect" {
-  name     = "academic-architect"
-  location = var.region
-  project  = var.project_id
+  name       = "academic-architect"
+  location   = var.region
+  project    = var.project_id
+  depends_on = [google_project_service.apis]
 
   template {
     spec {
@@ -110,9 +135,10 @@ resource "google_cloud_run_service" "academic_architect" {
 
 # D. MCP Server (orchestrates communication with scanner, scout, and architect)
 resource "google_cloud_run_service" "mcp_server" {
-  name     = "mcp-server"
-  location = var.region
-  project  = var.project_id
+  name       = "mcp-server"
+  location   = var.region
+  project    = var.project_id
+  depends_on = [google_project_service.apis]
 
   template {
     spec {
@@ -144,9 +170,10 @@ resource "google_cloud_run_service" "mcp_server" {
 
 # E. Orchestrator Backend & Frontend host
 resource "google_cloud_run_service" "orchestrator" {
-  name     = "orchestrator"
-  location = var.region
-  project  = var.project_id
+  name       = "orchestrator"
+  location   = var.region
+  project    = var.project_id
+  depends_on = [google_project_service.apis]
 
   template {
     spec {
