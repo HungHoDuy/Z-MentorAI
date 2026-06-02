@@ -628,6 +628,88 @@
   border-top: 1px solid var(--border-color);
 }
 
+.cv-upload-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.cv-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 34px;
+  padding: 0.45rem 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 9px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.cv-upload-btn:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: rgba(0, 242, 254, 0.28);
+  background: rgba(0, 242, 254, 0.06);
+}
+
+.cv-upload-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cv-upload-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: min(100%, 420px);
+  min-height: 34px;
+  padding: 0.42rem 0.55rem 0.42rem 0.7rem;
+  background: rgba(0, 242, 254, 0.05);
+  border: 1px solid rgba(0, 242, 254, 0.18);
+  color: var(--text-primary);
+  border-radius: 9px;
+  font-size: 0.82rem;
+}
+
+.cv-upload-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-upload-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-radius: 7px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cv-upload-clear:hover {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.22);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.cv-upload-error {
+  color: #fca5a5;
+  font-size: 0.8rem;
+}
+
 .input-container {
   display: flex;
   align-items: flex-end;

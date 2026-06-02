@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { 
   Send, 
@@ -17,7 +17,9 @@ import {
   User,
   Plus,
   Trash2,
-  MessageSquare
+  MessageSquare,
+  FileText,
+  X
 } from 'lucide-react';
 import './App.css';
 
@@ -132,14 +134,19 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [, setAuthLoading] = useState(false);
   const [googleClientId, setGoogleClientId] = useState(null);
   const [activeAgents, setActiveAgents] = useState([]);
-  const [backendUrl, setBackendUrl] = useState('http://localhost:8000');
+  const [backendUrl] = useState('http://localhost:8000');
+  const [profileScannerUrl] = useState(import.meta.env.VITE_PROFILE_SCANNER_URL || 'http://localhost:8001');
+  const [uploadedCv, setUploadedCv] = useState(null);
+  const [cvUploadError, setCvUploadError] = useState('');
+  const [cvUploading, setCvUploading] = useState(false);
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const cvFileInputRef = useRef(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -364,6 +371,65 @@ export default function App() {
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleCvUploadClick = () => {
+    if (!cvUploading && !isLoading) {
+      cvFileInputRef.current?.click();
+    }
+  };
+
+  const handleCvFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png',
+      'image/webp'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      setCvUploadError('Please upload a PDF, DOCX, JPG, PNG, or WEBP CV.');
+      setUploadedCv(null);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    setCvUploading(true);
+    setCvUploadError('');
+
+    try {
+      const response = await fetch(`${profileScannerUrl}/resumes/upload`, {
+        method: 'POST',
+        headers: {
+          'X-User-Id': user.google_id
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'CV upload failed.');
+      }
+
+      setUploadedCv(data);
+    } catch (err) {
+      console.error(err);
+      setCvUploadError(err.message || 'CV upload failed.');
+      setUploadedCv(null);
+    } finally {
+      setCvUploading(false);
+    }
+  };
+
+  const handleClearUploadedCv = () => {
+    setUploadedCv(null);
+    setCvUploadError('');
   };
 
   const handleSendMessage = async (textToSend) => {
@@ -701,6 +767,46 @@ export default function App() {
 
           {/* Input Panel */}
           <div className="input-panel">
+            <div className="cv-upload-row">
+              <button
+                className="cv-upload-btn"
+                type="button"
+                onClick={handleCvUploadClick}
+                disabled={cvUploading || isLoading}
+                title="Upload CV"
+              >
+                <Upload size={15} />
+                <span>{cvUploading ? 'Uploading CV...' : 'Upload CV'}</span>
+              </button>
+
+              <input
+                ref={cvFileInputRef}
+                type="file"
+                onChange={handleCvFileChange}
+                accept=".pdf,.docx,image/jpeg,image/png,image/webp"
+                style={{ display: 'none' }}
+              />
+
+              {uploadedCv && (
+                <div className="cv-upload-chip" title={uploadedCv.storage_uri}>
+                  <FileText size={14} />
+                  <span>{uploadedCv.original_filename}</span>
+                  <button
+                    className="cv-upload-clear"
+                    type="button"
+                    onClick={handleClearUploadedCv}
+                    title="Clear uploaded CV"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+
+              {cvUploadError && (
+                <div className="cv-upload-error">{cvUploadError}</div>
+              )}
+            </div>
+
             <div className="input-container">
               <textarea
                 ref={textareaRef}
