@@ -189,7 +189,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       }
       env {
         name  = "FIRESTORE_DATABASE"
-        value = "database"
+        value = "(default)"
       }
     }
   }

@@ -23,8 +23,13 @@ USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
 firestore_client = None
 if USE_FIRESTORE:
     from google.cloud import firestore
-    firestore_client = firestore.Client(database="database")
-    print("Using Firestore native mode database: 'database'")
+    db_name = os.getenv("FIRESTORE_DATABASE")
+    if db_name and db_name != "(default)":
+        firestore_client = firestore.Client(database=db_name)
+        print(f"Using Firestore native mode database: '{db_name}'")
+    else:
+        firestore_client = firestore.Client()
+        print("Using Firestore native mode database: '(default)'")
 
 # Local JSON fallback databases
 USERS_DB_PATH = os.path.join(os.path.dirname(__file__), "users_db.json")
@@ -184,6 +189,44 @@ else:
     from langchain_google_genai import ChatGoogleGenerativeAI
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
     print("Using Gemini API Key-based ChatGoogleGenerativeAI")
+
+async def save_chat_exchange(google_id: str, session_id: str, user_message: str, assistant_message: str):
+    session = await get_session_details(google_id, session_id)
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    
+    if not session:
+        session = {
+            "id": session_id,
+            "title": "New Chat",
+            "created_at": now,
+            "messages": []
+        }
+    
+    session["messages"].append({"role": "user", "content": user_message})
+    session["messages"].append({"role": "assistant", "content": assistant_message})
+    
+    if session.get("title") == "New Chat":
+        try:
+            title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {user_message}"
+            res = await llm.ainvoke(title_prompt)
+            new_title = res.content.strip().replace('"', '').replace("'", "")
+            if new_title:
+                session["title"] = new_title
+            else:
+                session["title"] = user_message[:30] + ("..." if len(user_message) > 30 else "")
+        except Exception as e:
+            print(f"Error generating session title: {e}")
+            session["title"] = user_message[:30] + ("..." if len(user_message) > 30 else "")
+            
+    if USE_FIRESTORE:
+        session_to_save = session.copy()
+        session_to_save["user_id"] = google_id
+        firestore_client.collection("history").document(session_id).set(session_to_save)
+    else:
+        db = read_chat_db()
+        user_data = db["users"].setdefault(google_id, {"sessions": {}})
+        user_data["sessions"][session_id] = session
+        write_chat_db(db)
 
 agent = None
 
