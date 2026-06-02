@@ -1,5 +1,9 @@
 terraform {
   required_version = ">= 1.0"
+  backend "gcs" {
+    bucket = "z-mentorai-tfstate"
+    prefix = "terraform/state"
+  }
   required_providers {
     google = {
       source  = "hashicorp/google"
