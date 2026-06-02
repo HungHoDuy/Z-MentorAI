@@ -29,3 +29,6 @@ backend/orchestrator/chat_history_db.json
 # Secrets
 backend/client_secret_*.json
 
+# Crawled data
+backend/crawl_jobs/*.json
+
