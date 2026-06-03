@@ -1,0 +1,19 @@
+name: Deploy MCP Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/mcp_server/**'
+      - '.github/workflows/deploy-mcp-server.yml'
+      - '.github/workflows/reusable-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service_name: mcp-server
+      build_context: ./backend/mcp_server
+    secrets: inherit

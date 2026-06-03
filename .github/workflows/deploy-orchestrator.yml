@@ -1,0 +1,21 @@
+name: Deploy Orchestrator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/orchestrator/**'
+      - 'frontend/**'
+      - '.github/workflows/deploy-orchestrator.yml'
+      - '.github/workflows/reusable-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service_name: orchestrator
+      build_context: .
+      dockerfile_path: ./backend/orchestrator/Dockerfile
+    secrets: inherit
