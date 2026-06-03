@@ -1,0 +1,19 @@
+name: Deploy Academic Architect
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/academic_architect/**'
+      - '.github/workflows/deploy-academic-architect.yml'
+      - '.github/workflows/reusable-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service_name: academic-architect
+      build_context: ./backend/academic_architect
+    secrets: inherit

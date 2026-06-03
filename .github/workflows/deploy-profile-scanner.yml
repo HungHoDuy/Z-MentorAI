@@ -1,0 +1,19 @@
+name: Deploy Profile Scanner
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/profile_scanner/**'
+      - '.github/workflows/deploy-profile-scanner.yml'
+      - '.github/workflows/reusable-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service_name: profile-scanner
+      build_context: ./backend/profile_scanner
+    secrets: inherit
