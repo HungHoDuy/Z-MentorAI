@@ -51,3 +51,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8003:8080"
+    env_file:
+      - .env
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
