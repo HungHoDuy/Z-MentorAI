@@ -27,11 +27,25 @@ class CourseSearchTool:
         # User-Agent representing Edge on Windows
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
         
+        # Stealth options to hide Selenium automation
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
         # If running inside Linux/Docker with Edge installed
         if os.path.exists("/usr/bin/microsoft-edge"):
             options.binary_location = "/usr/bin/microsoft-edge"
             
         driver = webdriver.Edge(options=options)
+        
+        # Bypasses navigator.webdriver detection
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                })
+            """
+        })
+        
         driver.set_page_load_timeout(25)
         return driver
 
