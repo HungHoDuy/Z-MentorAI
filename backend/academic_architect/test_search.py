@@ -21,6 +21,14 @@ async def test_search():
         print(f"  Rating: {r['rating']}")
         print(f"  Duration/Difficulty: {r['duration_details']}")
         
+    print("\n--- edX Results ---")
+    for r in results["edx"]:
+        print(f"- {r['title']}")
+        print(f"  URL: {r['url']}")
+        print(f"  Creator: {r['partner_creator']}")
+        print(f"  Rating: {r['rating']}")
+        print(f"  Duration/Details: {r['duration_details']}")
+        
     print("\n--- YouTube Results ---")
     for r in results["youtube"]:
         print(f"- {r['title']}")

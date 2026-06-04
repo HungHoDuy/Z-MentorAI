@@ -158,11 +158,61 @@ class CourseSearchTool:
             driver.quit()
         return results
 
+    async def search_edx(self, query: str) -> list[dict]:
+        """Scrapes edX search results with metadata using Edge."""
+        return await asyncio.to_thread(self._fetch_edx, query)
+
+    def _fetch_edx(self, query: str) -> list[dict]:
+        driver = self._get_driver()
+        results = []
+        try:
+            url = f"https://www.edx.org/search?q={urllib.parse.quote(query)}"
+            driver.get(url)
+            time.sleep(5)
+            
+            # Find course links
+            anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/learn/'], a[href*='/course/']")
+            for a in anchors:
+                try:
+                    href = a.get_attribute("href")
+                    text = a.text
+                    if not href or not text or "\n" not in text:
+                        continue
+                        
+                    lines = [line.strip() for line in text.split("\n") if line.strip()]
+                    if len(lines) >= 3:
+                        title = lines[1]
+                        institution = lines[2]
+                        duration = lines[3] if len(lines) > 3 else "N/A"
+                        level = lines[4] if len(lines) > 4 else "N/A"
+                        
+                        # Deduplicate by URL
+                        if not any(r["url"] == href for r in results):
+                            results.append({
+                                "title": title,
+                                "url": href,
+                                "platform": "edX",
+                                "partner_creator": institution,
+                                "rating": "N/A",
+                                "duration_details": f"{duration} • {level}"
+                            })
+                            if len(results) >= 5:
+                                break
+                except Exception as parse_err:
+                    pass
+        except Exception as e:
+            print(f"Error scraping edX: {e}")
+        finally:
+            driver.quit()
+        return results
+
     async def search_all(self, query: str) -> dict[str, list[dict]]:
-        """Queries Coursera and YouTube sequentially using Edge."""
+        """Queries Coursera, edX, and YouTube sequentially using Edge."""
         coursera_res = await self.search_coursera(query)
+        edx_res = await self.search_edx(query)
         youtube_res = await self.search_youtube(query)
         return {
             "coursera": coursera_res,
+            "edx": edx_res,
             "youtube": youtube_res
         }
