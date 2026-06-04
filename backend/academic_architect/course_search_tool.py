@@ -116,71 +116,6 @@ class CourseSearchTool:
             driver.quit()
         return results
 
-    async def search_udemy(self, query: str) -> list[dict]:
-        """Scrapes Udemy search results with metadata using Edge."""
-        return await asyncio.to_thread(self._fetch_udemy, query)
-
-    def _fetch_udemy(self, query: str) -> list[dict]:
-        driver = self._get_driver()
-        results = []
-        try:
-            url = f"https://www.udemy.com/courses/search/?q={urllib.parse.quote(query)}"
-            driver.get(url)
-            # Sleep slightly longer as Udemy has heavy script loading
-            time.sleep(6)
-            
-            cards = driver.find_elements(By.CSS_SELECTOR, ".course-card-module--container--, div.course-card--container--")
-            if not cards:
-                cards = driver.find_elements(By.CSS_SELECTOR, "a[href*='/course/']")
-                
-            for card in cards[:5]:
-                try:
-                    title = ""
-                    url = ""
-                    instructor = ""
-                    rating = ""
-                    duration = ""
-                    
-                    if card.tag_name == "a":
-                        url = card.get_attribute("href")
-                        title = card.text.split("\n")[0] if card.text else "Udemy Course"
-                    else:
-                        anchor = card.find_element(By.CSS_SELECTOR, "a[href*='/course/']")
-                        url = anchor.get_attribute("href")
-                        
-                        title_elems = card.find_elements(By.CSS_SELECTOR, "h3[data-purpose='course-title-link'], h3")
-                        if title_elems:
-                            title = title_elems[0].text
-                            
-                        instructor_elems = card.find_elements(By.CSS_SELECTOR, "[data-purpose='safely-set-inner-html:course-card:visible-instructors'], .course-card-module--instructor-list--")
-                        if instructor_elems:
-                            instructor = instructor_elems[0].text
-                            
-                        rating_elems = card.find_elements(By.CSS_SELECTOR, "[data-purpose='rating-number'], .star-rating-module--rating-number--")
-                        if rating_elems:
-                            rating = rating_elems[0].text
-                            
-                        meta_elems = card.find_elements(By.CSS_SELECTOR, "[data-purpose='course-meta-info'], .course-card-module--row--")
-                        if meta_elems:
-                            duration = meta_elems[0].text.replace("\n", " • ")
-                            
-                    if url and title:
-                        results.append({
-                            "title": title.strip(),
-                            "url": url,
-                            "platform": "Udemy",
-                            "partner_creator": instructor.strip() if instructor else "Udemy Instructor",
-                            "rating": rating.strip() if rating else "N/A",
-                            "duration_details": duration.strip() if duration else "N/A"
-                        })
-                except Exception as card_err:
-                    print(f"Error parsing Udemy card: {card_err}")
-        except Exception as e:
-            print(f"Error scraping Udemy: {e}")
-        finally:
-            driver.quit()
-        return results
-
     async def search_youtube(self, query: str) -> list[dict]:
         """Scrapes YouTube search results with metadata using Edge."""
         return await asyncio.to_thread(self._fetch_youtube, query)
@@ -224,12 +159,10 @@ class CourseSearchTool:
         return results
 
     async def search_all(self, query: str) -> dict[str, list[dict]]:
-        """Queries all three platforms (Coursera, Udemy, YouTube) sequentially using Edge."""
+        """Queries Coursera and YouTube sequentially using Edge."""
         coursera_res = await self.search_coursera(query)
-        udemy_res = await self.search_udemy(query)
         youtube_res = await self.search_youtube(query)
         return {
             "coursera": coursera_res,
-            "udemy": udemy_res,
             "youtube": youtube_res
         }
