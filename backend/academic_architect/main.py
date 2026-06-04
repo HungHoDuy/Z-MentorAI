@@ -96,6 +96,9 @@ async def create_plan(request: ArchitectRequest):
             f"{json.dumps(courses_by_skill, indent=2)}\n\n"
             f"Write a comprehensive, step-by-step roadmap. For each phase or skill, suggest specific courses from the provided list, "
             f"making sure to include their exact clickable Markdown links (e.g. [Course Title](URL) on Platform).\n"
+            f"IMPORTANT: If the course lists for a skill are empty or missing results for Coursera or Udemy (due to temporary rate-limiting), "
+            f"you must suggest highly reputable, real courses from your own knowledge base for that skill. "
+            f"Ensure any self-suggested courses have valid, realistic URLs (e.g., https://www.coursera.org/learn/course-slug or https://www.udemy.com/course/course-slug).\n"
             f"Also, provide brief recommendations on how they should approach learning these topics.\n"
             f"Make sure the response is beautifully formatted in Markdown."
         )

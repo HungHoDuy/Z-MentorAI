@@ -236,13 +236,12 @@ class CourseSearchTool:
         return []
 
     async def search_all(self, query: str) -> dict[str, list[dict]]:
-        """Queries all three platforms (Coursera, Udemy, YouTube) in parallel."""
-        tasks = [
-            self.search_coursera(query),
-            self.search_udemy(query),
-            self.search_youtube(query)
-        ]
-        coursera_res, udemy_res, youtube_res = await asyncio.gather(*tasks)
+        """Queries all three platforms (Coursera, Udemy, YouTube) with a brief delay to prevent DDG rate limits."""
+        coursera_res = await self.search_coursera(query)
+        await asyncio.sleep(0.5)
+        udemy_res = await self.search_udemy(query)
+        await asyncio.sleep(0.5)
+        youtube_res = await self.search_youtube(query)
         return {
             "coursera": coursera_res,
             "udemy": udemy_res,
