@@ -5,8 +5,8 @@ from course_search_tool import CourseSearchTool
 
 async def test_search():
     searcher = CourseSearchTool()
-    # Test with a business skill to verify metadata retrieval
-    skill = "Negotiation"
+    # Test with Cloud Engineering (user's preferred test skill)
+    skill = "Economic and finance decision making"
     
     print(f"\n==================================================")
     print(f"Selenium Edge Search for: '{skill}'")

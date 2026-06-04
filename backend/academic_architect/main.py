@@ -5,11 +5,10 @@ import asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# Import CourseSearchTool handling both local execution and Docker imports
-try:
-    from course_search_tool import CourseSearchTool
-except ImportError:
-    from backend.academic_architect.course_search_tool import CourseSearchTool
+import httpx
+
+VM_SERVER_URL = os.getenv("VM_SERVER_URL", "http://localhost:8080")
+
 
 app = FastAPI(title="Academic Architect Agent")
 
@@ -42,8 +41,17 @@ if llm is None:
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
     print("Using Gemini API Key-based ChatGoogleGenerativeAI")
 
-# Remove navigator.webdriver flag to bypass Cloudflare
-searcher = CourseSearchTool()
+async def search_courses_via_vm(query: str) -> dict:
+    url = f"{VM_SERVER_URL.rstrip('/')}/search"
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            response = await client.post(url, json={"query": query})
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error querying VM server for query '{query}': {e}")
+            # Fallback to empty results to prevent crashing the entire pipeline
+            return {"coursera": [], "edx": [], "youtube": []}
 
 async def filter_and_align_courses(courses_dict: dict, target_skill: str, career_goal: str) -> dict:
     """Uses the LLM to post-process, filter, and rank the crawled Coursera, edX, and YouTube results.
@@ -124,7 +132,7 @@ async def create_plan(request: ArchitectRequest):
             target_skills = [request.career_goal]
         
         # Step 2: Search for courses in parallel for each skill (retrieving 10 items per site)
-        search_tasks = [searcher.search_all(skill) for skill in target_skills]
+        search_tasks = [search_courses_via_vm(skill) for skill in target_skills]
         search_results = await asyncio.gather(*search_tasks)
         
         # Step 3: Post-process and filter search results for alignment
