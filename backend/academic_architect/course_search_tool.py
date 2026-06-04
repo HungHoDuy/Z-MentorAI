@@ -68,7 +68,7 @@ class CourseSearchTool:
                 # Fallback to general links
                 cards = driver.find_elements(By.CSS_SELECTOR, "a[href*='/learn/'], a[href*='/specializations/']")
             
-            for card in cards[:5]:
+            for card in cards[:10]:
                 try:
                     title = ""
                     url = ""
@@ -91,13 +91,34 @@ class CourseSearchTool:
                         if partner_elems:
                             partner = partner_elems[0].text
                             
-                        rating_elems = card.find_elements(By.CSS_SELECTOR, ".cds-CommonCard-ratings, [data-testid='rating-number']")
-                        if rating_elems:
-                            rating = rating_elems[0].text.split("\n")[0]
+                        # Try to parse rating and metadata from the footer first
+                        footer_elems = card.find_elements(By.CSS_SELECTOR, ".cds-ProductCard-footer, div.cds-ProductCard-footer")
+                        if footer_elems:
+                            footer_text = footer_elems[0].text
+                            footer_lines = [l.strip() for l in footer_text.split("\n") if l.strip() and l.strip() != "•"]
                             
-                        metadata_elems = card.find_elements(By.CSS_SELECTOR, ".cds-ProductCard-metadata, .metadata-item")
-                        if metadata_elems:
-                            duration = ", ".join(m.text for m in metadata_elems if m.text)
+                            if footer_lines:
+                                first_val = footer_lines[0]
+                                # Check if the first value looks like a rating (e.g. 4.8)
+                                import re
+                                if re.match(r"^\d(\.\d)?$", first_val):
+                                    rating = first_val
+                                    meta_start_idx = 2 if len(footer_lines) > 2 and "(" in footer_lines[1] else 1
+                                    meta_lines = footer_lines[meta_start_idx:]
+                                else:
+                                    meta_lines = footer_lines
+                                duration = " • ".join(meta_lines)
+                        
+                        # Fallback lookups if footer parsing returned empty
+                        if not rating:
+                            rating_elems = card.find_elements(By.CSS_SELECTOR, ".cds-CommonCard-ratings, [data-testid='rating-number']")
+                            if rating_elems:
+                                rating = rating_elems[0].text.split("\n")[0]
+                                
+                        if not duration:
+                            metadata_elems = card.find_elements(By.CSS_SELECTOR, ".cds-ProductCard-metadata, .metadata-item")
+                            if metadata_elems:
+                                duration = ", ".join(m.text for m in metadata_elems if m.text)
                     
                     if url and title:
                         results.append({
@@ -129,7 +150,7 @@ class CourseSearchTool:
             time.sleep(5)
             
             videos = driver.find_elements(By.CSS_SELECTOR, "ytd-video-renderer")
-            for video in videos[:5]:
+            for video in videos[:10]:
                 try:
                     title_elem = video.find_element(By.CSS_SELECTOR, "a#video-title")
                     title = title_elem.get_attribute("title") or title_elem.text
@@ -196,7 +217,7 @@ class CourseSearchTool:
                                 "rating": "N/A",
                                 "duration_details": f"{duration} • {level}"
                             })
-                            if len(results) >= 5:
+                            if len(results) >= 10:
                                 break
                 except Exception as parse_err:
                     pass
