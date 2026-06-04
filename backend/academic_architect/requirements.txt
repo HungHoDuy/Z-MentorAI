@@ -7,3 +7,4 @@ httpx
 beautifulsoup4
 langchain-google-genai
 langchain-google-vertexai
+selenium
