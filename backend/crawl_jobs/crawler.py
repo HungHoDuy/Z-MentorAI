@@ -11,8 +11,13 @@ from selenium.common.exceptions import TimeoutException
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Suppress noisy third-party libraries
+for name in ["selenium", "urllib3", "webdriver_manager", "wdm", "google"]:
+    logging.getLogger(name).setLevel(logging.WARNING)
 
 class CareerVietCrawler:
     def __init__(self, timeout: int = 15):

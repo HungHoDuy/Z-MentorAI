@@ -18,6 +18,12 @@ def main():
         except Exception:
             pass
 
+    # Suppress verbose third-party logging
+    import logging
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
+    for name in ["selenium", "urllib3", "webdriver_manager", "wdm", "google"]:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_page_jobs.json")
     
     # 1. Initialize Firestore client
