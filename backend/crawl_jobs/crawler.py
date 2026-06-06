@@ -202,6 +202,19 @@ class CareerVietCrawler:
         data["Cấp bậc"] = find_info_by_label("Cấp bậc")
         data["Hết hạn nộp"] = find_info_by_label("Hết hạn nộp")
 
+        # Extract Company
+        company = None
+        for sel in [".employer.job-company-name", ".job-company-name", ".employer", "a.employer"]:
+            try:
+                el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                txt = el.text.strip()
+                if txt:
+                    company = txt
+                    break
+            except Exception:
+                pass
+        data["company"] = company
+
         # Extract Phúc lợi (Benefits)
         benefits = []
         # Welfare list selectors
