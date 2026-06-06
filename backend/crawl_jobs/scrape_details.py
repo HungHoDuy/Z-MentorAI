@@ -24,7 +24,7 @@ def main():
     for name in ["selenium", "urllib3", "webdriver_manager", "wdm", "google"]:
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_page_jobs.json")
+    output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_page_jobs.jsonl")
     
     # 1. Initialize Firestore client
     try:
@@ -58,7 +58,6 @@ def main():
         return
 
     # 3. Load already scraped jobs from Firestore to support resume
-    scraped_jobs = []
     scraped_ids = set()
     print("Fetching already crawled job IDs from Firestore 'careerviet_jobs'...")
     try:
@@ -67,15 +66,6 @@ def main():
         print(f"Found {len(scraped_ids)} already crawled jobs in Firestore. Resuming from last attempt...")
     except Exception as e:
         print(f"Error reading existing jobs from Firestore: {e}. Starting fresh.")
-
-    # Try to load existing local backup jobs if the file exists, to keep local in sync
-    if os.path.exists(output_path):
-        try:
-            with open(output_path, "r", encoding="utf-8") as f:
-                scraped_jobs = json.load(f)
-            print(f"Loaded {len(scraped_jobs)} jobs from local backup {output_path}")
-        except Exception as e:
-            print(f"Error reading existing local backup: {e}")
 
     # 4. Filter remaining jobs
     remaining_jobs = [job for job in todo_list if job["job_id"] not in scraped_ids]
@@ -138,12 +128,11 @@ def main():
                         except Exception as fs_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore for {title}: {fs_err}")
                         
-                        # Save to local file backup
+                        # Save to local file backup (.jsonl)
                         try:
                             with file_lock:
-                                scraped_jobs.append(detail)
-                                with open(output_path, "w", encoding="utf-8") as f:
-                                    json.dump(scraped_jobs, f, indent=2, ensure_ascii=False)
+                                with open(output_path, "a", encoding="utf-8") as f:
+                                    f.write(json.dumps(detail, ensure_ascii=False) + "\n")
                         except Exception as file_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to write to local backup: {file_err}")
                                 
@@ -169,9 +158,8 @@ def main():
 
                                 try:
                                     with file_lock:
-                                        scraped_jobs.append(detail)
-                                        with open(output_path, "w", encoding="utf-8") as f:
-                                            json.dump(scraped_jobs, f, indent=2, ensure_ascii=False)
+                                        with open(output_path, "a", encoding="utf-8") as f:
+                                            f.write(json.dumps(detail, ensure_ascii=False) + "\n")
                                 except Exception as file_err:
                                     tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to write to local backup: {file_err}")
                         except Exception as restart_err:
