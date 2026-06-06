@@ -5,6 +5,7 @@ import time
 import threading
 from queue import Queue, Empty
 from tqdm import tqdm
+from google.cloud import firestore
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,32 +18,60 @@ def main():
         except Exception:
             pass
 
-    todo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "todo_crawl.json")
     output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_page_jobs.json")
     
-    # 1. Load todo list
-    if not os.path.exists(todo_path):
-        print(f"Error: {todo_path} does not exist. Please run extract_links.py first.")
+    # 1. Initialize Firestore client
+    try:
+        db = firestore.Client()
+        src_collection_name = "todo_careerviet"
+        dest_collection_name = "careerviet_jobs"
+    except Exception as e:
+        print(f"Error initializing Firestore client: {e}")
         return
-        
-    with open(todo_path, "r", encoding="utf-8") as f:
-        todo_list = json.load(f)
-        
-    print(f"Loaded {len(todo_list)} total jobs to crawl from {todo_path}")
 
-    # 2. Load already scraped jobs to support resume
+    # 2. Load todo list from Firestore
+    print("Loading todo list from Firestore 'todo_careerviet'...")
+    try:
+        todo_docs = db.collection(src_collection_name).stream()
+        todo_list = []
+        for doc in todo_docs:
+            data = doc.to_dict()
+            if "job_id" in data and "href" in data:
+                todo_list.append({
+                    "job_id": data["job_id"],
+                    "title": data.get("title", f"Job {data['job_id']}"),
+                    "href": data["href"]
+                })
+        print(f"Loaded {len(todo_list)} total jobs to crawl from Firestore.")
+    except Exception as e:
+        print(f"Error reading todo list from Firestore: {e}")
+        return
+
+    if not todo_list:
+        print("No jobs found to crawl in Firestore collection 'todo_careerviet'.")
+        return
+
+    # 3. Load already scraped jobs from Firestore to support resume
     scraped_jobs = []
     scraped_ids = set()
+    print("Fetching already crawled job IDs from Firestore 'careerviet_jobs'...")
+    try:
+        scraped_docs = db.collection(dest_collection_name).select([]).stream()
+        scraped_ids = {doc.id for doc in scraped_docs}
+        print(f"Found {len(scraped_ids)} already crawled jobs in Firestore. Resuming from last attempt...")
+    except Exception as e:
+        print(f"Error reading existing jobs from Firestore: {e}. Starting fresh.")
+
+    # Try to load existing local backup jobs if the file exists, to keep local in sync
     if os.path.exists(output_path):
         try:
             with open(output_path, "r", encoding="utf-8") as f:
                 scraped_jobs = json.load(f)
-                scraped_ids = {job["job_id"] for job in scraped_jobs}
-            print(f"Found {len(scraped_jobs)} already crawled jobs. Resuming from last attempt...")
+            print(f"Loaded {len(scraped_jobs)} jobs from local backup {output_path}")
         except Exception as e:
-            print(f"Error reading existing first_page_jobs.json: {e}. Starting fresh.")
+            print(f"Error reading existing local backup: {e}")
 
-    # 3. Filter remaining jobs
+    # 4. Filter remaining jobs
     remaining_jobs = [job for job in todo_list if job["job_id"] not in scraped_ids]
     print(f"Remaining jobs to crawl: {len(remaining_jobs)}")
     
@@ -50,7 +79,7 @@ def main():
         print("All jobs from todo list have already been crawled!")
         return
 
-    # 4. Threading variables
+    # 5. Threading variables
     file_lock = threading.Lock()
     job_queue = Queue()
     for job in remaining_jobs:
@@ -58,7 +87,7 @@ def main():
         
     stop_workers = False
     
-    # 5. Initialize tqdm progress bar
+    # 6. Initialize tqdm progress bar
     pbar = tqdm(total=len(remaining_jobs), desc="Scraping progress", unit="job")
     
     def worker_thread():
@@ -97,16 +126,25 @@ def main():
                     if detail:
                         detail["job_id"] = job_id
                         
-                        with file_lock:
-                            scraped_jobs.append(detail)
-                            with open(output_path, "w", encoding="utf-8") as f:
-                                json.dump(scraped_jobs, f, indent=2, ensure_ascii=False)
+                        # Save to Firestore
+                        try:
+                            db.collection(dest_collection_name).document(job_id).set(detail)
+                        except Exception as fs_err:
+                            tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore for {title}: {fs_err}")
+                        
+                        # Save to local file backup
+                        try:
+                            with file_lock:
+                                scraped_jobs.append(detail)
+                                with open(output_path, "w", encoding="utf-8") as f:
+                                    json.dump(scraped_jobs, f, indent=2, ensure_ascii=False)
+                        except Exception as file_err:
+                            tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to write to local backup: {file_err}")
                                 
                 except Exception as e:
                     is_session_dead = any(term in str(e).lower() for term in ["invalid session id", "session not created", "chrome not reachable", "disconnected", "no such window"])
                     
                     if is_session_dead:
-                        # Log message printed above progress bar
                         tqdm.write(f"\n[Worker-{threading.current_thread().name}] Session died. Restarting browser for job: {title}...")
                         try:
                             crawler.close()
@@ -117,10 +155,19 @@ def main():
                             detail = crawler.crawl_job_detail_by_url(job_info)
                             if detail:
                                 detail["job_id"] = job_id
-                                with file_lock:
-                                    scraped_jobs.append(detail)
-                                    with open(output_path, "w", encoding="utf-8") as f:
-                                        json.dump(scraped_jobs, f, indent=2, ensure_ascii=False)
+                                
+                                try:
+                                    db.collection(dest_collection_name).document(job_id).set(detail)
+                                except Exception as fs_err:
+                                    tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore on retry: {fs_err}")
+
+                                try:
+                                    with file_lock:
+                                        scraped_jobs.append(detail)
+                                        with open(output_path, "w", encoding="utf-8") as f:
+                                            json.dump(scraped_jobs, f, indent=2, ensure_ascii=False)
+                                except Exception as file_err:
+                                    tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to write to local backup: {file_err}")
                         except Exception as restart_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Restart failed: {restart_err}. Returning job to queue.")
                             job_queue.put(job_info)
@@ -168,8 +215,8 @@ def main():
         t.join(timeout=5.0)
         
     pbar.close()
-    print(f"\nDone. Successfully scraped {len(scraped_jobs)} total jobs.")
-    print(f"Result file: {output_path}")
+    print(f"\nDone. Successfully scraped and saved to Firestore.")
+    print(f"Local backup file: {output_path}")
 
 if __name__ == "__main__":
     main()
