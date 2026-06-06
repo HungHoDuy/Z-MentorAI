@@ -215,6 +215,19 @@ class CareerVietCrawler:
                 pass
         data["company"] = company
 
+        # Extract Job Title
+        job_title = None
+        for sel in [".title", "h1.title", "h2.title", ".job-title", "h1"]:
+            try:
+                el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                txt = el.text.strip()
+                if txt:
+                    job_title = txt
+                    break
+            except Exception:
+                pass
+        data["job_title"] = job_title
+
         # Extract Phúc lợi (Benefits)
         benefits = []
         # Welfare list selectors
@@ -377,7 +390,8 @@ class CareerVietCrawler:
             self.dismiss_popups()
             
             data = self.scrape_current_details()
-            data["job_title"] = title
+            if not data.get("job_title"):
+                data["job_title"] = title
             data["job_url"] = href
             return data
         except Exception as e:
