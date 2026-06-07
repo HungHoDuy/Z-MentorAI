@@ -32,3 +32,8 @@ backend/client_secret_*.json
 # Crawled data
 backend/crawl_jobs/*.json
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl

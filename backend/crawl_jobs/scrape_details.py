@@ -24,8 +24,7 @@ def main():
     for name in ["selenium", "urllib3", "webdriver_manager", "wdm", "google"]:
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_page_jobs.jsonl")
-    
+
     # 1. Initialize Firestore client
     try:
         db = firestore.Client()
@@ -127,14 +126,7 @@ def main():
                             db.collection(dest_collection_name).document(job_id).set(detail)
                         except Exception as fs_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore for {title}: {fs_err}")
-                        
-                        # Save to local file backup (.jsonl)
-                        try:
-                            with file_lock:
-                                with open(output_path, "a", encoding="utf-8") as f:
-                                    f.write(json.dumps(detail, ensure_ascii=False) + "\n")
-                        except Exception as file_err:
-                            tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to write to local backup: {file_err}")
+
                                 
                 except Exception as e:
                     is_session_dead = any(term in str(e).lower() for term in ["invalid session id", "session not created", "chrome not reachable", "disconnected", "no such window"])
@@ -156,12 +148,6 @@ def main():
                                 except Exception as fs_err:
                                     tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore on retry: {fs_err}")
 
-                                try:
-                                    with file_lock:
-                                        with open(output_path, "a", encoding="utf-8") as f:
-                                            f.write(json.dumps(detail, ensure_ascii=False) + "\n")
-                                except Exception as file_err:
-                                    tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to write to local backup: {file_err}")
                         except Exception as restart_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Restart failed: {restart_err}. Returning job to queue.")
                             job_queue.put(job_info)
@@ -210,7 +196,6 @@ def main():
         
     pbar.close()
     print(f"\nDone. Successfully scraped and saved to Firestore.")
-    print(f"Local backup file: {output_path}")
 
 if __name__ == "__main__":
     main()
