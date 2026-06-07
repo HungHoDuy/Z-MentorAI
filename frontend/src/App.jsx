@@ -55,6 +55,13 @@ const agentInfo = {
     themeClass: 'scanner',
     accent: '#2ce8d4'
   },
+  holland_test: {
+    label: 'Holland Test',
+    description: 'Đo nhóm RIASEC để gợi ý hướng nghề phù hợp với hồ sơ.',
+    icon: Compass,
+    themeClass: 'scanner',
+    accent: '#2ce8d4'
+  },
   market_scout: {
     label: 'Khảo Sát Thị Trường',
     description: 'Đọc nhu cầu tuyển dụng, xu hướng vai trò và tín hiệu đãi ngộ.',
@@ -77,6 +84,12 @@ const suggestedQuestions = [
     title: 'Quét hồ sơ',
     desc: 'Đánh giá nền tảng hiện tại và độ phù hợp kỹ năng',
     prompt: 'Hãy quét hồ sơ của tôi: tôi tự học lập trình, có 1 năm kinh nghiệm HTML/CSS, biết JavaScript cơ bản và muốn trở thành Frontend Engineer chuyên nghiệp.'
+  },
+  {
+    agent: 'holland_test',
+    title: 'Holland Test',
+    desc: 'Kiểm tra nhóm RIASEC và gợi ý hướng nghề phù hợp',
+    prompt: 'Tôi muốn làm Holland Test / RIASEC để xem nhóm nghề nghiệp nào phù hợp với tôi.'
   },
   {
     agent: 'market_scout',
@@ -131,7 +144,188 @@ function LoginChatTerminal() {
   );
 }
 
-function ToolCallWidget({ toolName, input, output, status }) {
+function normalizeToolOutput(output) {
+  if (!output) return null;
+  if (typeof output === 'object') return output;
+  if (typeof output !== 'string') return null;
+
+  try {
+    return JSON.parse(output);
+  } catch {
+    const jsonMatch = output.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+const riasecLabels = {
+  R: 'Realistic - Thực tế',
+  I: 'Investigative - Nghiên cứu',
+  A: 'Artistic - Nghệ thuật',
+  S: 'Social - Xã hội',
+  E: 'Enterprising - Dẫn dắt',
+  C: 'Conventional - Quy củ'
+};
+
+function HollandResultCard({ result }) {
+  const scores = result?.scores || {};
+  const topCode = result?.top_code || 'Đang cập nhật';
+  const answeredCount = result?.answered_count;
+  const hasScores = Object.keys(scores).length > 0;
+
+  return (
+    <div className="holland-result-card">
+      <div className="holland-result-header">
+        <div>
+          <div className="holland-eyebrow">Kết quả Holland Test</div>
+          <h3>{topCode}</h3>
+          <p>{result?.interpretation_vi || 'Agent đã ghi nhận kết quả bài test của bạn.'}</p>
+        </div>
+        {answeredCount && (
+          <div className="holland-result-count">
+            <strong>{answeredCount}</strong>
+            <span>câu đã trả lời</span>
+          </div>
+        )}
+      </div>
+
+      {hasScores && (
+        <div className="holland-score-list" aria-label="Điểm RIASEC">
+          {Object.entries(riasecLabels).map(([code, label]) => {
+            const score = Number(scores[code] || 0);
+            const percent = Math.round(score * 100);
+            return (
+              <div className="holland-score-row" key={code}>
+                <div className="holland-score-meta">
+                  <span>{code}</span>
+                  <strong>{label}</strong>
+                  <em>{percent}%</em>
+                </div>
+                <div className="holland-score-track">
+                  <div className="holland-score-fill" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolResultSummary({ output }) {
+  const normalizedOutput = normalizeToolOutput(output);
+  const text = normalizedOutput?.response
+    || normalizedOutput?.summary
+    || normalizedOutput?.message
+    || normalizedOutput?.content
+    || (typeof output === 'string' ? output : 'Agent đã hoàn tất bước xử lý.');
+
+  return (
+    <div className="tool-summary-card">
+      <CheckCircle2 size={16} />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function HollandTestForm({ output, onSendMessage }) {
+  const [answers, setAnswers] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const questions = output?.questions || [];
+  const latestResult = output?.latest_result;
+  const answeredCount = Object.keys(answers).length;
+  const isComplete = answeredCount === questions.length;
+
+  if (!questions.length) return null;
+
+  const handleSubmit = () => {
+    if (!isComplete || submitted) return;
+    const payload = questions.map((question) => ({
+      question_id: question.id,
+      score: answers[question.id]
+    }));
+    const displayText = `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
+    const backendText = [
+      'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng holland_test tool với answers_json sau:',
+      '```json',
+      JSON.stringify(payload, null, 2),
+      '```'
+    ].join('\n');
+    setSubmitted(true);
+    onSendMessage({
+      displayText,
+      backendText
+    });
+  };
+
+  return (
+    <div className="holland-form">
+      <div className="holland-form-header">
+        <div>
+          <div className="holland-eyebrow">Bài đánh giá RIASEC</div>
+          <h3>Holland Test</h3>
+          <p>Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.</p>
+        </div>
+        <div className="holland-progress">
+          <strong>{answeredCount}/{questions.length}</strong>
+          <span>đã trả lời</span>
+        </div>
+      </div>
+
+      {latestResult && (
+        <div className="holland-latest">
+          <span>Kết quả gần nhất</span>
+          <strong>{latestResult.top_code}</strong>
+          <small>{latestResult.interpretation_vi}</small>
+        </div>
+      )}
+
+      <div className="holland-scale">
+        <span>1 - Rất không giống</span>
+        <span>3 - Trung lập</span>
+        <span>5 - Rất giống</span>
+      </div>
+
+      <div className="holland-question-list">
+        {questions.map((question, index) => (
+          <div className="holland-question" key={question.id}>
+            <div className="holland-question-copy">
+              <span>{question.id}</span>
+              <p>{index + 1}. {question.text_vi}</p>
+            </div>
+            <div className="holland-rating" role="radiogroup" aria-label={question.text_vi}>
+              {[1, 2, 3, 4, 5].map((score) => (
+                <button
+                  key={score}
+                  className={answers[question.id] === score ? 'selected' : ''}
+                  onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: score }))}
+                  type="button"
+                  aria-pressed={answers[question.id] === score}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="holland-form-footer">
+        <span>{isComplete ? 'Sẵn sàng chấm điểm.' : `Còn ${questions.length - answeredCount} câu chưa trả lời.`}</span>
+        <button onClick={handleSubmit} disabled={!isComplete || submitted} type="button">
+          {submitted ? 'Đã gửi' : 'Gửi câu trả lời'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -139,6 +333,13 @@ function ToolCallWidget({ toolName, input, output, status }) {
     themeClass: 'default'
   };
   const Icon = info.icon;
+  const normalizedOutput = normalizeToolOutput(output);
+  const shouldRenderHollandForm = toolName === 'holland_test'
+    && normalizedOutput?.questions
+    && status === 'completed';
+  const shouldRenderHollandResult = toolName === 'holland_test'
+    && normalizedOutput?.top_code
+    && status === 'completed';
 
   return (
     <div className={`tool-call-widget ${info.themeClass}`}>
@@ -172,16 +373,15 @@ function ToolCallWidget({ toolName, input, output, status }) {
 
       {expanded && (
         <div className="tool-content">
-          {input && (
-            <div className="tool-section">
-              <div className="tool-section-title">Đầu vào agent</div>
-              <pre className="tool-json">{JSON.stringify(input, null, 2)}</pre>
-            </div>
-          )}
           {output && (
             <div className="tool-section">
-              <div className="tool-section-title">Kết quả agent</div>
-              <pre className="tool-json">{JSON.stringify(output, null, 2)}</pre>
+              {shouldRenderHollandForm ? (
+                <HollandTestForm output={normalizedOutput} onSendMessage={onSendMessage} />
+              ) : shouldRenderHollandResult ? (
+                <HollandResultCard result={normalizedOutput} />
+              ) : (
+                <ToolResultSummary output={output} />
+              )}
             </div>
           )}
         </div>
@@ -419,7 +619,7 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
   );
 }
 
-function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef }) {
+function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage }) {
   return (
     <div className="messages-feed">
       {messages.map((msg) => (
@@ -433,6 +633,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef }) {
               input={toolCall.input}
               output={toolCall.output}
               status={toolCall.status}
+              onSendMessage={onSendMessage}
             />
           ))}
 
@@ -552,6 +753,7 @@ function ChatWorkspace({
           isLoading={isLoading}
           activeAgents={activeAgents}
           messagesEndRef={messagesEndRef}
+          onSendMessage={onSendMessage}
         />
       )}
 
@@ -593,6 +795,7 @@ export default function App() {
   const textareaRef = useRef(null);
   const avatarInputRef = useRef(null);
   const cvInputRef = useRef(null);
+  const bootstrappedSessionsRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -729,10 +932,17 @@ export default function App() {
   }, [googleClientId, handleGoogleLoginResponse, user]);
 
   useEffect(() => {
-    if (user) {
-      fetchSessions();
+    if (!user) {
+      bootstrappedSessionsRef.current = null;
+      return;
     }
-  }, [fetchSessions, user]);
+
+    const bootstrapKey = `${backendUrl}:${user.google_id}`;
+    if (bootstrappedSessionsRef.current === bootstrapKey) return;
+
+    bootstrappedSessionsRef.current = bootstrapKey;
+    fetchSessions();
+  }, [backendUrl, fetchSessions, user]);
 
   const handleDeleteSession = async (sessionId, event) => {
     event.stopPropagation();
@@ -848,7 +1058,9 @@ export default function App() {
   };
 
   const handleSendMessage = useCallback(async (textToSend) => {
-    const query = (textToSend || inputValue).trim();
+    const structuredMessage = textToSend && typeof textToSend === 'object' ? textToSend : null;
+    const query = String(structuredMessage?.displayText || (!structuredMessage ? textToSend : '') || inputValue).trim();
+    const backendQuery = String(structuredMessage?.backendText || query).trim();
     const activeCvAttachment = cvAttachment;
     if ((!query && !activeCvAttachment) || isLoading || !activeSessionId || !user) return;
 
@@ -867,16 +1079,24 @@ export default function App() {
     } : null;
     const backendMessage = attachmentMeta
       ? `${messageText}\n\n[CV đã được đính kèm chờ xử lý: ${attachmentMeta.name}, ${attachmentMeta.label}, ${formatFileSize(attachmentMeta.size)}. Bước backend tiếp theo sẽ kết nối upload/lưu trữ qua GCS.]`
-      : messageText;
+      : backendQuery;
 
-    setMessages((prev) => [...prev, {
-      id: userMessageId,
-      role: 'user',
-      content: messageText,
-      attachment: attachmentMeta
-    }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: userMessageId,
+        role: 'user',
+        content: messageText,
+        attachment: attachmentMeta
+      },
+      {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        toolCalls: []
+      }
+    ]);
     setIsLoading(true);
-    setMessages((prev) => [...prev, { id: assistantMessageId, role: 'assistant', content: '', toolCalls: [] }]);
 
     try {
       const response = await fetch(`${backendUrl}/chat/stream`, {
@@ -896,12 +1116,16 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let rawStreamText = '';
+      const streamedToolCalls = new Map();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        const chunkText = decoder.decode(value, { stream: true });
+        rawStreamText += chunkText;
+        buffer += chunkText;
         const lines = buffer.split('\n');
         buffer = lines.pop();
 
@@ -913,6 +1137,12 @@ export default function App() {
             const data = JSON.parse(dataStr);
 
             if (data.type === 'tool_start') {
+              streamedToolCalls.set(data.tool, {
+                id: `${data.tool}-${Date.now()}`,
+                name: data.tool,
+                input: data.input,
+                status: 'running'
+              });
               setActiveAgents((prev) => [...new Set([...prev, data.tool])]);
               setMessages((prev) => prev.map((msg) => {
                 if (msg.id !== assistantMessageId) return msg;
@@ -929,9 +1159,30 @@ export default function App() {
                 };
               }));
             } else if (data.type === 'tool_end') {
+              const previousToolCall = streamedToolCalls.get(data.tool);
+              streamedToolCalls.set(data.tool, {
+                id: previousToolCall?.id || `${data.tool}-${Date.now()}`,
+                name: data.tool,
+                input: previousToolCall?.input || data.input,
+                output: data.output,
+                status: 'completed'
+              });
               setActiveAgents((prev) => prev.filter((tool) => tool !== data.tool));
               setMessages((prev) => prev.map((msg) => {
                 if (msg.id !== assistantMessageId) return msg;
+                const existingToolCall = msg.toolCalls.find((toolCall) => toolCall.name === data.tool);
+                if (!existingToolCall) {
+                  return {
+                    ...msg,
+                    toolCalls: [...msg.toolCalls, {
+                      id: `${data.tool}-${Date.now()}`,
+                      name: data.tool,
+                      input: data.input,
+                      output: data.output,
+                      status: 'completed'
+                    }]
+                  };
+                }
                 return {
                   ...msg,
                   toolCalls: msg.toolCalls.map((toolCall) => (
@@ -960,6 +1211,51 @@ export default function App() {
         }
       }
 
+      rawStreamText.split(/\r?\n/).forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) return;
+        try {
+          const data = JSON.parse(trimmed.slice(6));
+          if (data.type === 'tool_start' && !streamedToolCalls.has(data.tool)) {
+            streamedToolCalls.set(data.tool, {
+              id: `${data.tool}-${Date.now()}`,
+              name: data.tool,
+              input: data.input,
+              status: 'running'
+            });
+          }
+          if (data.type === 'tool_end') {
+            const previousToolCall = streamedToolCalls.get(data.tool);
+            streamedToolCalls.set(data.tool, {
+              id: previousToolCall?.id || `${data.tool}-${Date.now()}`,
+              name: data.tool,
+              input: previousToolCall?.input || data.input,
+              output: data.output,
+              status: 'completed'
+            });
+          }
+        } catch (err) {
+          console.error('Error replaying stream event:', line, err);
+        }
+      });
+
+      if (streamedToolCalls.size > 0) {
+        const finalToolCalls = Array.from(streamedToolCalls.values());
+        setMessages((prev) => prev.map((msg) => {
+          if (msg.id !== assistantMessageId) return msg;
+          const mergedToolCalls = [...msg.toolCalls];
+          finalToolCalls.forEach((toolCall) => {
+            const existingIndex = mergedToolCalls.findIndex((item) => item.name === toolCall.name);
+            if (existingIndex >= 0) {
+              mergedToolCalls[existingIndex] = { ...mergedToolCalls[existingIndex], ...toolCall };
+            } else {
+              mergedToolCalls.push(toolCall);
+            }
+          });
+          return { ...msg, toolCalls: mergedToolCalls };
+        }));
+      }
+
       await fetchSessions(true);
     } catch (err) {
       console.error('Lỗi streaming:', err);
@@ -986,7 +1282,11 @@ export default function App() {
   };
 
   if (!user) {
-    return <LoginScreen googleClientId={googleClientId} />;
+    return (
+      <LoginScreen
+        googleClientId={googleClientId}
+      />
+    );
   }
 
   const avatarSrc = user.custom_avatar || user.picture;

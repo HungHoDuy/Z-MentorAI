@@ -21,10 +21,12 @@ __pycache__/
 .Trashes
 ehthumbs.db
 Thumbs.db
+tmp-local-run-logs/
 
 # Database / User Profiles
 backend/orchestrator/users_db.json
 backend/orchestrator/chat_history_db.json
+backend/profile_scanner/holland_results_db.json
 
 # Secrets
 backend/client_secret_*.json

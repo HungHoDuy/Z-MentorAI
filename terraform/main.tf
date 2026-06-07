@@ -51,7 +51,14 @@ resource "google_service_account" "orchestrator_sa" {
   depends_on    = [google_project_service.apis]
 }
 
-# 3. Grant Firestore and Vertex AI access to Orchestrator SA
+# 3. Service Account for Profile Scanner Agent
+resource "google_service_account" "profile_scanner_sa" {
+  account_id   = "profile-scanner-runner"
+  display_name = "Service Account for Z-MentorAI Profile Scanner"
+  depends_on    = [google_project_service.apis]
+}
+
+# 4. Grant Firestore and Vertex AI access to runtime service accounts
 resource "google_project_iam_member" "firestore_access" {
   project    = var.project_id
   role       = "roles/datastore.user"
@@ -66,7 +73,14 @@ resource "google_project_iam_member" "vertex_access" {
   depends_on = [google_service_account.orchestrator_sa]
 }
 
-# 4. Cloud Run Services (V2)
+resource "google_project_iam_member" "profile_scanner_firestore_access" {
+  project    = var.project_id
+  role       = "roles/datastore.user"
+  member     = "serviceAccount:${google_service_account.profile_scanner_sa.email}"
+  depends_on = [google_service_account.profile_scanner_sa]
+}
+
+# 5. Cloud Run Services (V2)
 
 # A. Profile Scanner Agent
 resource "google_cloud_run_v2_service" "profile_scanner" {
@@ -74,13 +88,29 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
   location   = var.region
   project    = var.project_id
   ingress    = "INGRESS_TRAFFIC_ALL"
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.profile_scanner_firestore_access
+  ]
 
   template {
+    service_account = google_service_account.profile_scanner_sa.email
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.profile_scanner_image}"
       ports {
         container_port = 8080
+      }
+      env {
+        name  = "USE_FIRESTORE"
+        value = "true"
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = "(default)"
+      }
+      env {
+        name  = "HOLLAND_COLLECTION_NAME"
+        value = "profile_scanner_holland_assessments"
       }
     }
   }
@@ -195,7 +225,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   }
 }
 
-# 5. Make all Cloud Run Services Publicly Accessible (V2 IAM resources)
+# 6. Make all Cloud Run Services Publicly Accessible (V2 IAM resources)
 resource "google_cloud_run_v2_service_iam_member" "public_profile_scanner" {
   project  = google_cloud_run_v2_service.profile_scanner.project
   location = google_cloud_run_v2_service.profile_scanner.location
