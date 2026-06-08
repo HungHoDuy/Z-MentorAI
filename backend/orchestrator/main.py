@@ -1,7 +1,8 @@
 import os
 import json
+import re
 import datetime
-from typing import Optional
+from typing import Any, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import StreamingResponse
@@ -189,9 +190,122 @@ else:
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
     print("Using Gemini API Key-based ChatGoogleGenerativeAI")
 
-async def save_chat_exchange(google_id: str, session_id: str, user_message: str, assistant_message: str):
+def message_content_to_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return str(content)
+
+
+def serialize_tool_output(tool_output: Any) -> Any:
+    if hasattr(tool_output, "content"):
+        return tool_output.content
+
+    try:
+        json.dumps(tool_output)
+        return tool_output
+    except (TypeError, OverflowError):
+        return str(tool_output)
+
+
+def normalize_tool_output(output: Any) -> dict:
+    if isinstance(output, dict):
+        return output
+    if isinstance(output, list):
+        text_part = next(
+            (
+                part.get("text")
+                for part in output
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            ),
+            "",
+        )
+        return normalize_tool_output(text_part)
+    if isinstance(output, str):
+        try:
+            parsed = json.loads(output)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def summarize_tool_calls(tool_calls: list[dict]) -> str:
+    for tool_call in tool_calls:
+        output = normalize_tool_output(tool_call.get("output"))
+        if output.get("feature") == "holland_assessment":
+            if output.get("questions"):
+                return "Đã tạo biểu mẫu Holland Test."
+            if output.get("top_code"):
+                return "Đã chấm điểm Holland Test."
+    return "Agent đã hoàn tất bước xử lý."
+
+
+def sanitize_user_message_for_history(user_message: str) -> str:
+    content = (user_message or "").strip()
+    if not content:
+        return ""
+
+    if "holland_score" not in content and "answers_json" not in content:
+        return content
+
+    answered_count = None
+    json_match = (
+        re.search(r"```json\s*([\s\S]*?)\s*```", content)
+        or re.search(r"answers_json\s*(?:sau)?:\s*(\[[\s\S]*\])", content)
+    )
+    if json_match:
+        try:
+            answers = json.loads(json_match.group(1))
+            if isinstance(answers, list):
+                answered_count = len(answers)
+        except json.JSONDecodeError:
+            answered_count = None
+
+    if answered_count:
+        return (
+            f"Mình đã hoàn thành Holland Test với {answered_count} câu trả lời. "
+            "Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình."
+        )
+
+    return (
+        "Mình đã hoàn thành Holland Test. "
+        "Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình."
+    )
+
+
+def build_history_messages(session: Optional[dict]) -> list:
+    history_messages = []
+    if not session:
+        return history_messages
+
+    for msg in session.get("messages", []):
+        content = message_content_to_text(msg.get("content")).strip()
+        if not content:
+            continue
+
+        if msg.get("role") == "user":
+            history_messages.append(HumanMessage(content=content))
+        elif msg.get("role") == "assistant":
+            history_messages.append(AIMessage(content=content))
+
+    return history_messages
+
+
+async def save_chat_exchange(
+    google_id: str,
+    session_id: str,
+    user_message: str,
+    assistant_message: str,
+    assistant_tool_calls: Optional[list[dict]] = None,
+):
     session = await get_session_details(google_id, session_id)
     now = datetime.datetime.utcnow().isoformat() + "Z"
+    assistant_tool_calls = assistant_tool_calls or []
     
     if not session:
         session = {
@@ -201,8 +315,19 @@ async def save_chat_exchange(google_id: str, session_id: str, user_message: str,
             "messages": []
         }
     
-    session["messages"].append({"role": "user", "content": user_message})
-    session["messages"].append({"role": "assistant", "content": assistant_message})
+    stored_user_message = sanitize_user_message_for_history(user_message)
+    if stored_user_message:
+        session["messages"].append({"role": "user", "content": stored_user_message})
+
+    assistant_content = (assistant_message or "").strip()
+    if assistant_tool_calls and not assistant_content:
+        assistant_content = summarize_tool_calls(assistant_tool_calls)
+
+    if assistant_content or assistant_tool_calls:
+        assistant_record = {"role": "assistant", "content": assistant_content}
+        if assistant_tool_calls:
+            assistant_record["tool_calls"] = assistant_tool_calls
+        session["messages"].append(assistant_record)
     
     if session.get("title") == "New Chat":
         try:
@@ -372,6 +497,7 @@ def get_system_message(user_id: str) -> SystemMessage:
         "The Holland/RIASEC test is a Profile Scanner capability, not a separate agent. "
         "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
+        "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
@@ -384,17 +510,13 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
         try:
             session = await get_session_details(x_user_id, request.session_id)
             
-            history_messages = []
-            if session:
-                for msg in session.get("messages", []):
-                    if msg["role"] == "user":
-                        history_messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        history_messages.append(AIMessage(content=msg["content"]))
+            history_messages = build_history_messages(session)
             
             messages = [get_system_message(x_user_id)] + history_messages + [HumanMessage(content=request.message)]
             
             assistant_content = ""
+            assistant_tool_calls = []
+            running_tool_inputs = {}
             
             async for event in agent.astream_events({"messages": messages}, version="v2"):
                 event_type = event["event"]
@@ -402,18 +524,18 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                 
                 if event_type == "on_tool_start":
                     tool_input = event["data"].get("input")
+                    running_tool_inputs[name] = tool_input
                     yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': tool_input})}\n\n"
                 
                 elif event_type == "on_tool_end":
                     tool_output = event["data"].get("output")
-                    if hasattr(tool_output, "content"):
-                        serializable_output = tool_output.content
-                    else:
-                        try:
-                            json.dumps(tool_output)
-                            serializable_output = tool_output
-                        except (TypeError, OverflowError):
-                            serializable_output = str(tool_output)
+                    serializable_output = serialize_tool_output(tool_output)
+                    assistant_tool_calls.append({
+                        "name": name,
+                        "input": running_tool_inputs.get(name),
+                        "output": serializable_output,
+                        "status": "completed",
+                    })
                     yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': serializable_output})}\n\n"
                 
                 elif event_type == "on_chat_model_stream":
@@ -435,7 +557,13 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                                 yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
                                 
             # Save the exchange to history
-            await save_chat_exchange(x_user_id, request.session_id, request.message, assistant_content)
+            await save_chat_exchange(
+                x_user_id,
+                request.session_id,
+                request.message,
+                assistant_content,
+                assistant_tool_calls,
+            )
             
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
@@ -447,13 +575,7 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
     try:
         session = await get_session_details(x_user_id, request.session_id)
         
-        history_messages = []
-        if session:
-            for msg in session.get("messages", []):
-                if msg["role"] == "user":
-                    history_messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    history_messages.append(AIMessage(content=msg["content"]))
+        history_messages = build_history_messages(session)
         
         history_messages = trim_history(history_messages, limit=8000)
         messages = [get_system_message(x_user_id)] + history_messages + [HumanMessage(content=request.message)]

@@ -872,6 +872,15 @@
   cursor: not-allowed;
 }
 
+.holland-form-error {
+  padding: 0.7rem 1rem 0.9rem;
+  border-top: 1px solid rgba(220, 38, 38, 0.12);
+  background: #fff7f7;
+  color: #991b1b;
+  font-size: 0.78rem;
+  font-weight: 680;
+}
+
 .holland-result-card {
   overflow: hidden;
   border: 1px solid rgba(13, 148, 136, 0.18);

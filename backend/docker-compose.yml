@@ -8,11 +8,17 @@ services:
     env_file:
       - .env
     environment:
-      - MCP_SERVER_URL=http://mcp-server:8080/sse
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://mcp-server:8080/sse}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - USE_FIRESTORE=${USE_FIRESTORE:-false}
+      - USE_VERTEX_AI=${USE_VERTEX_AI:-false}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-z-mentorai}
     volumes:
       - ./orchestrator/users_db.json:/app/users_db.json
       - ./orchestrator/chat_history_db.json:/app/chat_history_db.json
+      - ${GCLOUD_CONFIG_DIR:-./.gcloud}:/root/.config/gcloud:ro
     depends_on:
       - mcp-server
 
@@ -25,9 +31,9 @@ services:
     env_file:
       - .env
     environment:
-      - PROFILE_SCANNER_URL=http://profile-scanner:8080
-      - MARKET_SCOUT_URL=http://market-scout:8080
-      - ACADEMIC_ARCHITECT_URL=http://academic-architect:8080
+      - PROFILE_SCANNER_URL=${PROFILE_SCANNER_URL:-http://profile-scanner:8080}
+      - MARKET_SCOUT_URL=${MARKET_SCOUT_URL:-http://market-scout:8080}
+      - ACADEMIC_ARCHITECT_URL=${ACADEMIC_ARCHITECT_URL:-http://academic-architect:8080}
     depends_on:
       - profile-scanner
       - market-scout
@@ -41,6 +47,14 @@ services:
       - "8001:8080"
     env_file:
       - .env
+    environment:
+      - USE_FIRESTORE=${USE_FIRESTORE:-false}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
+      - HOLLAND_COLLECTION_NAME=${HOLLAND_COLLECTION_NAME:-profile_scanner_holland_assessments}
+      - HOLLAND_RESULTS_PATH=${HOLLAND_RESULTS_PATH:-/app/holland_results_db.json}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-z-mentorai}
+    volumes:
+      - ${GCLOUD_CONFIG_DIR:-./.gcloud}:/root/.config/gcloud:ro
 
   market-scout:
     build:
