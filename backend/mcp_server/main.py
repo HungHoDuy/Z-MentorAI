@@ -1,5 +1,4 @@
 import os
-import json
 import httpx
 from fastmcp import FastMCP
 
@@ -17,14 +16,6 @@ def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     except Exception as exc:
         return {"error": str(exc)}
 
-def get_data_sync(url: str, endpoint: str) -> dict:
-    try:
-        response = httpx.get(f"{url}{endpoint}", timeout=10.0)
-        response.raise_for_status()
-        return response.json()
-    except Exception as exc:
-        return {"error": str(exc)}
-
 @mcp.tool()
 def profile_scanner(user_id: str, background_info: str) -> dict:
     """Use this tool to scan a user's CV or background to identify their likeliness, profession, and skills. 
@@ -32,32 +23,6 @@ def profile_scanner(user_id: str, background_info: str) -> dict:
     return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
         "user_id": user_id,
         "background_info": background_info
-    })
-
-@mcp.tool()
-def holland_test(user_id: str, answers_json: str = "") -> dict:
-    """Use this tool for Holland/RIASEC career-interest testing.
-
-    Call with an empty answers_json string when the user wants to start the test; it returns the question bank and scoring scale.
-    Call with answers_json when the user has answered. answers_json must be a JSON array like:
-    [{"question_id":"R1","score":5},{"question_id":"I1","score":4}]
-    Scores are integers from 1 to 5.
-    """
-    if not answers_json.strip():
-        return get_data_sync(PROFILE_SCANNER_URL, f"/holland/start/{user_id}")
-
-    try:
-        answers = json.loads(answers_json)
-    except json.JSONDecodeError as exc:
-        return {
-            "error": f"answers_json must be valid JSON: {exc}",
-            "expected_format": [{"question_id": "R1", "score": 5}]
-        }
-
-    return fetch_data_sync(PROFILE_SCANNER_URL, "/holland/score", {
-        "user_id": user_id,
-        "answers": answers,
-        "source": "orchestrator_chat"
     })
 
 @mcp.tool()
