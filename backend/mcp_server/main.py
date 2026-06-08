@@ -1,7 +1,11 @@
 import os
 import json
+import logging
 import httpx
 from fastmcp import FastMCP
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger("mcp_server")
 
 mcp = FastMCP("Agent MCP Server")
 
@@ -9,55 +13,107 @@ PROFILE_SCANNER_URL = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8
 MARKET_SCOUT_URL = os.getenv("MARKET_SCOUT_URL", "http://market-scout:8080")
 ACADEMIC_ARCHITECT_URL = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080")
 
+def _upstream_error_payload(
+    method: str,
+    url: str,
+    endpoint: str,
+    exc: Exception,
+    response: httpx.Response | None = None
+) -> dict:
+    payload = {
+        "status": "error",
+        "method": method,
+        "service_url": url,
+        "endpoint": endpoint,
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+    }
+    if response is not None:
+        payload.update({
+            "status_code": response.status_code,
+            "response_text": response.text[:500],
+        })
+    return payload
+
 def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
         response = httpx.post(f"{url}{endpoint}", json=payload, timeout=10.0)
         response.raise_for_status()
         return response.json()
+    except httpx.HTTPStatusError as exc:
+        error_payload = _upstream_error_payload("POST", url, endpoint, exc, exc.response)
+        logger.error("Upstream POST request failed", extra=error_payload)
+        return error_payload
     except Exception as exc:
-        return {"error": str(exc)}
+        error_payload = _upstream_error_payload("POST", url, endpoint, exc)
+        logger.exception("Upstream POST request failed", extra=error_payload)
+        return error_payload
 
 def get_data_sync(url: str, endpoint: str) -> dict:
     try:
         response = httpx.get(f"{url}{endpoint}", timeout=10.0)
         response.raise_for_status()
         return response.json()
+    except httpx.HTTPStatusError as exc:
+        error_payload = _upstream_error_payload("GET", url, endpoint, exc, exc.response)
+        logger.error("Upstream GET request failed", extra=error_payload)
+        return error_payload
     except Exception as exc:
-        return {"error": str(exc)}
+        error_payload = _upstream_error_payload("GET", url, endpoint, exc)
+        logger.exception("Upstream GET request failed", extra=error_payload)
+        return error_payload
 
 @mcp.tool()
-def profile_scanner(user_id: str, background_info: str) -> dict:
-    """Use this tool to scan a user's CV or background to identify their likeliness, profession, and skills. 
-    Call this agent if you want to know more about the user's current profile."""
-    return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
-        "user_id": user_id,
-        "background_info": background_info
-    })
+def profile_scanner(
+    user_id: str,
+    background_info: str = "",
+    task: str = "scan_profile",
+    answers_json: str = ""
+) -> dict:
+    """Use this Profile Scanner agent tool for CV/profile scanning and Holland/RIASEC career-interest assessment.
 
-@mcp.tool()
-def holland_test(user_id: str, answers_json: str = "") -> dict:
-    """Use this tool for Holland/RIASEC career-interest testing.
+    Supported task values:
+    - scan_profile: scan the user's CV/background/profile text.
+    - holland_start: start the Holland/RIASEC test and return the question bank.
+    - holland_score: score and save completed Holland/RIASEC answers.
 
-    Call with an empty answers_json string when the user wants to start the test; it returns the question bank and scoring scale.
-    Call with answers_json when the user has answered. answers_json must be a JSON array like:
+    For holland_score, answers_json must be a JSON array like:
     [{"question_id":"R1","score":5},{"question_id":"I1","score":4}]
     Scores are integers from 1 to 5.
     """
-    if not answers_json.strip():
+    normalized_task = task.strip().lower()
+
+    if normalized_task in {"holland", "holland_start", "riasec", "riasec_start"}:
         return get_data_sync(PROFILE_SCANNER_URL, f"/holland/start/{user_id}")
 
-    try:
-        answers = json.loads(answers_json)
-    except json.JSONDecodeError as exc:
-        return {
-            "error": f"answers_json must be valid JSON: {exc}",
-            "expected_format": [{"question_id": "R1", "score": 5}]
-        }
+    if normalized_task in {"holland_score", "riasec_score"} or answers_json.strip():
+        if not answers_json.strip():
+            return {
+                "status": "error",
+                "feature": "holland_assessment",
+                "error": "answers_json is required when task is holland_score.",
+                "expected_format": [{"question_id": "R1", "score": 5}]
+            }
 
-    return fetch_data_sync(PROFILE_SCANNER_URL, "/holland/score", {
+        try:
+            answers = json.loads(answers_json)
+        except json.JSONDecodeError as exc:
+            return {
+                "status": "error",
+                "feature": "holland_assessment",
+                "error": f"answers_json must be valid JSON: {exc}",
+                "expected_format": [{"question_id": "R1", "score": 5}]
+            }
+
+        return fetch_data_sync(PROFILE_SCANNER_URL, "/holland/score", {
+            "user_id": user_id,
+            "answers": answers,
+            "source": "orchestrator_chat"
+        })
+
+    return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
         "user_id": user_id,
-        "answers": answers,
-        "source": "orchestrator_chat"
+        "background_info": background_info
     })
 
 @mcp.tool()
