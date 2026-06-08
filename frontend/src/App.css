@@ -643,6 +643,37 @@
   color: #0f766e;
 }
 
+.tool-summary-card.error {
+  border-color: rgba(220, 38, 38, 0.16);
+  background: #fff7f7;
+  color: #7f1d1d;
+}
+
+.tool-summary-card.error svg {
+  color: #dc2626;
+}
+
+.tool-summary-card.error span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.tool-summary-card.error strong {
+  color: #991b1b;
+  font-weight: 760;
+}
+
+.tool-summary-card.error small {
+  color: #b45309;
+  font-size: 0.74rem;
+  font-weight: 680;
+}
+
+.tool-summary-card.error em {
+  color: #7f1d1d;
+  font-style: normal;
+}
+
 .holland-form {
   overflow: hidden;
   border: 1px solid rgba(13, 148, 136, 0.18);

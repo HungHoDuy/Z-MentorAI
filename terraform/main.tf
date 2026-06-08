@@ -48,14 +48,14 @@ resource "google_artifact_registry_repository" "repo" {
 resource "google_service_account" "orchestrator_sa" {
   account_id   = "orchestrator-runner"
   display_name = "Service Account for Z-MentorAI Orchestrator"
-  depends_on    = [google_project_service.apis]
+  depends_on   = [google_project_service.apis]
 }
 
 # 3. Service Account for Profile Scanner Agent
 resource "google_service_account" "profile_scanner_sa" {
   account_id   = "profile-scanner-runner"
   display_name = "Service Account for Z-MentorAI Profile Scanner"
-  depends_on    = [google_project_service.apis]
+  depends_on   = [google_project_service.apis]
 }
 
 # 4. Grant Firestore and Vertex AI access to runtime service accounts
@@ -80,14 +80,35 @@ resource "google_project_iam_member" "profile_scanner_firestore_access" {
   depends_on = [google_service_account.profile_scanner_sa]
 }
 
+# Firestore composite index required by:
+# profile_scanner_holland_assessments.where(user_id == X).order_by(created_at desc).limit(1)
+resource "google_firestore_index" "holland_assessments_by_user_created_at" {
+  project     = var.project_id
+  database    = "(default)"
+  collection  = "profile_scanner_holland_assessments"
+  query_scope = "COLLECTION"
+
+  fields {
+    field_path = "user_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 # 5. Cloud Run Services (V2)
 
 # A. Profile Scanner Agent
 resource "google_cloud_run_v2_service" "profile_scanner" {
-  name       = "profile-scanner"
-  location   = var.region
-  project    = var.project_id
-  ingress    = "INGRESS_TRAFFIC_ALL"
+  name     = "profile-scanner"
+  location = var.region
+  project  = var.project_id
+  ingress  = "INGRESS_TRAFFIC_ALL"
   depends_on = [
     google_project_service.apis,
     google_project_iam_member.profile_scanner_firestore_access
@@ -184,10 +205,10 @@ resource "google_cloud_run_v2_service" "mcp_server" {
 
 # E. Orchestrator Backend & Frontend host
 resource "google_cloud_run_v2_service" "orchestrator" {
-  name       = "orchestrator"
-  location   = var.region
-  project    = var.project_id
-  ingress    = "INGRESS_TRAFFIC_ALL"
+  name     = "orchestrator"
+  location = var.region
+  project  = var.project_id
+  ingress  = "INGRESS_TRAFFIC_ALL"
   depends_on = [
     google_project_service.apis,
     google_project_iam_member.firestore_access,

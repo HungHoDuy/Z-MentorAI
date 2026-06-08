@@ -55,13 +55,6 @@ const agentInfo = {
     themeClass: 'scanner',
     accent: '#2ce8d4'
   },
-  holland_test: {
-    label: 'Holland Test',
-    description: 'Đo nhóm RIASEC để gợi ý hướng nghề phù hợp với hồ sơ.',
-    icon: Compass,
-    themeClass: 'scanner',
-    accent: '#2ce8d4'
-  },
   market_scout: {
     label: 'Khảo Sát Thị Trường',
     description: 'Đọc nhu cầu tuyển dụng, xu hướng vai trò và tín hiệu đãi ngộ.',
@@ -86,7 +79,7 @@ const suggestedQuestions = [
     prompt: 'Hãy quét hồ sơ của tôi: tôi tự học lập trình, có 1 năm kinh nghiệm HTML/CSS, biết JavaScript cơ bản và muốn trở thành Frontend Engineer chuyên nghiệp.'
   },
   {
-    agent: 'holland_test',
+    agent: 'profile_scanner',
     title: 'Holland Test',
     desc: 'Kiểm tra nhóm RIASEC và gợi ý hướng nghề phù hợp',
     prompt: 'Tôi muốn làm Holland Test / RIASEC để xem nhóm nghề nghiệp nào phù hợp với tôi.'
@@ -146,6 +139,10 @@ function LoginChatTerminal() {
 
 function normalizeToolOutput(output) {
   if (!output) return null;
+  if (Array.isArray(output)) {
+    const textPart = output.find((part) => typeof part?.text === 'string');
+    return textPart ? normalizeToolOutput(textPart.text) : null;
+  }
   if (typeof output === 'object') return output;
   if (typeof output !== 'string') return null;
 
@@ -219,11 +216,34 @@ function HollandResultCard({ result }) {
 
 function ToolResultSummary({ output }) {
   const normalizedOutput = normalizeToolOutput(output);
+  const hasError = normalizedOutput?.status === 'error' || Boolean(normalizedOutput?.error);
+  const errorMeta = [
+    normalizedOutput?.method,
+    normalizedOutput?.endpoint,
+    normalizedOutput?.status_code ? `HTTP ${normalizedOutput.status_code}` : null
+  ].filter(Boolean).join(' · ');
+  const errorText = normalizedOutput?.message
+    || normalizedOutput?.detail
+    || normalizedOutput?.error
+    || 'Agent gặp lỗi khi xử lý yêu cầu.';
   const text = normalizedOutput?.response
     || normalizedOutput?.summary
     || normalizedOutput?.message
     || normalizedOutput?.content
     || (typeof output === 'string' ? output : 'Agent đã hoàn tất bước xử lý.');
+
+  if (hasError) {
+    return (
+      <div className="tool-summary-card error">
+        <AlertCircle size={16} />
+        <span>
+          <strong>Không thể hoàn tất bước xử lý.</strong>
+          {errorMeta && <small>{errorMeta}</small>}
+          <em>{errorText}</em>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="tool-summary-card">
@@ -251,7 +271,7 @@ function HollandTestForm({ output, onSendMessage }) {
     }));
     const displayText = `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
     const backendText = [
-      'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng holland_test tool với answers_json sau:',
+      'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
       '```json',
       JSON.stringify(payload, null, 2),
       '```'
@@ -334,19 +354,23 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   };
   const Icon = info.icon;
   const normalizedOutput = normalizeToolOutput(output);
-  const shouldRenderHollandForm = toolName === 'holland_test'
+  const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
+  const shouldRenderHollandForm = isHollandOutput
     && normalizedOutput?.questions
     && status === 'completed';
-  const shouldRenderHollandResult = toolName === 'holland_test'
+  const shouldRenderHollandResult = isHollandOutput
     && normalizedOutput?.top_code
     && status === 'completed';
+  const toolLabel = isHollandOutput && toolName === 'profile_scanner'
+    ? `${info.label} · Holland Test`
+    : info.label;
 
   return (
     <div className={`tool-call-widget ${info.themeClass}`}>
       <button className="tool-call-header" onClick={() => setExpanded(!expanded)} type="button">
         <div className="tool-title">
           <Icon size={16} />
-          <span>{info.label}</span>
+          <span>{toolLabel}</span>
         </div>
         <div className="tool-status">
           {status === 'running' && (

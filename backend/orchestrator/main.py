@@ -367,11 +367,12 @@ async def delete_session(session_id: str, x_user_id: str = Header(...)):
 def get_system_message(user_id: str) -> SystemMessage:
     return SystemMessage(content=(
         "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
-        "You have access to specialized agents as tools: Profile Scanner, Holland Test, Market Scout, and Academic Architect. "
-        f"The current user's User ID (Google ID) is '{user_id}'. You must use this user ID string when calling the profile_scanner or holland_test tools. "
-        "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call the holland_test tool. "
-        "Call holland_test with an empty answers_json string to start the test and return the questions. "
-        "When the user provides answers, convert them into the required answers_json array and call holland_test again to score and save the result. "
+        "You have access to three specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
+        f"The current user's User ID (Google ID) is '{user_id}'. You must use this user ID string when calling tools. "
+        "The Holland/RIASEC test is a Profile Scanner capability, not a separate agent. "
+        "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
+        "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
+        "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
         "If you need more information from the user before you can use a tool, ask them directly."
