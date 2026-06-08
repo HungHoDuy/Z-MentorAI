@@ -159,6 +159,44 @@ function normalizeToolOutput(output) {
   }
 }
 
+function normalizeStoredToolCalls(toolCalls = []) {
+  if (!Array.isArray(toolCalls)) return [];
+
+  return toolCalls.map((toolCall, index) => ({
+    id: toolCall.id || `${toolCall.name || toolCall.tool || 'tool'}-${index}`,
+    name: toolCall.name || toolCall.tool,
+    input: toolCall.input,
+    output: toolCall.output,
+    status: toolCall.status || 'completed'
+  })).filter((toolCall) => toolCall.name);
+}
+
+function hasHollandInteractiveToolCall(toolCalls = []) {
+  return toolCalls.some((toolCall) => {
+    const output = normalizeToolOutput(toolCall.output);
+    return output?.feature === 'holland_assessment'
+      && (output?.questions || output?.top_code);
+  });
+}
+
+function getVisibleToolCalls(toolCalls = []) {
+  const hasSuccessfulHollandResult = toolCalls.some((toolCall) => {
+    const output = normalizeToolOutput(toolCall.output);
+    return output?.feature === 'holland_assessment' && output?.top_code;
+  });
+
+  if (!hasSuccessfulHollandResult) return toolCalls;
+
+  return toolCalls.filter((toolCall) => {
+    const output = normalizeToolOutput(toolCall.output);
+    const isSupersededHollandError = output?.feature === 'holland_assessment'
+      && (output?.status === 'error' || output?.error)
+      && !output?.questions
+      && !output?.top_code;
+    return !isSupersededHollandError;
+  });
+}
+
 const riasecLabels = {
   R: 'Realistic - Thực tế',
   I: 'Investigative - Nghiên cứu',
@@ -256,6 +294,8 @@ function ToolResultSummary({ output }) {
 function HollandTestForm({ output, onSendMessage }) {
   const [answers, setAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const questions = output?.questions || [];
   const latestResult = output?.latest_result;
   const answeredCount = Object.keys(answers).length;
@@ -263,8 +303,8 @@ function HollandTestForm({ output, onSendMessage }) {
 
   if (!questions.length) return null;
 
-  const handleSubmit = () => {
-    if (!isComplete || submitted) return;
+  const handleSubmit = async () => {
+    if (!isComplete || submitted || submitting) return;
     const payload = questions.map((question) => ({
       question_id: question.id,
       score: answers[question.id]
@@ -276,11 +316,18 @@ function HollandTestForm({ output, onSendMessage }) {
       JSON.stringify(payload, null, 2),
       '```'
     ].join('\n');
-    setSubmitted(true);
-    onSendMessage({
+    setSubmitting(true);
+    setSubmitError('');
+    const ok = await onSendMessage({
       displayText,
       backendText
     });
+    setSubmitting(false);
+    if (ok) {
+      setSubmitted(true);
+    } else {
+      setSubmitError('Chưa gửi được câu trả lời. Vui lòng thử lại sau khi agent hoàn tất hoặc kiểm tra kết nối backend.');
+    }
   };
 
   return (
@@ -337,10 +384,11 @@ function HollandTestForm({ output, onSendMessage }) {
 
       <div className="holland-form-footer">
         <span>{isComplete ? 'Sẵn sàng chấm điểm.' : `Còn ${questions.length - answeredCount} câu chưa trả lời.`}</span>
-        <button onClick={handleSubmit} disabled={!isComplete || submitted} type="button">
-          {submitted ? 'Đã gửi' : 'Gửi câu trả lời'}
+        <button onClick={handleSubmit} disabled={!isComplete || submitted || submitting} type="button">
+          {submitted ? 'Đã gửi' : submitting ? 'Đang gửi...' : 'Gửi câu trả lời'}
         </button>
       </div>
+      {submitError && <div className="holland-form-error">{submitError}</div>}
     </div>
   );
 }
@@ -646,35 +694,41 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
 function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage }) {
   return (
     <div className="messages-feed">
-      {messages.map((msg) => (
-        <div key={msg.id} className={`message-wrapper ${msg.role}`}>
-          <div className="message-header">{msg.role === 'user' ? 'Bạn' : 'Điều phối viên'}</div>
+      {messages.map((msg) => {
+        const visibleToolCalls = getVisibleToolCalls(msg.toolCalls || []);
+        const hideAssistantContent = msg.role === 'assistant'
+          && hasHollandInteractiveToolCall(visibleToolCalls);
 
-          {msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.map((toolCall) => (
-            <ToolCallWidget
-              key={toolCall.id}
-              toolName={toolCall.name}
-              input={toolCall.input}
-              output={toolCall.output}
-              status={toolCall.status}
-              onSendMessage={onSendMessage}
-            />
-          ))}
+        return (
+          <div key={msg.id} className={`message-wrapper ${msg.role}`}>
+            <div className="message-header">{msg.role === 'user' ? 'Bạn' : 'Điều phối viên'}</div>
 
-          {(msg.content || msg.role === 'user') && (
-            <div className="message-bubble">
-              {msg.role === 'user' ? (
-                <>
-                  {msg.attachment && <CvAttachmentChip attachment={msg.attachment} compact />}
-                  <p>{msg.content}</p>
-                </>
-              ) : (
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+            {msg.role === 'assistant' && visibleToolCalls.map((toolCall) => (
+              <ToolCallWidget
+                key={toolCall.id}
+                toolName={toolCall.name}
+                input={toolCall.input}
+                output={toolCall.output}
+                status={toolCall.status}
+                onSendMessage={onSendMessage}
+              />
+            ))}
+
+            {!hideAssistantContent && (msg.content || msg.role === 'user') && (
+              <div className="message-bubble">
+                {msg.role === 'user' ? (
+                  <>
+                    {msg.attachment && <CvAttachmentChip attachment={msg.attachment} compact />}
+                    <p>{msg.content}</p>
+                  </>
+                ) : (
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {isLoading && activeAgents.length === 0 && (
         <div className="thinking-wrapper">
@@ -873,7 +927,7 @@ export default function App() {
         id: `msg-${idx}-${Date.now()}`,
         role: message.role,
         content: message.content,
-        toolCalls: []
+        toolCalls: normalizeStoredToolCalls(message.tool_calls || message.toolCalls)
       }));
       setMessages(uiMessages);
     } catch (err) {
@@ -1086,7 +1140,7 @@ export default function App() {
     const query = String(structuredMessage?.displayText || (!structuredMessage ? textToSend : '') || inputValue).trim();
     const backendQuery = String(structuredMessage?.backendText || query).trim();
     const activeCvAttachment = cvAttachment;
-    if ((!query && !activeCvAttachment) || isLoading || !activeSessionId || !user) return;
+    if ((!query && !activeCvAttachment) || isLoading || !activeSessionId || !user) return false;
 
     if (!textToSend) setInputValue('');
     if (activeCvAttachment) setCvAttachment(null);
@@ -1141,6 +1195,7 @@ export default function App() {
       const decoder = new TextDecoder();
       let buffer = '';
       let rawStreamText = '';
+      let streamError = '';
       const streamedToolCalls = new Map();
 
       while (true) {
@@ -1223,6 +1278,7 @@ export default function App() {
                   : msg
               )));
             } else if (data.type === 'error') {
+              streamError = data.content || 'Agent gặp lỗi khi xử lý yêu cầu.';
               setMessages((prev) => prev.map((msg) => (
                 msg.id === assistantMessageId
                   ? { ...msg, content: `${msg.content}\n\n*Lỗi agent: ${data.content}*` }
@@ -1280,7 +1336,10 @@ export default function App() {
         }));
       }
 
+      if (streamError) return false;
+
       await fetchSessions(true);
+      return true;
     } catch (err) {
       console.error('Lỗi streaming:', err);
       setMessages((prev) => prev.map((msg) => {
@@ -1292,6 +1351,7 @@ export default function App() {
             : `Không thể kết nối tới Orchestrator tại ${backendUrl}. Hãy kiểm tra backend server và cấu hình CORS.`
         };
       }));
+      return false;
     } finally {
       setIsLoading(false);
       setActiveAgents([]);
