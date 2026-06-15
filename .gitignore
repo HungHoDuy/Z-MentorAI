@@ -6,6 +6,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+backend/market_scout/service_account.json
 
 # Python
 __pycache__/

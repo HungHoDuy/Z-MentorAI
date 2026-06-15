@@ -3,3 +3,6 @@ uvicorn
 langchain
 langchain-core
 pydantic
+selenium
+pytest
+google-cloud-firestore
