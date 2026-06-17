@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.market_scout.flows import SalaryBenchmarkFlow
-from backend.market_scout.services import SalarySummaryService
+from backend.market_scout.services.salary_summary_service import SalarySummaryService
 
 
 def parse_args() -> argparse.Namespace:
