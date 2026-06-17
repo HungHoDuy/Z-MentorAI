@@ -51,3 +51,9 @@ variable "academic_architect_image" {
   description = "Docker image for the academic architect agent."
   default     = "academic-architect:latest"
 }
+
+variable "profile_scanner_cv_bucket_name" {
+  type        = string
+  description = "Private GCS bucket for Profile Scanner CV uploads."
+  default     = "z-mentorai-profile-scanner-cv"
+}
