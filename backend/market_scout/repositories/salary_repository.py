@@ -8,14 +8,7 @@ from backend.market_scout.schemas.salary import SalaryJobRecord, SalarySearchQue
 from backend.market_scout.services.salary_query_normalizer import SalaryQueryNormalizer
 
 
-DEFAULT_CLEANED_COLLECTION = "data_for_vectorize"
-DEFAULT_LOCATION_FIELD = "Địa điểm làm việc"
-DEFAULT_MIN_EXPERIENCE_FIELD = "min_experience"
-DEFAULT_MIN_SALARY_FIELD = "min_salary"
-DEFAULT_JOB_TITLE_FIELD = "job_title"
-DEFAULT_JOB_TITLE_NORMALIZED_FIELD = "job_title_normalized"
-DEFAULT_JOB_TITLE_SEARCH_KEYS_FIELD = "job_title_search_keys"
-DEFAULT_SALARY_SEARCH_KEYS_FIELD = "salary_search_keys"
+DEFAULT_CLEANED_COLLECTION = "cleaned_jobs"
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
@@ -36,31 +29,10 @@ class SalaryRepository:
             DEFAULT_CLEANED_COLLECTION,
         )
         self.normalizer = normalizer or SalaryQueryNormalizer()
-        self.location_field = env_or_default("MARKET_SCOUT_LOCATION_FIELD", DEFAULT_LOCATION_FIELD)
-        self.min_experience_field = env_or_default("MARKET_SCOUT_MIN_EXPERIENCE_FIELD", DEFAULT_MIN_EXPERIENCE_FIELD)
-        self.min_salary_field = env_or_default("MARKET_SCOUT_MIN_SALARY_FIELD", DEFAULT_MIN_SALARY_FIELD)
-        self.job_title_field = env_or_default("MARKET_SCOUT_JOB_TITLE_FIELD", DEFAULT_JOB_TITLE_FIELD)
-        self.job_title_normalized_field = env_or_default(
-            "MARKET_SCOUT_JOB_TITLE_NORMALIZED_FIELD",
-            DEFAULT_JOB_TITLE_NORMALIZED_FIELD,
-        )
-        self.job_title_search_keys_field = env_or_default(
-            "MARKET_SCOUT_JOB_TITLE_SEARCH_KEYS_FIELD",
-            DEFAULT_JOB_TITLE_SEARCH_KEYS_FIELD,
-        )
-        self.salary_search_keys_field = env_or_default(
-            "MARKET_SCOUT_SALARY_SEARCH_KEYS_FIELD",
-            DEFAULT_SALARY_SEARCH_KEYS_FIELD,
-        )
-        self.title_filter_mode = env_or_default("MARKET_SCOUT_TITLE_FILTER_MODE", "index").lower()
 
     def list_records(self, *, limit: int | None = None, require_salary: bool = True) -> list[SalaryJobRecord]:
         records: list[SalaryJobRecord] = []
         query = self.firestore_client.collection(self.collection_name)
-        if require_salary:
-            query = apply_where(query, self.min_salary_field, ">", 0)
-        if limit is not None:
-            query = query.limit(limit)
 
         for snapshot in query.stream():
             record = SalaryJobRecord.from_firestore(snapshot.id, snapshot.to_dict() or {})
@@ -83,15 +55,9 @@ class SalaryRepository:
         require_salary: bool = True,
     ) -> list[SalaryJobRecord]:
         search_query = self.normalizer.extract(query) if isinstance(query, str) else query
-        firestore_query = self._build_firestore_query(search_query, require_salary=require_salary, limit=limit)
 
         matched_records: list[SalaryJobRecord] = []
-        for snapshot in firestore_query.stream():
-            record = SalaryJobRecord.from_firestore(snapshot.id, snapshot.to_dict() or {})
-            if record is None:
-                continue
-            if require_salary and not record.has_salary:
-                continue
+        for record in self.list_records(require_salary=require_salary):
             if not self._matches_query(record, search_query):
                 continue
 
@@ -100,67 +66,6 @@ class SalaryRepository:
                 break
 
         return matched_records
-
-    def _build_firestore_query(
-        self,
-        query: SalarySearchQuery,
-        *,
-        require_salary: bool,
-        limit: int | None,
-    ) -> Any:
-        firestore_query = self.firestore_client.collection(self.collection_name)
-
-        if require_salary:
-            firestore_query = apply_where(firestore_query, self.min_salary_field, ">", 0)
-
-        uses_composite_title_location_index = (
-            self.title_filter_mode == "index"
-            and query.job_title_normalized
-            and query.location_normalized
-        )
-
-        if query.location and not uses_composite_title_location_index:
-            firestore_query = apply_where(firestore_query, self.location_field, "array_contains", query.location)
-
-        if query.experience_years is not None:
-            firestore_query = apply_where(
-                firestore_query,
-                self.min_experience_field,
-                "<=",
-                query.experience_years,
-            )
-
-        if self.title_filter_mode == "index" and query.job_title_normalized:
-            if query.location_normalized:
-                salary_search_key = self.normalizer.build_query_salary_key(query)
-                firestore_query = apply_where(
-                    firestore_query,
-                    self.salary_search_keys_field,
-                    "array_contains",
-                    salary_search_key,
-                )
-            else:
-                title_search_key = self.normalizer.build_query_title_key(query)
-                firestore_query = apply_where(
-                    firestore_query,
-                    self.job_title_search_keys_field,
-                    "array_contains",
-                    title_search_key,
-                )
-        elif self.title_filter_mode == "exact" and query.job_title:
-            firestore_query = apply_where(firestore_query, self.job_title_field, "==", query.job_title)
-        elif self.title_filter_mode == "normalized" and query.job_title_normalized:
-            firestore_query = apply_where(
-                firestore_query,
-                self.job_title_normalized_field,
-                "==",
-                query.job_title_normalized,
-            )
-
-        if limit is not None:
-            firestore_query = firestore_query.limit(limit)
-
-        return firestore_query
 
     def _matches_query(self, record: SalaryJobRecord, query: SalarySearchQuery) -> bool:
         if not self.normalizer.title_matches(record.job_title, query.job_title):
@@ -203,17 +108,6 @@ def load_env_file(env_file: Path = ENV_FILE) -> None:
 def env_or_default(name: str, default: str) -> str:
     value = os.getenv(name)
     return value.strip() if value and value.strip() else default
-
-
-def apply_where(query: Any, field_path: str, operator: str, value: Any) -> Any:
-    try:
-        from google.cloud.firestore_v1.base_query import FieldFilter
-
-        return query.where(filter=FieldFilter(field_path, operator, value))
-    except TypeError:
-        return query.where(field_path, operator, value)
-    except ImportError:
-        return query.where(field_path, operator, value)
 
 
 def build_firestore_client() -> Any:
