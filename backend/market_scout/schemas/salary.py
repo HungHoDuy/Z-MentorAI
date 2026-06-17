@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -138,18 +137,13 @@ def _to_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     if isinstance(value, int | float):
-        if isinstance(value, float) and math.isnan(value):
-            return None
         return float(value)
 
     text = str(value).strip().replace(",", ".")
     try:
-        number = float(text)
+        return float(text)
     except ValueError:
         return None
-    if math.isnan(number):
-        return None
-    return number
 
 
 def _to_int(value: Any) -> int | None:
