@@ -24,7 +24,8 @@ locals {
     "run.googleapis.com",
     "artifactregistry.googleapis.com",
     "aiplatform.googleapis.com",
-    "firestore.googleapis.com"
+    "firestore.googleapis.com",
+    "storage.googleapis.com"
   ]
 }
 
@@ -80,6 +81,25 @@ resource "google_project_iam_member" "profile_scanner_firestore_access" {
   depends_on = [google_service_account.profile_scanner_sa]
 }
 
+resource "google_storage_bucket" "profile_scanner_cv_bucket" {
+  name                        = var.profile_scanner_cv_bucket_name
+  location                    = var.region
+  project                     = var.project_id
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  depends_on                  = [google_project_service.apis]
+
+  versioning {
+    enabled = true
+  }
+}
+
+resource "google_storage_bucket_iam_member" "profile_scanner_cv_bucket_object_user" {
+  bucket = google_storage_bucket.profile_scanner_cv_bucket.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.profile_scanner_sa.email}"
+}
+
 # Firestore composite index required by:
 # profile_scanner_holland_assessments.where(user_id == X).order_by(created_at desc).limit(1)
 resource "google_firestore_index" "holland_assessments_by_user_created_at" {
@@ -111,7 +131,8 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
   ingress  = "INGRESS_TRAFFIC_ALL"
   depends_on = [
     google_project_service.apis,
-    google_project_iam_member.profile_scanner_firestore_access
+    google_project_iam_member.profile_scanner_firestore_access,
+    google_storage_bucket_iam_member.profile_scanner_cv_bucket_object_user
   ]
 
   template {
@@ -132,6 +153,18 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
       env {
         name  = "HOLLAND_COLLECTION_NAME"
         value = "profile_scanner_holland_assessments"
+      }
+      env {
+        name  = "CV_STORAGE_BUCKET"
+        value = google_storage_bucket.profile_scanner_cv_bucket.name
+      }
+      env {
+        name  = "CV_DOCUMENTS_COLLECTION"
+        value = "profile_scanner_cv_documents"
+      }
+      env {
+        name  = "CV_MAX_FILE_SIZE_BYTES"
+        value = "10485760"
       }
     }
   }
@@ -225,6 +258,10 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       env {
         name  = "MCP_SERVER_URL"
         value = "${google_cloud_run_v2_service.mcp_server.uri}/sse"
+      }
+      env {
+        name  = "PROFILE_SCANNER_URL"
+        value = google_cloud_run_v2_service.profile_scanner.uri
       }
       env {
         name  = "USE_FIRESTORE"

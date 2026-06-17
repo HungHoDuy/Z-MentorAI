@@ -10,3 +10,4 @@ mcp
 google-auth
 google-cloud-firestore
 langchain-google-vertexai
+python-multipart
