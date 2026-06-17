@@ -6,3 +6,6 @@ pydantic
 selenium
 pytest
 google-cloud-firestore
+google-cloud-aiplatform
+langchain-google-firestore
+langchain-google-vertexai

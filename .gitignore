@@ -1,5 +1,6 @@
 # Environments
 .env
+*.env
 .venv
 env/
 venv/
@@ -22,3 +23,25 @@ __pycache__/
 .Trashes
 ehthumbs.db
 Thumbs.db
+tmp-local-run-logs/
+frontend-dev*.log
+
+# Database / User Profiles
+backend/orchestrator/users_db.json
+backend/orchestrator/chat_history_db.json
+backend/profile_scanner/holland_results_db.json
+
+# Secrets
+backend/client_secret_*.json
+
+# Crawled data
+backend/crawl_jobs/*.json
+
+# Terraform
+.terraform/
+tfplan
+*.tfplan
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+

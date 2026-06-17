@@ -3,3 +3,4 @@ uvicorn
 langchain
 langchain-core
 pydantic
+google-cloud-firestore

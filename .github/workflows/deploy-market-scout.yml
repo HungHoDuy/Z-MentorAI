@@ -1,0 +1,19 @@
+name: Deploy Market Scout
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/market_scout/**'
+      - '.github/workflows/deploy-market-scout.yml'
+      - '.github/workflows/reusable-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service_name: market-scout
+      build_context: ./backend/market_scout
+    secrets: inherit
