@@ -4,13 +4,14 @@ import re
 import datetime
 from typing import Any, Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from langgraph.prebuilt import create_react_agent
 import uuid
+import httpx
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from google.oauth2 import id_token
@@ -165,6 +166,7 @@ async def delete_user_session(google_id: str, session_id: str) -> bool:
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default_session"
+    attachment: Optional[dict[str, Any]] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -302,6 +304,7 @@ async def save_chat_exchange(
     user_message: str,
     assistant_message: str,
     assistant_tool_calls: Optional[list[dict]] = None,
+    user_attachment: Optional[dict[str, Any]] = None,
 ):
     session = await get_session_details(google_id, session_id)
     now = datetime.datetime.utcnow().isoformat() + "Z"
@@ -315,9 +318,18 @@ async def save_chat_exchange(
             "messages": []
         }
     
-    stored_user_message = sanitize_user_message_for_history(user_message)
+    if user_attachment:
+        stored_user_message = next(
+            (line.strip() for line in (user_message or "").splitlines() if line.strip()),
+            "",
+        )
+    else:
+        stored_user_message = sanitize_user_message_for_history(user_message)
     if stored_user_message:
-        session["messages"].append({"role": "user", "content": stored_user_message})
+        user_record = {"role": "user", "content": stored_user_message}
+        if user_attachment:
+            user_record["attachment"] = user_attachment
+        session["messages"].append(user_record)
 
     assistant_content = (assistant_message or "").strip()
     if assistant_tool_calls and not assistant_content:
@@ -452,6 +464,52 @@ async def auth_upload_avatar(request: UploadAvatarRequest):
     await save_user(request.google_id, user)
     return user
 
+
+@app.post("/profile-scanner/cv/upload")
+async def upload_cv_to_profile_scanner(
+    file: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
+    target_role: Optional[str] = Form(None),
+    message: Optional[str] = Form(None),
+    x_user_id: str = Header(...),
+):
+    profile_scanner_url = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
+    endpoint = f"{profile_scanner_url}/cv/intake"
+    content = await file.read()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                endpoint,
+                data={
+                    "user_id": x_user_id,
+                    "session_id": session_id or "",
+                    "target_role": target_role or "",
+                    "message": message or "",
+                },
+                files={
+                    "file": (
+                        file.filename or "cv",
+                        content,
+                        file.content_type or "application/octet-stream",
+                    )
+                },
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to reach Profile Scanner CV intake service: {exc}",
+        ) from exc
+
+    if response.status_code >= 400:
+        try:
+            detail = response.json()
+        except Exception:
+            detail = response.text
+        raise HTTPException(status_code=response.status_code, detail=detail)
+
+    return response.json()
+
 def trim_history(messages_list: list, limit: int = 8000) -> list:
     while len(messages_list) > 0:
         total_tokens = sum(llm.get_num_tokens(str(m.content)) for m in messages_list)
@@ -498,6 +556,8 @@ def get_system_message(user_id: str) -> SystemMessage:
         "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
+        "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
+        "Do not invent CV analysis before Profile Scanner has extracted the CV content; if the scanner says intake is completed, explain that extraction and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
@@ -563,6 +623,7 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                 request.message,
                 assistant_content,
                 assistant_tool_calls,
+                request.attachment,
             )
             
         except Exception as e:
@@ -591,7 +652,13 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
         else:
             final_response = str(content)
             
-        await save_chat_exchange(x_user_id, request.session_id, request.message, final_response)
+        await save_chat_exchange(
+            x_user_id,
+            request.session_id,
+            request.message,
+            final_response,
+            user_attachment=request.attachment,
+        )
         
         return ChatResponse(response=final_response)
     except Exception as e:

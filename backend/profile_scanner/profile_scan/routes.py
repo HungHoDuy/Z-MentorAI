@@ -9,8 +9,4 @@ router = APIRouter(tags=["profile"])
 
 @router.post("/scan", response_model=ProfileResponse)
 async def scan_profile(request: ProfileRequest):
-    return ProfileResponse(
-        status="success",
-        feature="profile_scan",
-        analysis=analyze_profile(request),
-    )
+    return await analyze_profile(request)

@@ -4,3 +4,5 @@ langchain
 langchain-core
 pydantic
 google-cloud-firestore
+google-cloud-storage
+python-multipart
