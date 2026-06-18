@@ -6,6 +6,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
+    google_cloud_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", "z-mentorai")
     use_firestore: bool = os.getenv("USE_FIRESTORE", "false").lower() == "true"
     firestore_database: str | None = os.getenv("FIRESTORE_DATABASE")
     cv_storage_bucket: str | None = os.getenv("CV_STORAGE_BUCKET")
@@ -14,6 +15,13 @@ class Settings:
         "profile_scanner_cv_documents",
     )
     cv_max_file_size_bytes: int = int(os.getenv("CV_MAX_FILE_SIZE_BYTES", "10485760"))
+    document_ai_location: str = os.getenv("DOCUMENT_AI_LOCATION", "us")
+    document_ai_processor_id: str | None = os.getenv("DOCUMENT_AI_PROCESSOR_ID")
+    document_ai_processor_name: str | None = os.getenv("DOCUMENT_AI_PROCESSOR_NAME")
+    use_vertex_ai: bool = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
+    vertex_ai_location: str = os.getenv("VERTEX_AI_LOCATION", "asia-southeast1")
+    profile_ai_extraction_enabled: bool = os.getenv("PROFILE_AI_EXTRACTION_ENABLED", "false").lower() == "true"
+    profile_ai_model_name: str = os.getenv("PROFILE_AI_MODEL_NAME", "gemini-2.5-flash")
     holland_collection_name: str = os.getenv(
         "HOLLAND_COLLECTION_NAME",
         "profile_scanner_holland_assessments",

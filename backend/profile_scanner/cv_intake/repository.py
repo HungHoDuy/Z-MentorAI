@@ -32,3 +32,12 @@ async def get_cv_document(cv_document_id: str) -> Optional[dict]:
     ).get()
     return doc.to_dict() if doc.exists else None
 
+
+async def update_cv_document(cv_document_id: str, updates: dict) -> None:
+    if not settings.use_firestore or firestore_client is None:
+        raise RuntimeError("Firestore is required for CV document metadata.")
+
+    firestore_client.collection(settings.cv_documents_collection).document(
+        cv_document_id
+    ).update(updates)
+
