@@ -23,6 +23,7 @@ __pycache__/
 ehthumbs.db
 Thumbs.db
 tmp-local-run-logs/
+.local-logs/
 frontend-dev*.log
 
 # Database / User Profiles

@@ -27,14 +27,10 @@ import './App.css';
 
 const acceptedCvMimeTypes = new Set([
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
-  'image/png',
-  'image/jpeg',
-  'image/webp'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ]);
 
-const acceptedCvExtensions = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'];
+const acceptedCvExtensions = ['pdf', 'docx'];
 const maxCvFileSizeBytes = 10 * 1024 * 1024;
 
 function formatFileSize(bytes) {
@@ -252,6 +248,76 @@ function HollandResultCard({ result }) {
   );
 }
 
+function ProfileScanResultCard({ result }) {
+  const grade = result?.grade || 'E';
+  const dimensions = Array.isArray(result?.score_dimensions) ? result.score_dimensions : [];
+  const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
+  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  const strengths = Array.isArray(result?.strengths) ? result.strengths : [];
+
+  return (
+    <div className="profile-scan-card">
+      <div className="profile-scan-header">
+        <div className={`profile-rank-mark rank-${grade.toLowerCase()}`}>
+          <span>{grade}</span>
+        </div>
+        <div className="profile-scan-title">
+          <div className="profile-scan-eyebrow">CV Benchmark</div>
+          <h3>{result?.target_role || 'Profile Scanner'}</h3>
+          <p>{result?.message_vi || 'Profile Scanner đã hoàn tất phân tích CV.'}</p>
+          <div className="profile-analysis-mode">
+            {result?.ai_extraction_used ? (
+              <span>Gemini-assisted extraction · confidence {Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%</span>
+            ) : (
+              <span>Heuristic fallback analysis</span>
+            )}
+          </div>
+        </div>
+        <div className="profile-total-score">
+          <strong>{Math.round(Number(result?.total_score || 0))}</strong>
+          <span>/100</span>
+        </div>
+      </div>
+
+      {dimensions.length > 0 && (
+        <div className="profile-dimension-list">
+          {dimensions.map((dimension) => {
+            const score = Math.round(Number(dimension.score || 0));
+            return (
+              <div className="profile-dimension-row" key={dimension.key || dimension.label}>
+                <div className="profile-dimension-meta">
+                  <strong>{dimension.label}</strong>
+                  <span>{score}/100 · {Math.round(Number(dimension.weight || 0) * 100)}%</span>
+                </div>
+                <div className="profile-dimension-track">
+                  <div className="profile-dimension-fill" style={{ width: `${score}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="profile-scan-grid">
+        <div>
+          <span className="profile-scan-section-title">Kỹ năng phát hiện</span>
+          <div className="profile-skill-cloud">
+            {skills.slice(0, 12).map((skill) => <span key={skill}>{skill}</span>)}
+            {!skills.length && <em>Chưa phát hiện kỹ năng rõ ràng.</em>}
+          </div>
+        </div>
+        <div>
+          <span className="profile-scan-section-title">Gợi ý cải thiện</span>
+          <ul className="profile-recommendations">
+            {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+            {!recommendations.length && strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToolResultSummary({ output }) {
   const normalizedOutput = normalizeToolOutput(output);
   const hasError = normalizedOutput?.status === 'error' || Boolean(normalizedOutput?.error);
@@ -404,11 +470,15 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   const Icon = info.icon;
   const normalizedOutput = normalizeToolOutput(output);
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
+  const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
   const shouldRenderHollandForm = isHollandOutput
     && normalizedOutput?.questions
     && status === 'completed';
   const shouldRenderHollandResult = isHollandOutput
     && normalizedOutput?.top_code
+    && status === 'completed';
+  const shouldRenderProfileScanResult = isProfileScanOutput
+    && normalizedOutput?.grade
     && status === 'completed';
   const toolLabel = isHollandOutput && toolName === 'profile_scanner'
     ? `${info.label} · Holland Test`
@@ -452,6 +522,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
                 <HollandTestForm output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : shouldRenderHollandResult ? (
                 <HollandResultCard result={normalizedOutput} />
+              ) : shouldRenderProfileScanResult ? (
+                <ProfileScanResultCard result={normalizedOutput} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
@@ -773,7 +845,7 @@ function ChatInput({
         <button
           className="attach-cv-button"
           onClick={onCvAttachClick}
-          disabled={isLoading || !activeSessionId}
+          disabled={isLoading}
           type="button"
           title="Đính kèm CV"
         >
@@ -802,7 +874,7 @@ function ChatInput({
         ref={cvInputRef}
         className="cv-file-input"
         type="file"
-        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         onChange={onCvFileChange}
       />
     </div>
@@ -896,7 +968,7 @@ export default function App() {
   }, [inputValue]);
 
   const handleCreateNewSession = useCallback(async () => {
-    if (isLoading || !user) return;
+    if (isLoading || !user) return null;
     try {
       const res = await fetch(`${backendUrl}/sessions`, {
         method: 'POST',
@@ -913,9 +985,11 @@ export default function App() {
       localStorage.setItem(`z_mentor_active_session_${user.google_id}`, newSession.id);
       setMessages([]);
       setCvAttachment(null);
+      return newSession.id;
     } catch (err) {
       console.error(err);
       alert('Không thể khởi tạo cuộc trò chuyện mới.');
+      return null;
     }
   }, [backendUrl, isLoading, user]);
 
@@ -1074,7 +1148,15 @@ export default function App() {
     avatarInputRef.current?.click();
   };
 
-  const handleCvAttachClick = () => {
+  const handleCvAttachClick = async () => {
+    setCvUploadError('');
+    if (!activeSessionId) {
+      const sessionId = await handleCreateNewSession();
+      if (!sessionId) {
+        setCvUploadError('Không thể tạo phiên chat để đính kèm CV. Vui lòng kiểm tra kết nối backend.');
+        return;
+      }
+    }
     cvInputRef.current?.click();
   };
 
@@ -1093,7 +1175,7 @@ export default function App() {
     const isAcceptedType = acceptedCvMimeTypes.has(file.type) || acceptedCvExtensions.includes(extension);
 
     if (!isAcceptedType) {
-      alert('Vui lòng tải CV ở định dạng PDF, DOC, DOCX, PNG, JPG, JPEG hoặc WEBP.');
+      alert('Vui lòng tải CV ở định dạng PDF hoặc DOCX.');
       event.target.value = '';
       return;
     }
@@ -1224,7 +1306,7 @@ export default function App() {
         '',
         `CV uploaded successfully with cv_document_id="${attachmentMeta.cv_document_id}".`,
         `File: ${attachmentMeta.name}, ${attachmentMeta.label}, ${formatFileSize(attachmentMeta.size)}.`,
-        'Call profile_scanner with task="scan_profile" and pass this exact cv_document_id. Do not infer CV contents before Profile Scanner extraction is implemented.'
+        'Call profile_scanner with task="scan_profile" and pass this exact cv_document_id. Only use Profile Scanner output; do not invent CV analysis beyond extracted data.'
       ].join('\n')
       : backendQuery;
 

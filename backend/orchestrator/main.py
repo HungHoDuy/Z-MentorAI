@@ -557,7 +557,7 @@ def get_system_message(user_id: str) -> SystemMessage:
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
-        "Do not invent CV analysis before Profile Scanner has extracted the CV content; if the scanner says intake is completed, explain that extraction and benchmark evaluation are the next steps. "
+        "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "

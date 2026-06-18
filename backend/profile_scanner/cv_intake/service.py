@@ -13,14 +13,10 @@ from cv_intake.repository import save_cv_document
 from cv_intake.schemas import CvIntakeResponse
 
 
-ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "png", "jpg", "jpeg", "webp"}
+ALLOWED_EXTENSIONS = {"pdf", "docx"}
 ALLOWED_MIME_TYPES = {
     "application/pdf",
-    "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "image/png",
-    "image/jpeg",
-    "image/webp",
 }
 
 
@@ -37,8 +33,6 @@ def normalize_user_path(user_id: str) -> str:
 
 def get_extension(filename: str) -> str:
     extension = Path(filename or "").suffix.lower().lstrip(".")
-    if extension == "jpeg":
-        return "jpg"
     return extension
 
 
@@ -50,8 +44,6 @@ def resolve_mime_type(file: UploadFile, extension: str) -> str:
 
 
 def file_kind_from_extension(extension: str) -> str:
-    if extension in {"png", "jpg", "webp"}:
-        return "image"
     return extension
 
 
@@ -79,7 +71,7 @@ async def intake_cv_file(
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported CV file type. Allowed: PDF, DOC, DOCX, PNG, JPG, JPEG, WEBP.",
+            detail="Unsupported CV file type. Allowed: PDF or DOCX.",
         )
 
     content = await file.read()
@@ -141,6 +133,7 @@ async def intake_cv_file(
         "storage_object": object_name,
         "storage_uri": storage_uri,
         "uploaded_at": uploaded_at,
+        "extraction_status": "pending",
         "next_status": "pending_extraction",
     }
 
