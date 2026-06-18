@@ -37,7 +37,7 @@ def _upstream_error_payload(
 
 def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
-        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=10.0)
+        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=60.0)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as exc:
