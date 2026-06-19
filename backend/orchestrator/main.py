@@ -238,6 +238,8 @@ def normalize_tool_output(output: Any) -> dict:
 
 def summarize_tool_calls(tool_calls: list[dict]) -> str:
     for tool_call in tool_calls:
+        if tool_call.get("name") == "academic_architect":
+            return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
         output = normalize_tool_output(tool_call.get("output"))
         if output.get("feature") == "holland_assessment":
             if output.get("questions"):
@@ -559,6 +561,8 @@ def get_system_message(user_id: str) -> SystemMessage:
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
+        "For course roadmap or learning planning, call the academic_architect tool with the user's target career goal and current skills. "
+        "When calling academic_architect, write a short, friendly summary or introduction (1-2 sentences) in your final response. Do not repeat or copy the entire academic plan or list of courses, as the Academic Architect tool widget will display them beautifully. "
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
         "If you need more information from the user before you can use a tool, ask them directly."

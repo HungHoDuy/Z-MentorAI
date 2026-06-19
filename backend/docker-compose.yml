@@ -81,3 +81,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8003:8080"
+    env_file:
+      - .env
+    environment:
+      - USE_FIRESTORE=${USE_FIRESTORE:-false}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-z-mentorai}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+

@@ -460,6 +460,64 @@ function HollandTestForm({ output, onSendMessage }) {
   );
 }
 
+function AcademicPlanWidget({ output }) {
+  const plan = output.academic_plan || '';
+  const courses = output.courses || [];
+  
+  return (
+    <div className="academic-plan-widget">
+      <div className="academic-plan-markdown">
+        <ReactMarkdown>{plan}</ReactMarkdown>
+      </div>
+      
+      {courses.length > 0 && (
+        <div className="academic-plan-courses">
+          <h4 className="courses-section-title">Khóa học đề xuất từ Coursera</h4>
+          <div className="course-cards-grid">
+            {courses.map((course) => {
+              const scorePct = Math.round((course.score || 0) * 100);
+              const certs = course.certificates || [];
+              const isSpec = certs.includes('Specialization');
+              const partnersList = (course.partners || [])
+                .map(p => typeof p === 'object' ? p.name : p)
+                .join(', ');
+                
+              return (
+                <a 
+                  key={course.course_id}
+                  href={course.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="course-card"
+                >
+                  <div className="course-card-top">
+                    <span className="course-provider">{partnersList || 'Coursera'}</span>
+                    <span className="course-score-badge">{scorePct}% phù hợp</span>
+                  </div>
+                  
+                  <h5 className="course-name">{course.name}</h5>
+                  <p className="course-desc-snippet">
+                    {course.description 
+                      ? (course.description.length > 180 ? `${course.description.substring(0, 180)}...` : course.description)
+                      : 'Không có mô tả chi tiết.'}
+                  </p>
+                  
+                  <div className="course-card-footer">
+                    <span className="course-type-tag">
+                      {isSpec ? 'Specialization' : 'Course'}
+                    </span>
+                    <span className="course-action-link">Xem trên Coursera →</span>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
@@ -479,6 +537,9 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
     && status === 'completed';
   const shouldRenderProfileScanResult = isProfileScanOutput
     && normalizedOutput?.grade
+    && status === 'completed';
+  const shouldRenderAcademicPlan = toolName === 'academic_architect'
+    && normalizedOutput?.academic_plan
     && status === 'completed';
   const toolLabel = isHollandOutput && toolName === 'profile_scanner'
     ? `${info.label} · Holland Test`
@@ -524,6 +585,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
                 <HollandResultCard result={normalizedOutput} />
               ) : shouldRenderProfileScanResult ? (
                 <ProfileScanResultCard result={normalizedOutput} />
+              ) : shouldRenderAcademicPlan ? (
+                <AcademicPlanWidget output={normalizedOutput} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
