@@ -137,4 +137,5 @@ def academic_architect(career_goal: str, current_skills: str) -> dict:
     })
 
 if __name__ == "__main__":
-    mcp.run(transport="sse", host="0.0.0.0", port=8080)
+    port = int(os.getenv("PORT", 8004))
+    mcp.run(transport="sse", host="0.0.0.0", port=port)

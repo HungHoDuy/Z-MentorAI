@@ -16,6 +16,16 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from google.oauth2 import id_token
 from google.auth.transport import requests
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+env_path = Path(__file__).resolve().parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    print(f"Orchestrator: Loaded environment from {env_path}")
+else:
+    print("Orchestrator: Warning, no .env file found.")
 
 # Determine if we run in GCP/production modes
 USE_FIRESTORE = os.getenv("USE_FIRESTORE", "false").lower() == "true"
