@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.market_scout.schemas.salary import SalaryJobRecord
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord
 
 
 class JobEmbeddingTextService:

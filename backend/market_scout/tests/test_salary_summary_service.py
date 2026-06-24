@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from backend.market_scout.services.salary_benchmark_service import (
+from backend.market_scout.services.salary_benchmark.salary_benchmark_service import (
     SalaryBenchmarkResult,
     SalaryBenchmarkSource,
     SalaryRange,
 )
-from backend.market_scout.services.salary_summary_service import SalarySummaryService
+from backend.market_scout.services.salary_benchmark.salary_summary_service import SalarySummaryService
 
 
 class FakeResponse:

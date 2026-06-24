@@ -12,3 +12,13 @@ output "profile_scanner_url" {
   value       = google_cloud_run_v2_service.profile_scanner.uri
   description = "The public URL of the Profile Scanner agent."
 }
+
+output "profile_scanner_cv_bucket" {
+  value       = google_storage_bucket.profile_scanner_cv_bucket.name
+  description = "The private GCS bucket used for Profile Scanner CV uploads."
+}
+
+output "profile_scanner_document_ai_processor" {
+  value       = google_document_ai_processor.profile_scanner_cv_ocr.id
+  description = "The Document AI OCR processor used by Profile Scanner PDF fallback extraction."
+}

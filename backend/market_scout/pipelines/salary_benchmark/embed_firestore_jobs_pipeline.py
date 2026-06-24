@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.market_scout.repositories.salary_repository import (
+from backend.market_scout.repositories.salary_benchmark.salary_repository import (
     DEFAULT_CLEANED_COLLECTION,
     build_firestore_client,
     env_or_default,
     load_env_file,
 )
-from backend.market_scout.schemas.salary import SalaryJobRecord
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord
 from backend.market_scout.services.salary_benchmark.job_embedding_text_service import JobEmbeddingTextService
 from backend.market_scout.services.salary_benchmark.vertex_embedding_service import EmbeddingService, VertexTextEmbeddingService
 

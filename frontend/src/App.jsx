@@ -27,15 +27,11 @@ import './App.css';
 
 const acceptedCvMimeTypes = new Set([
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
-  'image/png',
-  'image/jpeg',
-  'image/webp'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ]);
 
-const acceptedCvExtensions = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'];
-const maxCvFileSizeBytes = 12 * 1024 * 1024;
+const acceptedCvExtensions = ['pdf', 'docx'];
+const maxCvFileSizeBytes = 10 * 1024 * 1024;
 
 function formatFileSize(bytes) {
   if (!bytes) return '0 KB';
@@ -252,6 +248,76 @@ function HollandResultCard({ result }) {
   );
 }
 
+function ProfileScanResultCard({ result }) {
+  const grade = result?.grade || 'E';
+  const dimensions = Array.isArray(result?.score_dimensions) ? result.score_dimensions : [];
+  const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
+  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  const strengths = Array.isArray(result?.strengths) ? result.strengths : [];
+
+  return (
+    <div className="profile-scan-card">
+      <div className="profile-scan-header">
+        <div className={`profile-rank-mark rank-${grade.toLowerCase()}`}>
+          <span>{grade}</span>
+        </div>
+        <div className="profile-scan-title">
+          <div className="profile-scan-eyebrow">CV Benchmark</div>
+          <h3>{result?.target_role || 'Profile Scanner'}</h3>
+          <p>{result?.message_vi || 'Profile Scanner đã hoàn tất phân tích CV.'}</p>
+          <div className="profile-analysis-mode">
+            {result?.ai_extraction_used ? (
+              <span>Gemini-assisted extraction · confidence {Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%</span>
+            ) : (
+              <span>Heuristic fallback analysis</span>
+            )}
+          </div>
+        </div>
+        <div className="profile-total-score">
+          <strong>{Math.round(Number(result?.total_score || 0))}</strong>
+          <span>/100</span>
+        </div>
+      </div>
+
+      {dimensions.length > 0 && (
+        <div className="profile-dimension-list">
+          {dimensions.map((dimension) => {
+            const score = Math.round(Number(dimension.score || 0));
+            return (
+              <div className="profile-dimension-row" key={dimension.key || dimension.label}>
+                <div className="profile-dimension-meta">
+                  <strong>{dimension.label}</strong>
+                  <span>{score}/100 · {Math.round(Number(dimension.weight || 0) * 100)}%</span>
+                </div>
+                <div className="profile-dimension-track">
+                  <div className="profile-dimension-fill" style={{ width: `${score}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="profile-scan-grid">
+        <div>
+          <span className="profile-scan-section-title">Kỹ năng phát hiện</span>
+          <div className="profile-skill-cloud">
+            {skills.slice(0, 12).map((skill) => <span key={skill}>{skill}</span>)}
+            {!skills.length && <em>Chưa phát hiện kỹ năng rõ ràng.</em>}
+          </div>
+        </div>
+        <div>
+          <span className="profile-scan-section-title">Gợi ý cải thiện</span>
+          <ul className="profile-recommendations">
+            {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+            {!recommendations.length && strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToolResultSummary({ output }) {
   const normalizedOutput = normalizeToolOutput(output);
   const hasError = normalizedOutput?.status === 'error' || Boolean(normalizedOutput?.error);
@@ -267,6 +333,7 @@ function ToolResultSummary({ output }) {
   const text = normalizedOutput?.response
     || normalizedOutput?.summary
     || normalizedOutput?.message
+    || normalizedOutput?.message_vi
     || normalizedOutput?.content
     || (typeof output === 'string' ? output : 'Agent đã hoàn tất bước xử lý.');
 
@@ -403,11 +470,15 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   const Icon = info.icon;
   const normalizedOutput = normalizeToolOutput(output);
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
+  const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
   const shouldRenderHollandForm = isHollandOutput
     && normalizedOutput?.questions
     && status === 'completed';
   const shouldRenderHollandResult = isHollandOutput
     && normalizedOutput?.top_code
+    && status === 'completed';
+  const shouldRenderProfileScanResult = isProfileScanOutput
+    && normalizedOutput?.grade
     && status === 'completed';
   const toolLabel = isHollandOutput && toolName === 'profile_scanner'
     ? `${info.label} · Holland Test`
@@ -451,6 +522,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
                 <HollandTestForm output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : shouldRenderHollandResult ? (
                 <HollandResultCard result={normalizedOutput} />
+              ) : shouldRenderProfileScanResult ? (
+                <ProfileScanResultCard result={normalizedOutput} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
@@ -490,7 +563,10 @@ function CvAttachmentChip({ attachment, onRemove, compact = false }) {
       </div>
       <div className="cv-attachment-copy">
         <strong>{attachment.name}</strong>
-        <span>{attachment.label} · {formatFileSize(attachment.size)}</span>
+        <span>
+          {attachment.label} · {formatFileSize(attachment.size)}
+          {attachment.statusLabel ? ` · ${attachment.statusLabel}` : ''}
+        </span>
       </div>
       {onRemove && (
         <button className="cv-attachment-remove" onClick={onRemove} type="button" title="Gỡ CV đính kèm">
@@ -758,16 +834,18 @@ function ChatInput({
   cvInputRef,
   onCvAttachClick,
   onCvFileChange,
-  onRemoveCvAttachment
+  onRemoveCvAttachment,
+  cvUploadError
 }) {
   return (
     <div className="input-panel">
       <CvAttachmentChip attachment={cvAttachment} onRemove={onRemoveCvAttachment} />
+      {cvUploadError && <div className="holland-form-error">{cvUploadError}</div>}
       <div className="input-container">
         <button
           className="attach-cv-button"
           onClick={onCvAttachClick}
-          disabled={isLoading || !activeSessionId}
+          disabled={isLoading}
           type="button"
           title="Đính kèm CV"
         >
@@ -796,7 +874,7 @@ function ChatInput({
         ref={cvInputRef}
         className="cv-file-input"
         type="file"
-        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         onChange={onCvFileChange}
       />
     </div>
@@ -819,7 +897,8 @@ function ChatWorkspace({
   cvInputRef,
   onCvAttachClick,
   onCvFileChange,
-  onRemoveCvAttachment
+  onRemoveCvAttachment,
+  cvUploadError
 }) {
   return (
     <div className="chat-area">
@@ -848,6 +927,7 @@ function ChatWorkspace({
         onCvAttachClick={onCvAttachClick}
         onCvFileChange={onCvFileChange}
         onRemoveCvAttachment={onRemoveCvAttachment}
+        cvUploadError={cvUploadError}
       />
     </div>
   );
@@ -867,6 +947,7 @@ export default function App() {
   const [googleClientId, setGoogleClientId] = useState(null);
   const [activeAgents, setActiveAgents] = useState([]);
   const [cvAttachment, setCvAttachment] = useState(null);
+  const [cvUploadError, setCvUploadError] = useState('');
 
   const backendUrl = useMemo(() => import.meta.env.VITE_API_URL || window.location.origin, []);
   const messagesEndRef = useRef(null);
@@ -887,7 +968,7 @@ export default function App() {
   }, [inputValue]);
 
   const handleCreateNewSession = useCallback(async () => {
-    if (isLoading || !user) return;
+    if (isLoading || !user) return null;
     try {
       const res = await fetch(`${backendUrl}/sessions`, {
         method: 'POST',
@@ -904,9 +985,11 @@ export default function App() {
       localStorage.setItem(`z_mentor_active_session_${user.google_id}`, newSession.id);
       setMessages([]);
       setCvAttachment(null);
+      return newSession.id;
     } catch (err) {
       console.error(err);
       alert('Không thể khởi tạo cuộc trò chuyện mới.');
+      return null;
     }
   }, [backendUrl, isLoading, user]);
 
@@ -927,6 +1010,7 @@ export default function App() {
         id: `msg-${idx}-${Date.now()}`,
         role: message.role,
         content: message.content,
+        attachment: message.attachment,
         toolCalls: normalizeStoredToolCalls(message.tool_calls || message.toolCalls)
       }));
       setMessages(uiMessages);
@@ -1064,24 +1148,34 @@ export default function App() {
     avatarInputRef.current?.click();
   };
 
-  const handleCvAttachClick = () => {
+  const handleCvAttachClick = async () => {
+    setCvUploadError('');
+    if (!activeSessionId) {
+      const sessionId = await handleCreateNewSession();
+      if (!sessionId) {
+        setCvUploadError('Không thể tạo phiên chat để đính kèm CV. Vui lòng kiểm tra kết nối backend.');
+        return;
+      }
+    }
     cvInputRef.current?.click();
   };
 
   const handleRemoveCvAttachment = () => {
     setCvAttachment(null);
+    setCvUploadError('');
     if (cvInputRef.current) cvInputRef.current.value = '';
   };
 
   const handleCvFileChange = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setCvUploadError('');
 
     const extension = getFileExtension(file.name);
     const isAcceptedType = acceptedCvMimeTypes.has(file.type) || acceptedCvExtensions.includes(extension);
 
     if (!isAcceptedType) {
-      alert('Vui lòng tải CV ở định dạng PDF, DOC, DOCX, PNG, JPG, JPEG hoặc WEBP.');
+      alert('Vui lòng tải CV ở định dạng PDF hoặc DOCX.');
       event.target.value = '';
       return;
     }
@@ -1135,6 +1229,37 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  const uploadCvAttachment = useCallback(async (attachment, messageText) => {
+    if (!attachment?.file || !user || !activeSessionId) return null;
+
+    const formData = new FormData();
+    formData.append('file', attachment.file);
+    formData.append('session_id', activeSessionId);
+    formData.append('message', messageText);
+
+    const response = await fetch(`${backendUrl}/profile-scanner/cv/upload`, {
+      method: 'POST',
+      headers: {
+        'X-User-Id': user.google_id
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      let detail = `Không thể tải CV lên, mã trạng thái ${response.status}.`;
+      try {
+        const payload = await response.json();
+        detail = payload?.detail?.detail || payload?.detail || payload?.message || detail;
+        if (typeof detail !== 'string') detail = JSON.stringify(detail);
+      } catch {
+        detail = await response.text();
+      }
+      throw new Error(detail);
+    }
+
+    return response.json();
+  }, [activeSessionId, backendUrl, user]);
+
   const handleSendMessage = useCallback(async (textToSend) => {
     const structuredMessage = textToSend && typeof textToSend === 'object' ? textToSend : null;
     const query = String(structuredMessage?.displayText || (!structuredMessage ? textToSend : '') || inputValue).trim();
@@ -1143,20 +1268,46 @@ export default function App() {
     if ((!query && !activeCvAttachment) || isLoading || !activeSessionId || !user) return false;
 
     if (!textToSend) setInputValue('');
-    if (activeCvAttachment) setCvAttachment(null);
 
     const userMessageId = `user-${Date.now()}`;
     const assistantMessageId = `assistant-${Date.now()}`;
     const messageText = query || 'Hãy quét CV này và tóm tắt độ phù hợp hồ sơ, các tín hiệu còn thiếu và bước tiếp theo nên làm.';
-    const attachmentMeta = activeCvAttachment ? {
-      name: activeCvAttachment.name,
-      size: activeCvAttachment.size,
-      type: activeCvAttachment.type,
-      extension: activeCvAttachment.extension,
-      label: activeCvAttachment.label
-    } : null;
+    let attachmentMeta = null;
+
+    if (activeCvAttachment) {
+      setIsLoading(true);
+      setCvUploadError('');
+      setCvAttachment((prev) => prev ? { ...prev, statusLabel: 'Đang tải CV lên...' } : prev);
+      try {
+        const uploadResult = await uploadCvAttachment(activeCvAttachment, messageText);
+        attachmentMeta = {
+          name: uploadResult.original_filename || activeCvAttachment.name,
+          size: uploadResult.file_size_bytes || activeCvAttachment.size,
+          type: uploadResult.mime_type || activeCvAttachment.type,
+          extension: activeCvAttachment.extension,
+          label: activeCvAttachment.label,
+          cv_document_id: uploadResult.cv_document_id,
+          statusLabel: 'Đã lưu CV'
+        };
+        setCvAttachment(null);
+      } catch (err) {
+        console.error('CV upload failed:', err);
+        setCvUploadError(err.message || 'Không thể tải CV lên.');
+        setCvAttachment((prev) => prev ? { ...prev, statusLabel: 'Không thể tải CV' } : prev);
+        if (!textToSend) setInputValue(query);
+        setIsLoading(false);
+        return false;
+      }
+    }
+
     const backendMessage = attachmentMeta
-      ? `${messageText}\n\n[CV đã được đính kèm chờ xử lý: ${attachmentMeta.name}, ${attachmentMeta.label}, ${formatFileSize(attachmentMeta.size)}. Bước backend tiếp theo sẽ kết nối upload/lưu trữ qua GCS.]`
+      ? [
+        messageText,
+        '',
+        `CV uploaded successfully with cv_document_id="${attachmentMeta.cv_document_id}".`,
+        `File: ${attachmentMeta.name}, ${attachmentMeta.label}, ${formatFileSize(attachmentMeta.size)}.`,
+        'Call profile_scanner with task="scan_profile" and pass this exact cv_document_id. Only use Profile Scanner output; do not invent CV analysis beyond extracted data.'
+      ].join('\n')
       : backendQuery;
 
     setMessages((prev) => [
@@ -1185,7 +1336,8 @@ export default function App() {
         },
         body: JSON.stringify({
           message: backendMessage,
-          session_id: activeSessionId
+          session_id: activeSessionId,
+          attachment: attachmentMeta
         })
       });
 
@@ -1356,7 +1508,7 @@ export default function App() {
       setIsLoading(false);
       setActiveAgents([]);
     }
-  }, [activeSessionId, backendUrl, cvAttachment, fetchSessions, inputValue, isLoading, user]);
+  }, [activeSessionId, backendUrl, cvAttachment, fetchSessions, inputValue, isLoading, uploadCvAttachment, user]);
 
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1412,6 +1564,7 @@ export default function App() {
           onCvAttachClick={handleCvAttachClick}
           onCvFileChange={handleCvFileChange}
           onRemoveCvAttachment={handleRemoveCvAttachment}
+          cvUploadError={cvUploadError}
         />
       </main>
 

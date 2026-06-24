@@ -24,7 +24,9 @@ locals {
     "run.googleapis.com",
     "artifactregistry.googleapis.com",
     "aiplatform.googleapis.com",
-    "firestore.googleapis.com"
+    "firestore.googleapis.com",
+    "storage.googleapis.com",
+    "documentai.googleapis.com"
   ]
 }
 
@@ -80,6 +82,48 @@ resource "google_project_iam_member" "profile_scanner_firestore_access" {
   depends_on = [google_service_account.profile_scanner_sa]
 }
 
+resource "google_project_iam_member" "profile_scanner_vertex_access" {
+  project    = var.project_id
+  role       = "roles/aiplatform.user"
+  member     = "serviceAccount:${google_service_account.profile_scanner_sa.email}"
+  depends_on = [google_service_account.profile_scanner_sa]
+}
+
+resource "google_storage_bucket" "profile_scanner_cv_bucket" {
+  name                        = var.profile_scanner_cv_bucket_name
+  location                    = var.region
+  project                     = var.project_id
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  depends_on                  = [google_project_service.apis]
+
+  versioning {
+    enabled = true
+  }
+}
+
+resource "google_storage_bucket_iam_member" "profile_scanner_cv_bucket_object_user" {
+  bucket = google_storage_bucket.profile_scanner_cv_bucket.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.profile_scanner_sa.email}"
+}
+
+resource "google_document_ai_processor" "profile_scanner_cv_ocr" {
+  project      = var.project_id
+  location     = var.document_ai_location
+  display_name = "profile-scanner-cv-ocr"
+  type         = "OCR_PROCESSOR"
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_project_iam_member" "profile_scanner_document_ai_access" {
+  project    = var.project_id
+  role       = "roles/documentai.apiUser"
+  member     = "serviceAccount:${google_service_account.profile_scanner_sa.email}"
+  depends_on = [google_service_account.profile_scanner_sa]
+}
+
 # Firestore composite index required by:
 # profile_scanner_holland_assessments.where(user_id == X).order_by(created_at desc).limit(1)
 resource "google_firestore_index" "holland_assessments_by_user_created_at" {
@@ -111,7 +155,11 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
   ingress  = "INGRESS_TRAFFIC_ALL"
   depends_on = [
     google_project_service.apis,
-    google_project_iam_member.profile_scanner_firestore_access
+    google_project_iam_member.profile_scanner_firestore_access,
+    google_project_iam_member.profile_scanner_vertex_access,
+    google_storage_bucket_iam_member.profile_scanner_cv_bucket_object_user,
+    google_project_iam_member.profile_scanner_document_ai_access,
+    google_document_ai_processor.profile_scanner_cv_ocr
   ]
 
   template {
@@ -132,6 +180,46 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
       env {
         name  = "HOLLAND_COLLECTION_NAME"
         value = "profile_scanner_holland_assessments"
+      }
+      env {
+        name  = "CV_STORAGE_BUCKET"
+        value = google_storage_bucket.profile_scanner_cv_bucket.name
+      }
+      env {
+        name  = "CV_DOCUMENTS_COLLECTION"
+        value = "profile_scanner_cv_documents"
+      }
+      env {
+        name  = "CV_MAX_FILE_SIZE_BYTES"
+        value = "10485760"
+      }
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
+      env {
+        name  = "DOCUMENT_AI_LOCATION"
+        value = var.document_ai_location
+      }
+      env {
+        name  = "DOCUMENT_AI_PROCESSOR_NAME"
+        value = google_document_ai_processor.profile_scanner_cv_ocr.id
+      }
+      env {
+        name  = "USE_VERTEX_AI"
+        value = "true"
+      }
+      env {
+        name  = "VERTEX_AI_LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "PROFILE_AI_EXTRACTION_ENABLED"
+        value = "true"
+      }
+      env {
+        name  = "PROFILE_AI_MODEL_NAME"
+        value = "gemini-2.5-flash"
       }
     }
   }
@@ -225,6 +313,10 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       env {
         name  = "MCP_SERVER_URL"
         value = "${google_cloud_run_v2_service.mcp_server.uri}/sse"
+      }
+      env {
+        name  = "PROFILE_SCANNER_URL"
+        value = google_cloud_run_v2_service.profile_scanner.uri
       }
       env {
         name  = "USE_FIRESTORE"

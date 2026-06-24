@@ -2,11 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/market_scout/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . /app/backend/market_scout
-ENV PYTHONPATH=/app
+COPY backend ./backend
 
 EXPOSE 8080
 

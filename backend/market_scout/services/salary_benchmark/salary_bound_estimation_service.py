@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Any
 
-from backend.market_scout.schemas.salary import SalaryJobRecord
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord
 
 
 VND_MULTIPLIER = 1_000_000

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.market_scout.pipelines.embed_firestore_jobs_pipeline import DEFAULT_VECTOR_COLLECTION
-from backend.market_scout.repositories.salary_repository import build_firestore_client, env_or_default, load_env_file
+from backend.market_scout.repositories.salary_benchmark.salary_repository import build_firestore_client, env_or_default, load_env_file
 from backend.market_scout.services.salary_benchmark.salary_bound_estimation_service import SalaryBoundEstimationService
 
 
