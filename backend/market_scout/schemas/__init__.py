@@ -1,30 +1,14 @@
-from .entities import MarketScoutEntities, SalaryRange
-from .enums import (
-    ConfidenceLevel,
-    DataSourceType,
+from backend.market_scout.schemas.market_scout import (
     MarketScoutIntent,
-    SalaryPeriod,
-    SeniorityLevel,
-    SourceType,
+    MarketScoutRequest,
+    MarketScoutResponse,
 )
-from .request import MarketScoutRequest
-from .response import MarketScoutResponse, SalaryBenchmarkData, TrendInsight, TrendTrackerData
-from .source import Evidence, Source
+from backend.market_scout.schemas.salary import SalaryJobRecord, SalarySearchQuery
 
 __all__ = [
-    "ConfidenceLevel",
-    "DataSourceType",
-    "Evidence",
-    "MarketScoutEntities",
     "MarketScoutIntent",
     "MarketScoutRequest",
     "MarketScoutResponse",
-    "SalaryBenchmarkData",
-    "SalaryPeriod",
-    "SalaryRange",
-    "SeniorityLevel",
-    "Source",
-    "SourceType",
-    "TrendInsight",
-    "TrendTrackerData",
+    "SalaryJobRecord",
+    "SalarySearchQuery",
 ]
