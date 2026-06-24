@@ -12,8 +12,8 @@ from backend.market_scout.repositories.salary_repository import (
     load_env_file,
 )
 from backend.market_scout.schemas.salary import SalaryJobRecord
-from backend.market_scout.services.job_embedding_text_service import JobEmbeddingTextService
-from backend.market_scout.services.vertex_embedding_service import EmbeddingService, VertexTextEmbeddingService
+from backend.market_scout.services.salary_benchmark.job_embedding_text_service import JobEmbeddingTextService
+from backend.market_scout.services.salary_benchmark.vertex_embedding_service import EmbeddingService, VertexTextEmbeddingService
 
 
 DEFAULT_VECTOR_COLLECTION = "data_vector_embeddings"

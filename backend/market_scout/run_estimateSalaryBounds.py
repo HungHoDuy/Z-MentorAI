@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.market_scout.pipelines.estimate_salary_bounds_pipeline import EstimateSalaryBoundsPipeline
+from backend.market_scout.pipelines.salary_benchmark.estimate_salary_bounds_pipeline import EstimateSalaryBoundsPipeline
 
 
 def parse_args() -> argparse.Namespace:

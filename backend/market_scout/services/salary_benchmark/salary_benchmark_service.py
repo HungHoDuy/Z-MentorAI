@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from backend.market_scout.schemas.salary import SalaryJobRecord, SalarySearchQuery
-from backend.market_scout.services.salary_query_normalizer import SalaryQueryNormalizer
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord, SalarySearchQuery
+from backend.market_scout.services.salary_benchmark.salary_query_normalizer import SalaryQueryNormalizer
 
 
 @dataclass(frozen=True)

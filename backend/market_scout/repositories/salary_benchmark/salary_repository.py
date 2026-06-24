@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from backend.market_scout.schemas.salary import SalaryJobRecord, SalarySearchQuery
-from backend.market_scout.services.salary_query_normalizer import SalaryQueryNormalizer
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord, SalarySearchQuery
+from backend.market_scout.services.salary_benchmark.salary_query_normalizer import SalaryQueryNormalizer
 
 
 DEFAULT_CLEANED_COLLECTION = "data_for_vectorize"
@@ -16,7 +16,7 @@ DEFAULT_JOB_TITLE_FIELD = "job_title"
 DEFAULT_JOB_TITLE_NORMALIZED_FIELD = "job_title_normalized"
 DEFAULT_JOB_TITLE_SEARCH_KEYS_FIELD = "job_title_search_keys"
 DEFAULT_SALARY_SEARCH_KEYS_FIELD = "salary_search_keys"
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class SalaryRepository:

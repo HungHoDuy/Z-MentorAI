@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from backend.market_scout.repositories.salary_vector_repository import SalaryVectorRepository, SalaryVectorSearchResult
-from backend.market_scout.services.salary_benchmark_service import SalaryBenchmarkResult, SalaryBenchmarkService
-from backend.market_scout.services.salary_summary_service import SalarySummaryResult, SalarySummaryService
+from backend.market_scout.repositories.salary_benchmark.salary_vector_repository import SalaryVectorRepository, SalaryVectorSearchResult
+from backend.market_scout.services.salary_benchmark.salary_benchmark_service import SalaryBenchmarkResult, SalaryBenchmarkService
+from backend.market_scout.services.salary_benchmark.salary_summary_service import SalarySummaryResult, SalarySummaryService
 
 
 class SalaryVectorSearchPort(Protocol):

@@ -4,7 +4,7 @@ import re
 import unicodedata
 from itertools import combinations
 
-from backend.market_scout.schemas.salary import SalarySearchQuery
+from backend.market_scout.schemas.salary_benchmark.salary import SalarySearchQuery
 
 
 DEFAULT_MAX_TITLE_SEARCH_KEYS = 50

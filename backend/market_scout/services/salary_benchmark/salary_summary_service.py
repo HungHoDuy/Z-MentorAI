@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from backend.market_scout.services.salary_benchmark_service import SalaryBenchmarkResult
+from backend.market_scout.services.salary_benchmark.salary_benchmark_service import SalaryBenchmarkResult
 
 
 DEFAULT_LLM_MODEL = "gemini-2.5-flash"

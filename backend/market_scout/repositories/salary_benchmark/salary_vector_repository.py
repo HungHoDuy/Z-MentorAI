@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from backend.market_scout.repositories.salary_repository import (
+from backend.market_scout.repositories.salary_benchmark.salary_repository import (
     build_firestore_client,
     env_or_default,
     load_env_file,
 )
-from backend.market_scout.schemas.salary import SalaryJobRecord, SalarySearchQuery
-from backend.market_scout.services.salary_query_normalizer import SalaryQueryNormalizer
-from backend.market_scout.services.vertex_embedding_service import EmbeddingService, VertexTextEmbeddingService
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord, SalarySearchQuery
+from backend.market_scout.services.salary_benchmark.salary_query_normalizer import SalaryQueryNormalizer
+from backend.market_scout.services.salary_benchmark.vertex_embedding_service import EmbeddingService, VertexTextEmbeddingService
 
 
 DEFAULT_VECTOR_COLLECTION = "data_vector_embeddings"
