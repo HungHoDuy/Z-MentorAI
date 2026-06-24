@@ -34,11 +34,11 @@ flowchart TD
 
     J --> K["Search Internal DB"]
     J --> L["Search Vector DB"]
-    J --> M["Search Web"]
+   
 
     K --> N["Evidence Collector"]
     L --> N
-    M --> N
+  
 
     N --> O["Source Evaluator"]
     O --> P["Aggregator / Analyzer"]
@@ -70,11 +70,10 @@ flowchart LR
         K["Hybrid Flow"]
     end
 
-    subgraph Data["Data Access"]
-        L["Repositories"]
+    subgraph Data
         M["DB Retriever"]
         N["Vector Retriever"]
-        O["Web Retriever"]
+        
     end
 
     subgraph Services["Services"]
@@ -92,11 +91,9 @@ flowchart LR
     D --> E
     E --> M
     E --> N
-    E --> O
+
     M --> F
     N --> F
-    O --> F
-    L --> F
     F --> G
     G --> P
     P --> Q
@@ -115,10 +112,10 @@ flowchart TD
     C --> D["Plan Data Sources"]
     D --> E["Search Salary Repository"]
     D --> F["Search Vector DB"]
-    D --> G["Search Web"]
+  
     E --> H["Collect Evidence"]
     F --> H
-    G --> H
+   
     H --> I["Evaluate Sources"]
     I --> J["Aggregate Salary Range"]
     J --> K["Build Citations"]
@@ -187,289 +184,201 @@ Expected output fields:
   "sources": [],
   "limitations": []
 }
+
 ```
 
-## Folder Structure
+## Trend Tracker Solution Design
+
+Trend Tracker should be a signal-based analysis system, not a heavy forecasting model. Raw job volume is only one signal because large industries can always have many postings. The trend decision should be based on velocity, salary pressure, skill movement, external evidence quality, and freshness.
+
+### Offline Data Pipeline
+
+```mermaid
+flowchart TD
+    A["Job postings / salary records"] --> B["Monthly Snapshot Builder"]
+    B --> C["trend_snapshots"]
+
+    A --> D["Skill Extractor"]
+    D --> C
+
+    E["Curated reports / articles"] --> F["Source Fetcher"]
+    F --> G["Content Cleaner + Dedup"]
+    G --> H["Signal Extractor"]
+    H --> I["trend_sources"]
+    H --> J["trend_evidence"]
+
+    J --> K["Trend Embedding Text Builder"]
+    K --> L["Vertex Text Embedding"]
+    L --> M["trend_vector_embeddings"]
+
+    C --> N["Trend Repository"]
+    J --> N
+    M --> O["Trend Vector Repository"]
+```
+
+### Runtime Query Flow
+
+```mermaid
+flowchart TD
+    A["Trend query"] --> B["Normalize role / industry / location / horizon"]
+    B --> C["Search trend_snapshots"]
+    B --> D["Search trend_vector_embeddings"]
+    C --> E["Evidence Collector"]
+    D --> E
+    E --> F["Source Evaluator"]
+    F --> G["Trend Signal Service"]
+    G --> H["Deterministic score + confidence"]
+    H --> I["Trend Summary Service"]
+    I --> J["Final answer + sources + limitations"]
+```
+
+### Firestore Collections
+
+`trend_sources` stores source metadata and source quality signals.
+
+```json
+{
+  "source_id": "report_2026_001",
+  "url": "https://example.com/report",
+  "title": "Vietnam hiring outlook 2026",
+  "publisher": "Example Research",
+  "source_type": "report",
+  "published_at": "2026-05-01",
+  "fetched_at": "2026-06-18",
+  "reliability_score": 0.8,
+  "content_hash": "sha256...",
+  "location_scope": "Vietnam",
+  "industries": ["AI/Data"],
+  "roles": ["Data Engineer", "AI Engineer"]
+}
+```
+
+`trend_evidence` stores structured signals extracted from internal snapshots, reports, or articles.
+
+```json
+{
+  "evidence_id": "evidence_001",
+  "source_id": "report_2026_001",
+  "industry": "AI/Data",
+  "role": "Data Engineer",
+  "location": "Vietnam",
+  "time_horizon": "2026",
+  "signal_type": "hiring_growth",
+  "direction": "growth",
+  "magnitude": 0.32,
+  "metric_value": 32,
+  "metric_unit": "percent_yoy",
+  "summary": "Data engineering demand increased year over year.",
+  "published_at": "2026-05-01",
+  "confidence": "medium"
+}
+```
+
+`trend_snapshots` stores deterministic monthly aggregates from internal job and salary data.
+
+```json
+{
+  "period": "2026-06",
+  "industry": "AI/Data",
+  "role": "Data Engineer",
+  "location": "Vietnam",
+  "job_count": 128,
+  "job_share": 0.041,
+  "company_count": 72,
+  "mom_growth": 0.18,
+  "qoq_growth": 0.31,
+  "median_salary_vnd": 42000000,
+  "salary_growth": 0.09,
+  "skill_mentions": {
+    "rag": 35,
+    "gcp": 22,
+    "data_pipeline": 64
+  },
+  "trend_score": 0.72,
+  "confidence": "medium"
+}
+```
+
+`trend_vector_embeddings` stores embedding-ready trend evidence. Use explicit labels and stable fields so vectors do not churn unnecessarily.
 
 ```text
-backend/
-└── market_scout/
-    ├── __init__.py
-    ├── agent.py
-    ├── config.py
-    ├── README.md
-    │
-    ├── api/
-    │   ├── __init__.py
-    │   └── routes.py
-    │
-    ├── core/
-    │   ├── __init__.py
-    │   ├── intent_classifier.py
-    │   ├── entity_extractor.py
-    │   ├── query_planner.py
-    │   ├── evidence_collector.py
-    │   ├── source_evaluator.py
-    │   └── response_composer.py
-    │
-    ├── flows/
-    │   ├── __init__.py
-    │   ├── salary_benchmark_flow.py
-    │   ├── trend_tracker_flow.py
-    │   └── hybrid_flow.py
-    │
-    ├── retrievers/
-    │   ├── __init__.py
-    │   ├── db_retriever.py
-    │   ├── vector_retriever.py
-    │   └── web_retriever.py
-    │
-    ├── services/
-    │   ├── __init__.py
-    │   ├── salary_service.py
-    │   ├── trend_service.py
-    │   ├── citation_service.py
-    │   └── normalization_service.py
-    │
-    ├── schemas/
-    │   ├── __init__.py
-    │   ├── request.py
-    │   ├── response.py
-    │   ├── entities.py
-    │   └── source.py
-    |   |__ enums.py
-    │
-    ├── prompts/
-    │   ├── intent_classifier_prompt.txt
-    │   ├── entity_extractor_prompt.txt
-    │   ├── salary_answer_prompt.txt
-    │   └── trend_answer_prompt.txt
-    │
-    ├── repositories/
-    │   ├── __init__.py
-    │   ├── salary_repository.py
-    │   ├── trend_repository.py
-    │   └── source_repository.py
-    │
-    ├── pipelines/
-    │   ├── __init__.py
-    │   ├── ingest_sources_pipeline.py
-    │   ├── extract_salary_pipeline.py
-    │   └── extract_trend_pipeline.py
-    │
-    └── tests/
-        ├── test_intent_classifier.py
-        ├── test_entity_extractor.py
-        ├── test_salary_flow.py
-        └── test_trend_flow.py
+Industry: AI/Data
+Role: Data Engineer
+Location: Vietnam
+Time horizon: 2026
+Signal type: hiring_growth
+Direction: growth
+Metric: 32 percent_yoy
+Evidence: Data engineering demand increased year over year.
+Source: Example Research
+Published date: 2026-05-01
 ```
 
-## Task Plan
+### Trend Scoring
 
-1. Define schemas.
-
-   Files:
-
-   ```text
-   schemas/request.py
-   schemas/response.py
-   schemas/entities.py
-   schemas/source.py
-   schemas/__init__.py
-   ```
-
-2. Build the MarketScoutAgent entrypoint.
-
-   Files:
-
-   ```text
-   agent.py
-   __init__.py
-   ```
-
-3. Build the intent classifier.
-
-   Files:
-
-   ```text
-   core/intent_classifier.py
-   prompts/intent_classifier_prompt.txt
-   ```
-
-4. Build the entity extractor.
-
-   Files:
-
-   ```text
-   core/entity_extractor.py
-   prompts/entity_extractor_prompt.txt
-   ```
-
-5. Build the query planner.
-
-   Files:
-
-   ```text
-   core/query_planner.py
-   ```
-
-6. Build retrievers.
-
-   Files:
-
-   ```text
-   retrievers/db_retriever.py
-   retrievers/vector_retriever.py
-   retrievers/web_retriever.py
-   retrievers/__init__.py
-   ```
-
-7. Build repositories.
-
-   Files:
-
-   ```text
-   repositories/salary_repository.py
-   repositories/trend_repository.py
-   repositories/source_repository.py
-   repositories/__init__.py
-   ```
-
-8. Build the evidence collector.
-
-   Files:
-
-   ```text
-   core/evidence_collector.py
-   ```
-
-9. Build the source evaluator.
-
-   Files:
-
-   ```text
-   core/source_evaluator.py
-   ```
-
-10. Build the normalization service.
-
-    Files:
-
-    ```text
-    services/normalization_service.py
-    ```
-
-11. Build the salary service.
-
-    Files:
-
-    ```text
-    services/salary_service.py
-    ```
-
-12. Build the trend service.
-
-    Files:
-
-    ```text
-    services/trend_service.py
-    ```
-
-13. Build the citation service.
-
-    Files:
-
-    ```text
-    services/citation_service.py
-    ```
-
-14. Build the salary benchmark flow.
-
-    Files:
-
-    ```text
-    flows/salary_benchmark_flow.py
-    ```
-
-15. Build the trend tracker flow.
-
-    Files:
-
-    ```text
-    flows/trend_tracker_flow.py
-    ```
-
-16. Build the hybrid flow.
-
-    Files:
-
-    ```text
-    flows/hybrid_flow.py
-    flows/__init__.py
-    ```
-
-17. Build the response composer.
-
-    Files:
-
-    ```text
-    core/response_composer.py
-    prompts/salary_answer_prompt.txt
-    prompts/trend_answer_prompt.txt
-    ```
-
-18. Build API routes if Market Scout is called through HTTP.
-
-    Files:
-
-    ```text
-    api/routes.py
-    api/__init__.py
-    ```
-
-19. Build background pipelines.
-
-    Files:
-
-    ```text
-    pipelines/ingest_sources_pipeline.py
-    pipelines/extract_salary_pipeline.py
-    pipelines/extract_trend_pipeline.py
-    pipelines/__init__.py
-    ```
-
-20. Write unit tests.
-
-    Files:
-
-    ```text
-    tests/test_intent_classifier.py
-    tests/test_entity_extractor.py
-    tests/test_salary_flow.py
-    tests/test_trend_flow.py
-    ```
-
-## Implementation Order Summary
+Trend scoring should be deterministic and explainable.
 
 ```text
-schemas
--> agent.py
--> intent_classifier
--> entity_extractor
--> query_planner
--> retrievers
--> repositories
--> evidence_collector
--> source_evaluator
--> services
--> salary_benchmark_flow
--> trend_tracker_flow
--> hybrid_flow
--> response_composer
--> api routes
--> pipelines
--> tests
+trend_score =
+  0.35 * hiring_velocity
++ 0.20 * salary_pressure
++ 0.20 * skill_velocity
++ 0.15 * external_evidence
++ 0.10 * freshness_reliability
 ```
+
+Signal definitions:
+
+- `hiring_velocity`: normalized MoM/QoQ growth, job share growth, and distinct company growth.
+- `salary_pressure`: salary median growth and salary premium compared with the broader market.
+- `skill_velocity`: growth in role-specific skill mentions, not raw mention count.
+- `external_evidence`: number and strength of relevant external sources with concrete data.
+- `freshness_reliability`: source recency and publisher reliability.
+
+Confidence should depend on evidence quality:
+
+- `high`: internal snapshots cover at least 3 periods and external sources are fresh/reliable.
+- `medium`: internal snapshots are available but sparse, or external evidence is good but limited.
+- `low`: no time-series history, weak vector matches, stale sources, or only generic articles.
+
+### Implementation Modules
+
+```text
+schemas/trend.py
+repositories/trend_repository.py
+repositories/trend_vector_repository.py
+services/trend_query_normalizer.py
+services/trend_embedding_text_service.py
+services/trend_signal_service.py
+services/trend_summary_service.py
+flows/trend_tracker_flow.py
+pipelines/build_trend_snapshots_pipeline.py
+pipelines/ingest_trend_sources_pipeline.py
+```
+
+Recommended boundaries:
+
+- `flows/`: orchestrate retrieval, evaluation, scoring, and summary composition.
+- `services/`: normalize queries, build embedding text, score signals, and summarize results.
+- `repositories/`: isolate Firestore and vector search calls.
+- `schemas/`: define request, evidence, snapshot, score, source, and response contracts.
+- `pipelines/`: build monthly snapshots and ingest external evidence offline.
+
+### MVP Build Order
+
+1. Build `trend_snapshots` from internal job data first. If historical `posted_at` or `crawled_at` is missing, return current demand with low confidence instead of claiming a trend.
+2. Add deterministic `TrendSignalService` for hiring velocity, salary pressure, skill velocity, and confidence.
+3. Add curated source ingestion for reports/articles, with URL/content hash deduplication.
+4. Embed `trend_evidence` and create `TrendVectorRepository`.
+5. Add `TrendTrackerFlow` and connect it to `MarketScoutAgent`.
+6. Add focused tests for query normalization, scoring, source evaluation, embedding text, vector filtering, and flow orchestration.
+
+### Limitations
+
+- Do not use raw job count alone as the trend signal.
+- Do not claim future forecasts unless the answer clearly states the time horizon, evidence strength, and limitations.
+- Do not use LLM output as the source of truth for trend score. The LLM should only summarize deterministic evidence and cite sources.
+- Web search should be a fallback or enrichment path, not the primary runtime dependency.
 
 ## Notes
 
@@ -480,69 +389,5 @@ schemas
 - Trend answers should mention time horizon and confidence level.
 - Source evaluation should consider freshness, publisher reliability, relevance, and whether the source contains concrete data.
 
-## Firestore Job Cleaning Pipeline
-
-The raw crawled data from TopCV and CareerViet should be cleaned into one Firestore collection before it is used by Salary Benchmark or Trend Tracker.
-
-Cleaned job schema:
-
-```json
-{
-  "job_id": "35B27987",
-  "job_url": "https://...",
-  "company": "FUKUSHIMA GALILEI VIETNAM COMPANY LIMITED",
-  "job_title": "QUẢN LÝ DỰ ÁN ĐIỆN LẠNH",
-  "location": "Hồ Chí Minh",
-  "benefits": ["Du lịch nước ngoài", "Đồng phục", "Chế độ thưởng"],
-  "salary_raw": "14 Tr - 18 Tr VND",
-  "salary_min": 14000000,
-  "salary_max": 18000000,
-  "currency": "VND"
-}
-```
-
-Cleaning rules:
-
-- Salary is parsed from the salary column first, for example `Lương`, `Mức lương`, or `salary`.
-- If the salary column is missing or non-numeric, for example `Thỏa thuận`, the pipeline tries to parse `Thông tin khác`.
-- Benefit fields can come from array fields such as `benefits` or numeric keys such as `4`, `5`, `6`.
-- Records without `company` or `job_title` are skipped by default because they are unsafe for deduplication.
-
-Deduplication rules:
-
-- Exact duplicates are removed first by normalized `job_url` or normalized `company + job_title + location + salary`.
-- Near duplicates are detected with cosine similarity over weighted text features: company, job title, location, salary, and job requirements.
-- Near-duplicate comparison only applies when the normalized company matches, or when one record is missing company, to avoid merging similar jobs from different companies.
-- The default similarity threshold is `0.86`.
-
-Run a dry-run:
-
-```bash
-python backend/market_scout/run_cleanJobs.py --raw-collection raw_jobs --cleaned-collection cleaned_jobs --dry-run
-```
-
-Configure Firestore credentials in `backend/market_scout/.env`:
-
-```env
-GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
-```
-
-Validate the environment without reading Firestore:
-
-```bash
-python backend/market_scout/run_cleanJobs.py --check-env
-```
-
-Run and write cleaned documents:
-
-```bash
-python backend/market_scout/run_cleanJobs.py --raw-collection raw_jobs --cleaned-collection cleaned_jobs
-```
-
-Useful options:
-
-```bash
-python backend/market_scout/run_cleanJobs.py --limit 100 --similarity-threshold 0.82 --dry-run
-python backend/market_scout/run_cleanJobs.py --raw-collection jobs_raw --cleaned-collection jobs_cleaned --no-overwrite
-```
+## Tech stack: Google cloud platform
+- Objectives: build a system light-weight, low-cost 
