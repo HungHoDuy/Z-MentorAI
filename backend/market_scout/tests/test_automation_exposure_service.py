@@ -1,7 +1,7 @@
 from datetime import date
 
-from backend.market_scout.schemas.automation_risk import AutomationRiskLookup
-from backend.market_scout.services.automation_exposure_service import AutomationExposureService
+from backend.market_scout.schemas.trend_tracker.automation_risk import AutomationRiskLookup
+from backend.market_scout.services.trend_tracker.automation_exposure_service import AutomationExposureService
 
 
 class FakeRiskRepository:

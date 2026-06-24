@@ -1,8 +1,8 @@
 from datetime import date
 
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlow
-from backend.market_scout.schemas.hybrid_signal import HybridSignalResult
-from backend.market_scout.schemas.trend_query import TrendQuery, TrendQueryInput, TrendQueryIntent
+from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryInput, TrendQueryIntent
 
 
 class FakeNormalizer:

@@ -4,17 +4,17 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from backend.market_scout.repositories.automation_risk_repository import AutomationRiskRepository
-from backend.market_scout.repositories.trend_evidence_repository import TrendEvidenceRepository
-from backend.market_scout.repositories.trend_job_fact_repository import TrendJobFactRepository
-from backend.market_scout.repositories.trend_snapshot_repository import TrendSnapshotRepository
-from backend.market_scout.schemas.hybrid_signal import HybridSignalResult
-from backend.market_scout.schemas.trend_query import TrendQuery, TrendQueryInput
-from backend.market_scout.services.automation_exposure_service import AutomationExposureService
-from backend.market_scout.services.current_demand_service import CurrentDemandService
-from backend.market_scout.services.hybrid_signal_service import HybridSignalService
-from backend.market_scout.services.skill_frequency_service import SkillFrequencyService
-from backend.market_scout.services.trend_query_normalizer import TrendQueryNormalizer
+from backend.market_scout.repositories.trend_tracker.automation_risk_repository import AutomationRiskRepository
+from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import TrendEvidenceRepository
+from backend.market_scout.repositories.trend_tracker.trend_job_fact_repository import TrendJobFactRepository
+from backend.market_scout.repositories.trend_tracker.trend_snapshot_repository import TrendSnapshotRepository
+from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryInput
+from backend.market_scout.services.trend_tracker.automation_exposure_service import AutomationExposureService
+from backend.market_scout.services.trend_tracker.current_demand_service import CurrentDemandService
+from backend.market_scout.services.trend_tracker.hybrid_signal_service import HybridSignalService
+from backend.market_scout.services.trend_tracker.skill_frequency_service import SkillFrequencyService
+from backend.market_scout.services.trend_tracker.trend_query_normalizer import TrendQueryNormalizer
 
 
 @dataclass(frozen=True)

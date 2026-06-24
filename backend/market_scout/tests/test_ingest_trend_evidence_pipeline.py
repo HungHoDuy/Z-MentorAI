@@ -7,7 +7,7 @@ from backend.market_scout.pipelines.ingest_trend_evidence_pipeline import (
     trend_evidence_to_document,
     trend_source_to_document,
 )
-from backend.market_scout.schemas.trend_external_evidence import TrendEvidence, TrendSource
+from backend.market_scout.schemas.trend_tracker.trend_external_evidence import TrendEvidence, TrendSource
 
 
 def test_pipeline_dry_run_validates_claim_source_relationship() -> None:

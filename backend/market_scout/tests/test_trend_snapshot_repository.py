@@ -1,6 +1,6 @@
 from datetime import date
 
-from backend.market_scout.repositories.trend_snapshot_repository import TrendSnapshotRepository
+from backend.market_scout.repositories.trend_tracker.trend_snapshot_repository import TrendSnapshotRepository
 
 
 class FakeSnapshot:

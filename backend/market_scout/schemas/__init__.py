@@ -3,7 +3,8 @@ from backend.market_scout.schemas.market_scout import (
     MarketScoutRequest,
     MarketScoutResponse,
 )
-from backend.market_scout.schemas.salary import SalaryJobRecord, SalarySearchQuery
+
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord, SalarySearchQuery
 
 __all__ = [
     "MarketScoutIntent",

@@ -1,7 +1,7 @@
 from backend.market_scout.pipelines.seed_automation_risk_lookup_pipeline import (
     automation_risk_lookup_to_document,
 )
-from backend.market_scout.services.automation_risk_seed import (
+from backend.market_scout.services.trend_tracker.automation_risk_seed import (
     default_automation_risk_lookups,
 )
 

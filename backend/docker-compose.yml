@@ -70,10 +70,16 @@ services:
 
   market-scout:
     build:
-      context: ./market_scout
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: backend/market_scout/Dockerfile
     ports:
       - "8002:8080"
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /var/secrets/google/service_account.json
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-z-mentorai}
+      MARKET_SCOUT_FIRESTORE_DATABASE: ${MARKET_SCOUT_FIRESTORE_DATABASE:-(default)}
+    volumes:
+      - ${MARKET_SCOUT_SERVICE_ACCOUNT_PATH:-./market_scout/service_account.json}:/var/secrets/google/service_account.json:ro
 
   academic-architect:
     build:

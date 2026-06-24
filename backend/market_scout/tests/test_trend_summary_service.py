@@ -1,7 +1,7 @@
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlowResult
-from backend.market_scout.schemas.hybrid_signal import HybridSignalResult
-from backend.market_scout.schemas.trend_query import TrendQuery, TrendQueryIntent
-from backend.market_scout.services.trend_summary_service import TrendSummaryService
+from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryIntent
+from backend.market_scout.services.trend_tracker.trend_summary_service import TrendSummaryService
 
 
 def test_current_demand_summary_keeps_baseline_not_directional_trend() -> None:

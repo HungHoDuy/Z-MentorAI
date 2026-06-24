@@ -6,8 +6,8 @@ from typing import Any
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow, SalaryBenchmarkFlowResult
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlow, TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest, MarketScoutResponse
-from backend.market_scout.schemas.trend_query import TrendQueryInput, TrendQueryIntent
-from backend.market_scout.services.trend_llm_summary_service import TrendLlmSummaryService
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryInput, TrendQueryIntent
+from backend.market_scout.services.trend_tracker.trend_llm_summary_service import TrendLlmSummaryService
 
 
 class MarketScoutAgent:
@@ -26,7 +26,7 @@ class MarketScoutAgent:
         self.intent_classifier = intent_classifier
         self.entity_extractor = entity_extractor
         self.query_planner = query_planner
-        self.salary_flow = salary_flow or SalaryBenchmarkFlow()
+        self.salary_flow = salary_flow
         self.trend_flow = trend_flow
         self.hybrid_flow = hybrid_flow
         self.response_composer = response_composer or TrendLlmSummaryService()
@@ -39,7 +39,8 @@ class MarketScoutAgent:
 
         intent = await self._resolve_intent(request)
         if intent == MarketScoutIntent.SALARY_BENCHMARK:
-            result = self.salary_flow.run(
+            salary_flow = self.salary_flow or SalaryBenchmarkFlow()
+            result = salary_flow.run(
                 request.user_query,
                 top_k=self.default_top_k,
                 fetch_k=self.default_fetch_k,

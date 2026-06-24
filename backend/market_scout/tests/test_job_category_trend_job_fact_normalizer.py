@@ -1,6 +1,6 @@
 from datetime import date
 
-from backend.market_scout.services.job_category_trend_job_fact_normalizer import (
+from backend.market_scout.services.trend_tracker.job_category_trend_job_fact_normalizer import (
     JobCategoryTrendJobFactNormalizer,
 )
 

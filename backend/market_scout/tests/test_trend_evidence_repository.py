@@ -1,11 +1,11 @@
 from datetime import date
 
-from backend.market_scout.repositories.trend_evidence_repository import (
+from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import (
     select_external_outlook_evidence,
     trend_evidence_from_document,
     trend_source_from_document,
 )
-from backend.market_scout.schemas.trend_external_evidence import (
+from backend.market_scout.schemas.trend_tracker.trend_external_evidence import (
     TrendEvidence,
     TrendEvidenceMatch,
     TrendSource,

@@ -1,7 +1,7 @@
 from datetime import date
 
-from backend.market_scout.schemas.job_category_trend import JobCategoryTrendJobFact
-from backend.market_scout.services.job_family_trend_snapshot_builder import (
+from backend.market_scout.schemas.trend_tracker.job_category_trend import JobCategoryTrendJobFact
+from backend.market_scout.services.trend_tracker.job_family_trend_snapshot_builder import (
     JobFamilyTrendSnapshotBuilder,
 )
 

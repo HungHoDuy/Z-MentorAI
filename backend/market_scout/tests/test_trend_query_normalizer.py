@@ -1,10 +1,10 @@
 import pytest
 
-from backend.market_scout.schemas.trend_query import (
+from backend.market_scout.schemas.trend_tracker.trend_query import (
     TrendQueryInput,
     TrendQueryIntent,
 )
-from backend.market_scout.services.trend_query_normalizer import TrendQueryNormalizer
+from backend.market_scout.services.trend_tracker.trend_query_normalizer import TrendQueryNormalizer
 
 
 def test_resolves_raw_category_and_location_to_snapshot_dimensions() -> None:

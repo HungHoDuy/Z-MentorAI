@@ -1,7 +1,7 @@
 from datetime import date
 
-from backend.market_scout.repositories.trend_job_fact_repository import TrendJobFactRepository
-from backend.market_scout.schemas.job_family_trend_snapshot import JobFamilyTrendSnapshot
+from backend.market_scout.repositories.trend_tracker.trend_job_fact_repository import TrendJobFactRepository
+from backend.market_scout.schemas.trend_tracker.job_family_trend_snapshot import JobFamilyTrendSnapshot
 
 
 class FakeSnapshot:

@@ -1,7 +1,7 @@
 from datetime import date
 
-from backend.market_scout.schemas.job_family_trend_snapshot import JobFamilyTrendSnapshot
-from backend.market_scout.services.current_demand_service import CurrentDemandService
+from backend.market_scout.schemas.trend_tracker.job_family_trend_snapshot import JobFamilyTrendSnapshot
+from backend.market_scout.services.trend_tracker.current_demand_service import CurrentDemandService
 
 
 def test_returns_high_current_demand_for_large_broad_snapshot() -> None:

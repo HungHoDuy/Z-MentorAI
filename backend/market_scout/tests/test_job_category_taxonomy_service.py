@@ -1,4 +1,4 @@
-from backend.market_scout.services.job_category_taxonomy_service import (
+from backend.market_scout.services.trend_tracker.job_category_taxonomy_service import (
     DEFAULT_JOB_CATEGORIES,
     JobCategoryTaxonomyService,
 )

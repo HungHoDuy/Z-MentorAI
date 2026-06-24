@@ -1,17 +1,17 @@
 from datetime import date
 
-from backend.market_scout.schemas.automation_risk import AutomationExposureSignal
-from backend.market_scout.schemas.current_skill_demand import CurrentSkillDemandSignal, SkillFrequency
-from backend.market_scout.schemas.job_family_trend_snapshot import JobFamilyTrendSnapshot
-from backend.market_scout.schemas.trend_external_evidence import (
+from backend.market_scout.schemas.trend_tracker.automation_risk import AutomationExposureSignal
+from backend.market_scout.schemas.trend_tracker.current_skill_demand import CurrentSkillDemandSignal, SkillFrequency
+from backend.market_scout.schemas.trend_tracker.job_family_trend_snapshot import JobFamilyTrendSnapshot
+from backend.market_scout.schemas.trend_tracker.trend_external_evidence import (
     TrendEvidence,
     TrendEvidenceMatch,
     TrendSource,
 )
-from backend.market_scout.schemas.trend_query import TrendQuery, TrendQueryIntent
-from backend.market_scout.schemas.trend_snapshot_read import TrendSnapshotReadResult
-from backend.market_scout.services.current_demand_service import CurrentDemandService
-from backend.market_scout.services.hybrid_signal_service import HybridSignalService
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryIntent
+from backend.market_scout.schemas.trend_tracker.trend_snapshot_read import TrendSnapshotReadResult
+from backend.market_scout.services.trend_tracker.current_demand_service import CurrentDemandService
+from backend.market_scout.services.trend_tracker.hybrid_signal_service import HybridSignalService
 
 
 class FakeSnapshotRepository:

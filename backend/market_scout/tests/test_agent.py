@@ -6,12 +6,12 @@ from typing import Any
 from backend.market_scout.agent import MarketScoutAgent
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlowResult
 from backend.market_scout.schemas import MarketScoutIntent
-from backend.market_scout.services.salary_benchmark_service import (
+from backend.market_scout.services.salary_benchmark.salary_benchmark_service import (
     SalaryBenchmarkResult,
     SalaryBenchmarkSource,
     SalaryRange,
 )
-from backend.market_scout.services.salary_summary_service import SalarySummaryResult
+from backend.market_scout.services.salary_benchmark.salary_summary_service import SalarySummaryResult
 
 
 class FakeSalaryFlow:

@@ -33,6 +33,7 @@ backend/profile_scanner/holland_results_db.json
 
 # Secrets
 backend/client_secret_*.json
+backend/market_scout/service_account.json
 
 # Crawled data
 backend/crawl_jobs/*.json

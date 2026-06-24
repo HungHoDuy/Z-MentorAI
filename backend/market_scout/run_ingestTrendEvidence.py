@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.market_scout.pipelines.ingest_trend_evidence_pipeline import (
     IngestTrendEvidencePipeline,
 )
-from backend.market_scout.repositories.trend_evidence_repository import (
+from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import (
     trend_evidence_from_document,
     trend_source_from_document,
 )

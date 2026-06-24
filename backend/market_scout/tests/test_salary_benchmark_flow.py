@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow
-from backend.market_scout.repositories.salary_vector_repository import SalaryVectorSearchResult
-from backend.market_scout.schemas.salary import SalaryJobRecord
-from backend.market_scout.services.salary_summary_service import SalarySummaryResult
+from backend.market_scout.repositories.salary_benchmark.salary_vector_repository import SalaryVectorSearchResult
+from backend.market_scout.schemas.salary_benchmark.salary import SalaryJobRecord
+from backend.market_scout.services.salary_benchmark.salary_summary_service import SalarySummaryResult
 
 
 class FakeVectorRepository:

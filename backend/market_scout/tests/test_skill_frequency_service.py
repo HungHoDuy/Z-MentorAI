@@ -1,8 +1,8 @@
 from datetime import date
 
-from backend.market_scout.schemas.job_category_trend import JobCategoryTrendJobFact
-from backend.market_scout.schemas.job_family_trend_snapshot import JobFamilyTrendSnapshot
-from backend.market_scout.services.skill_frequency_service import SkillFrequencyService
+from backend.market_scout.schemas.trend_tracker.job_category_trend import JobCategoryTrendJobFact
+from backend.market_scout.schemas.trend_tracker.job_family_trend_snapshot import JobFamilyTrendSnapshot
+from backend.market_scout.services.trend_tracker.skill_frequency_service import SkillFrequencyService
 
 
 class FakeFactRepository:

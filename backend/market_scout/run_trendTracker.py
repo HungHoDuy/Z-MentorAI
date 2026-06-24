@@ -14,7 +14,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from backend.market_scout.agent import MarketScoutAgent
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest
-from backend.market_scout.schemas.trend_query import TrendQueryIntent
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryIntent
 
 
 def main() -> None:
