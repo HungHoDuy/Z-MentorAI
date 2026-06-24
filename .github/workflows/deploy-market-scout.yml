@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'backend/market_scout/**'
+      - '.dockerignore'
       - '.github/workflows/deploy-market-scout.yml'
       - '.github/workflows/reusable-deploy.yml'
   workflow_dispatch:
@@ -15,5 +16,6 @@ jobs:
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       service_name: market-scout
-      build_context: ./backend/market_scout
+      build_context: .
+      dockerfile_path: ./backend/market_scout/Dockerfile
     secrets: inherit
