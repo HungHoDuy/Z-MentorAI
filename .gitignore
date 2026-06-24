@@ -7,7 +7,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-backend/market_scout/service_account.json
 
 # Python
 __pycache__/
@@ -24,6 +23,7 @@ __pycache__/
 ehthumbs.db
 Thumbs.db
 tmp-local-run-logs/
+.local-logs/
 frontend-dev*.log
 
 # Database / User Profiles

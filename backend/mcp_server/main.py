@@ -37,7 +37,7 @@ def _upstream_error_payload(
 
 def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
-        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=10.0)
+        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=60.0)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as exc:
@@ -68,12 +68,13 @@ def profile_scanner(
     user_id: str,
     background_info: str = "",
     task: str = "scan_profile",
-    answers_json: str = ""
+    answers_json: str = "",
+    cv_document_id: str = ""
 ) -> dict:
     """Use this Profile Scanner agent tool for CV/profile scanning and Holland/RIASEC career-interest assessment.
 
     Supported task values:
-    - scan_profile: scan the user's CV/background/profile text.
+    - scan_profile: scan a previously uploaded CV document when cv_document_id is provided.
     - holland_start: start the Holland/RIASEC test and return the question bank.
     - holland_score: score and save completed Holland/RIASEC answers.
 
@@ -113,7 +114,8 @@ def profile_scanner(
 
     return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
         "user_id": user_id,
-        "background_info": background_info
+        "background_info": background_info,
+        "cv_document_id": cv_document_id
     })
 
 @mcp.tool()
