@@ -2025,3 +2025,123 @@
 .course-card:hover .course-action-link {
   color: #ea580c;
 }
+
+/* Google Calendar Card styling */
+.calendar-sync-card {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, #ffffff 0%, #fcfdfd 100%);
+  border: 1px dashed rgba(248, 201, 107, 0.5);
+  border-radius: 14px;
+  box-shadow: 0 4px 15px rgba(248, 201, 107, 0.04);
+}
+
+.calendar-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.calendar-card-icon {
+  font-size: 1.35rem;
+}
+
+.calendar-card-header h4 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 780;
+  color: var(--text-primary);
+}
+
+.calendar-card-desc {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  line-height: 1.48;
+  color: var(--text-muted);
+}
+
+.calendar-card-actions {
+  display: flex;
+  align-items: center;
+}
+
+.calendar-sync-btn {
+  padding: 0.58rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 0;
+  border-radius: 9px;
+  background: #f8c96b;
+  color: #9a3412;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(248, 201, 107, 0.25);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-sync-btn:hover {
+  background: #f6b83f;
+  transform: translateY(-1px);
+}
+
+.calendar-sync-btn.loading {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(154, 52, 18, 0.2);
+  border-top-color: #9a3412;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.calendar-sync-success-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.48rem 0.8rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.success-check {
+  font-weight: bold;
+}
+
+.calendar-sync-error-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #991b1b;
+  font-size: 0.78rem;
+}
+
+.error-cross {
+  font-weight: bold;
+}
+
+.calendar-retry-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff5f5;
+  color: #991b1b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-retry-btn:hover {
+  background: #fee2e2;
+}

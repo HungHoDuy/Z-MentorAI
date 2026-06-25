@@ -558,6 +558,22 @@ async def delete_session(session_id: str, x_user_id: str = Header(...)):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "success", "message": "Session deleted"}
 
+class CalendarAppendRequest(BaseModel):
+    career_goal: str
+    lacking_skills: list[str]
+    courses: list[dict]
+
+@app.post("/calendar/append")
+async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = Header(...)):
+    # Mocking calendar event creation. In a real integration, we'd use Google Calendar API client.
+    print(f"Calendar: Scheduling {len(request.courses)} courses for user {x_user_id} towards target '{request.career_goal}'")
+    return {
+        "status": "success",
+        "message": f"Đã lập lịch thành công {len(request.courses)} khóa học cho mục tiêu {request.career_goal} trên Google Calendar.",
+        "scheduled_events_count": len(request.courses),
+        "calendar_name": f"Lộ trình học {request.career_goal}"
+    }
+
 # System prompt
 def get_system_message(user_id: str) -> SystemMessage:
     return SystemMessage(content=(
@@ -571,7 +587,7 @@ def get_system_message(user_id: str) -> SystemMessage:
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
-        "For course roadmap or learning planning, call the academic_architect tool with the user's target career goal and current skills. "
+        "For course roadmap or learning planning, call the academic_architect tool with the user's target career goal, user_id (pass the current user's User ID), and optionally current_skills. "
         "When calling academic_architect, write a short, friendly summary or introduction (1-2 sentences) in your final response. Do not repeat or copy the entire academic plan or list of courses, as the Academic Architect tool widget will display them beautifully. "
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "

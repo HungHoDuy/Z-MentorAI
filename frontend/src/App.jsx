@@ -460,10 +460,42 @@ function HollandTestForm({ output, onSendMessage }) {
   );
 }
 
-function AcademicPlanWidget({ output }) {
+function AcademicPlanWidget({ output, user, backendUrl }) {
   const plan = output.academic_plan || '';
   const courses = output.courses || [];
-  
+  const lackingSkills = output.lacking_skills || [];
+  const careerGoal = output.career_goal || 'Lộ trình học tập';
+
+  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
+  const [calendarMessage, setCalendarMessage] = useState('');
+
+  const handleAddToCalendar = async () => {
+    if (!user || calendarStatus === 'loading') return;
+    setCalendarStatus('loading');
+    try {
+      const res = await fetch(`${backendUrl}/calendar/append`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': user.google_id
+        },
+        body: JSON.stringify({
+          career_goal: careerGoal,
+          lacking_skills: lackingSkills,
+          courses: courses.map(c => ({ name: c.name, url: c.url }))
+        })
+      });
+      if (!res.ok) throw new Error('Không thể đồng bộ lịch học');
+      const data = await res.json();
+      setCalendarStatus('success');
+      setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
+    } catch (err) {
+      console.error(err);
+      setCalendarStatus('error');
+      setCalendarMessage('Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
+    }
+  };
+
   return (
     <div className="academic-plan-widget">
       <div className="academic-plan-markdown">
@@ -514,11 +546,50 @@ function AcademicPlanWidget({ output }) {
           </div>
         </div>
       )}
+
+      {/* Google Calendar Sync Widget */}
+      <div className="calendar-sync-card">
+        <div className="calendar-card-header">
+          <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
+          <h4>Lập kế hoạch học tập trên Google Calendar</h4>
+        </div>
+        <p className="calendar-card-desc">
+          Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho các khóa học trên Google Calendar.
+        </p>
+        <div className="calendar-card-actions">
+          {calendarStatus === 'idle' && (
+            <button className="calendar-sync-btn" onClick={handleAddToCalendar}>
+              Thêm lộ trình vào Google Calendar
+            </button>
+          )}
+          {calendarStatus === 'loading' && (
+            <button className="calendar-sync-btn loading" disabled>
+              <span className="btn-spinner" />
+              Đang đồng bộ...
+            </button>
+          )}
+          {calendarStatus === 'success' && (
+            <div className="calendar-sync-success-msg">
+              <span className="success-check">✓</span>
+              <span>{calendarMessage}</span>
+            </div>
+          )}
+          {calendarStatus === 'error' && (
+            <div className="calendar-sync-error-msg">
+              <span className="error-cross">✕</span>
+              <span>{calendarMessage}</span>
+              <button className="calendar-retry-btn" onClick={handleAddToCalendar}>
+                Thử lại
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage }) {
+function ToolCallWidget({ toolName, output, status, onSendMessage, user, backendUrl }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -586,7 +657,7 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
               ) : shouldRenderProfileScanResult ? (
                 <ProfileScanResultCard result={normalizedOutput} />
               ) : shouldRenderAcademicPlan ? (
-                <AcademicPlanWidget output={normalizedOutput} />
+                <AcademicPlanWidget output={normalizedOutput} user={user} backendUrl={backendUrl} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
@@ -830,7 +901,7 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
   );
 }
 
-function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage }) {
+function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl }) {
   return (
     <div className="messages-feed">
       {messages.map((msg) => {
@@ -850,6 +921,8 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                 output={toolCall.output}
                 status={toolCall.status}
                 onSendMessage={onSendMessage}
+                user={user}
+                backendUrl={backendUrl}
               />
             ))}
 
@@ -961,7 +1034,8 @@ function ChatWorkspace({
   onCvAttachClick,
   onCvFileChange,
   onRemoveCvAttachment,
-  cvUploadError
+  cvUploadError,
+  backendUrl
 }) {
   return (
     <div className="chat-area">
@@ -974,6 +1048,8 @@ function ChatWorkspace({
           activeAgents={activeAgents}
           messagesEndRef={messagesEndRef}
           onSendMessage={onSendMessage}
+          user={user}
+          backendUrl={backendUrl}
         />
       )}
 
@@ -1628,6 +1704,7 @@ export default function App() {
           onCvFileChange={handleCvFileChange}
           onRemoveCvAttachment={handleRemoveCvAttachment}
           cvUploadError={cvUploadError}
+          backendUrl={backendUrl}
         />
       </main>
 

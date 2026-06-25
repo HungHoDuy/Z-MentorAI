@@ -75,20 +75,38 @@ class SearchResponse(BaseModel):
     query_time_ms: float
     courses: list[dict]
 
+import re
+
 class ArchitectRequest(BaseModel):
     career_goal: str
     current_skills: str
+    user_id: Optional[str] = None
 
 class ArchitectResponse(BaseModel):
     status: str
     academic_plan: str
     courses: Optional[List[dict]] = None
+    lacking_skills: Optional[List[str]] = None
+    matched_jobs: Optional[List[dict]] = None
+    career_goal: Optional[str] = None
 
 def get_firestore_client():
     db_name = os.getenv("FIRESTORE_DATABASE")
     if db_name and db_name != "(default)":
         return firestore.Client(database=db_name)
     return firestore.Client()
+
+def load_jobs() -> List[dict]:
+    jobs_path = Path(__file__).resolve().parent / "first_page_jobs.json"
+    if not jobs_path.exists():
+        logger.warning(f"Jobs file not found at {jobs_path}")
+        return []
+    try:
+        with open(jobs_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading jobs file: {e}")
+        return []
 
 def perform_vector_search(search_text: str, search_mode: str, domain: Optional[str] = None, k: int = 5) -> tuple[List[dict], str]:
     """Helper to perform native Firestore vector search using find_nearest with domain pre-filtering."""
@@ -202,40 +220,137 @@ async def search_courses(request: SearchRequest):
 @app.post("/architect", response_model=ArchitectResponse)
 async def create_plan(request: ArchitectRequest):
     """Generate roadmap by identifying skills gaps and querying Coursera database."""
+    # 1. Retrieve user's current skills from Firestore if user_id is provided
+    user_skills = []
+    if request.user_id:
+        try:
+            db = get_firestore_client()
+            cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", request.user_id).stream()
+            cv_docs = list(cv_docs_query)
+            if cv_docs:
+                cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
+                latest_doc = cv_docs[0].to_dict()
+                profile_analysis = latest_doc.get("profile_analysis", {})
+                user_skills = profile_analysis.get("extracted_skills", []) or latest_doc.get("extracted_skills", [])
+                if not user_skills:
+                    user_skills = profile_analysis.get("structured_profile", {}).get("skills", [])
+                logger.info(f"Retrieved user skills from Firestore for user {request.user_id}: {user_skills}")
+        except Exception as ex:
+            logger.error(f"Failed to query user CV documents from Firestore: {ex}")
+
+    # Fallback to current_skills if no skills found in CV document
+    if not user_skills and request.current_skills:
+        user_skills = [s.strip() for s in request.current_skills.split(",") if s.strip()]
+
     if not llm:
-        mock_plan = f"Lộ trình đề xuất để chuyển đổi từ '{request.current_skills}' sang '{request.career_goal}'."
+        mock_plan = f"Lộ trình đề xuất để chuyển đổi từ '{user_skills}' sang '{request.career_goal}'."
         return ArchitectResponse(
             status="success",
             academic_plan=mock_plan,
-            courses=[]
+            courses=[],
+            lacking_skills=[],
+            matched_jobs=[],
+            career_goal=request.career_goal
         )
         
     try:
-        # Step 1: LLM analyzes gaps and identifies search queries
+        # 2. Match jobs in first_page_jobs.json and filter top candidates
+        candidate_jobs = []
+        goal_lower = request.career_goal.lower()
+        goal_keywords = [w for w in re.split(r'\W+', goal_lower) if len(w) > 2]
+        
+        all_jobs = load_jobs()
+        for job in all_jobs:
+            title = (job.get("job_title") or "").lower()
+            url = (job.get("job_url") or "").lower()
+            description = (job.get("Mô tả Công việc") or "").lower()
+            requirements = (job.get("Yêu Cầu Công Việc") or "").lower()
+            industry = (job.get("Ngành nghề") or "").lower()
+            
+            url_title = ""
+            if "/" in url:
+                slug = url.split("/")[-1]
+                if "." in slug:
+                    url_title = slug.split(".")[0].replace("-", " ")
+                    
+            text_to_search = f"{title} {url_title} {industry} {description} {requirements}"
+            
+            score = 0
+            if goal_lower in title or goal_lower in url_title:
+                score += 10
+            if goal_lower in industry:
+                score += 5
+            for kw in goal_keywords:
+                if kw in title or kw in url_title:
+                    score += 4
+                if kw in industry:
+                    score += 2
+                if kw in requirements:
+                    score += 1
+                    
+            if score > 0:
+                candidate_jobs.append((score, job))
+
+        candidate_jobs.sort(key=lambda x: x[0], reverse=True)
+        top_candidates = [item[1] for item in candidate_jobs[:5]]
+        if not top_candidates:
+            top_candidates = all_jobs[:5]
+
+        # 3. LLM analyzes gaps and identifies search queries
+        jobs_context = ""
+        for idx, job in enumerate(top_candidates):
+            title = job.get("job_title") or ""
+            url = job.get("job_url") or ""
+            company = job.get("company") or "Công ty tuyển dụng"
+            salary = job.get("Lương") or "Thỏa thuận"
+            reqs = job.get("Yêu Cầu Công Việc") or ""
+            desc = job.get("Mô tả Công việc") or ""
+            
+            url_title = ""
+            if "/" in url:
+                slug = url.split("/")[-1]
+                if "." in slug:
+                    url_title = slug.split(".")[0].replace("-", " ").title()
+            
+            display_title = title if not title.startswith("Job ") else (url_title or title)
+            jobs_context += f"Job Index: {idx}\nTitle: {display_title}\nCompany: {company}\nSalary: {salary}\nRequirements: {reqs[:400]}\nDescription: {desc[:400]}\nURL: {url}\n\n"
+
         prompt_queries = f"""
 You are the AI Academic Architect.
-The user wants to transition from their current skills to a target career goal.
-Current Skills: "{request.current_skills}"
-Career Goal: "{request.career_goal}"
+The user wants to transition to the target career goal. We have retrieved a list of relevant job postings from our market database.
+Target Career Goal: "{request.career_goal}"
+User's Current Skills: {json.dumps(user_skills)}
 
-Identify 2 to 3 main skill gaps/subjects that the user needs to learn.
-For each subject, formulate a single search query to look up courses in our Coursera catalog.
-Specify the search mode: "name" (for specific course title keywords) or "description" (for conceptual topics).
-Always specify a domain from one of these 11 categories (it is required, do not output null or any other domain not listed here):
+Here are the candidate jobs:
+{jobs_context}
+
+Step 1: Identify 1 to 3 job postings that best match the career goal (by Job Index).
+Step 2: Extract the required skills (target skills) for these matched jobs.
+Step 3: Perform a skill gap analysis by comparing target skills with the user's current skills. Identify the specific skills the user is lacking.
+Step 4: For each lacking skill, formulate a single search query to look up courses in our Coursera catalog, and specify the domain.
+Always specify a domain from one of these 11 categories:
 "business", "computer-science", "information-technology", "data-science", "life-sciences", "physical-science-and-engineering", "personal-development", "social-sciences", "arts-and-humanities", "math-and-logic", "language-learning"
 
-Return the output as a valid JSON array of objects, with no markdown styling, no quotes outside the JSON, and no extra text.
-Each object must have these keys:
-- "subject": brief name of the subject
-- "search_text": the search query
-- "search_mode": "name" or "description"
-- "domain": the domain name (must be one of the 11 strings above)
+Return the output as a valid JSON object with these keys (do not add any markdown formatting wrapper, extra text, or prefix outside the JSON):
+- "matched_jobs": list of objects containing "job_id", "job_title", "company", "url" for the best matched jobs from the candidates above. Use clean titles (if the original title starts with "Job ", use the descriptive title from the URL slug).
+- "lacking_skills": list of strings of specific skills/technologies the user lacks.
+- "search_queries": list of objects for Coursera search, each containing:
+  - "subject": the name of the lacking skill/subject
+  - "search_text": the search query string
+  - "search_mode": "name" or "description"
+  - "domain": the domain name from the 11 strings above
 
-Example:
-[
-  {{"subject": "Docker", "search_text": "docker containerization and kubernetes", "search_mode": "description", "domain": "computer-science"}},
-  {{"subject": "Python Basics", "search_text": "python programming introduction", "search_mode": "name", "domain": "computer-science"}}
-]
+Example response:
+{{
+  "matched_jobs": [
+    {{"job_id": "35C73750", "job_title": "Kỹ sư Shop drawing", "company": "Handong", "url": "https://..."}}
+  ],
+  "lacking_skills": ["Revit", "AutoCAD"],
+  "search_queries": [
+    {{"subject": "Revit", "search_text": "revit architecture bim design", "search_mode": "description", "domain": "physical-science-and-engineering"}},
+    {{"subject": "AutoCAD", "search_text": "autocad 2d drafting introduction", "search_mode": "name", "domain": "physical-science-and-engineering"}}
+  ]
+}}
 """
         res_queries = await llm.ainvoke(prompt_queries)
         raw_content = res_queries.content.strip()
@@ -248,12 +363,20 @@ Example:
         raw_content = raw_content.strip()
         
         try:
-            query_tasks = json.loads(raw_content)
+            analysis_data = json.loads(raw_content)
         except Exception:
-            logger.warning(f"Failed to parse LLM search queries JSON: {raw_content}. Falling back to career goal.")
-            query_tasks = [{"subject": "Goal", "search_text": request.career_goal, "search_mode": "description", "domain": "computer-science"}]
+            logger.warning(f"Failed to parse LLM analysis JSON: {raw_content}. Falling back to default search queries.")
+            analysis_data = {
+                "matched_jobs": [{"job_id": j.get("job_id"), "job_title": j.get("job_title"), "company": j.get("company"), "url": j.get("job_url")} for j in top_candidates[:2]],
+                "lacking_skills": ["General Skills"],
+                "search_queries": [{"subject": "Goal", "search_text": request.career_goal, "search_mode": "description", "domain": "computer-science"}]
+            }
             
-        # Step 2: Perform vector search for each identified query
+        matched_jobs = analysis_data.get("matched_jobs", [])
+        lacking_skills = analysis_data.get("lacking_skills", [])
+        query_tasks = analysis_data.get("search_queries", [])
+
+        # 4. Perform vector search for each identified query
         retrieved_courses = []
         seen_course_ids = set()
         
@@ -272,29 +395,41 @@ Example:
                 except Exception as ex:
                     logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
                     
-        # Step 3: Format course metadata for LLM plan generation context
+        # 5. Format course metadata for LLM plan generation context
         courses_context = ""
         for idx, c in enumerate(retrieved_courses):
             partners = ", ".join([p.get("name") if isinstance(p, dict) else str(p) for p in c.get("partners") or []])
             certs = ", ".join(c.get("certificates") or [])
             courses_context += f"[{idx+1}] Tên: {c['name']} | Đối tác: {partners} | Chứng chỉ: {certs} | Loại: {c['course_type']}\nMô tả: {c['description'][:200]}...\n\n"
             
-        # Step 4: Generate roadmap using the retrieved courses
+        # 6. Format matched jobs list for LLM context
+        jobs_md_list = ""
+        for j in matched_jobs:
+            jobs_md_list += f"- **{j.get('job_title')}** tại *{j.get('company')}* ([Xem tin tuyển dụng]({j.get('url')}))\n"
+
+        # 7. Generate roadmap using the retrieved courses and matched jobs
         prompt_roadmap = f"""
 You are the AI Academic Architect, a professional career guidance counselor and learning designer.
 The user wants to transition from their current skills to a target career goal.
-Current Skills: "{request.current_skills}"
-Career Goal: "{request.career_goal}"
 
-We have found the following relevant courses in our database:
+Target Career Goal: "{request.career_goal}"
+Current Skills: {json.dumps(user_skills)}
+Lacking Skills Identified: {json.dumps(lacking_skills)}
+
+Here are some open job postings matching this career path from our database:
+{jobs_md_list}
+
+We have retrieved the following relevant Coursera courses to bridge the skill gaps:
 {courses_context}
 
 Create a personalized, professional, and visually appealing academic roadmap in markdown format.
-Structure the roadmap with clear steps or phases (e.g., Phase 1: Fundamentals, Phase 2: Core Skills, Phase 3: Specialization/Advanced).
-For each phase:
-- Explain what skills the user will acquire.
-- Explicitly recommend 1 or 2 courses from the provided list (refer to them by their exact titles). Include the provider/partner.
-- Keep the tone encouraging, structured, and goal-oriented.
+Structure the roadmap with these sections:
+1. **Phân tích khoảng trống kỹ năng (Skill Gap Analysis)**: Highlight what skills the user has and what they need to acquire.
+2. **Cơ hội việc làm mục tiêu (Target Job Opportunities)**: Mention the open job listings matching this career path, listing them with company and links. Keep the Careerviet links active.
+3. **Lộ trình học tập chi tiết (Detailed Study Roadmap)**: Organize the learning plan into clear steps/phases (e.g. Phase 1: Fundamentals, Phase 2: Advanced). For each phase, describe the skills acquired and recommend specific courses from the retrieved Coursera list by title.
+4. **Lập lịch học**: Add a concluding note letting the user know they can use the Google Calendar card below to sync this learning plan directly to their Google Calendar.
+
+Keep the tone encouraging, structured, and goal-oriented. Use Vietnamese for the roadmap content.
 """
         res_roadmap = await llm.ainvoke(prompt_roadmap)
         roadmap_content = res_roadmap.content.strip()
@@ -302,7 +437,10 @@ For each phase:
         return ArchitectResponse(
             status="success",
             academic_plan=roadmap_content,
-            courses=retrieved_courses[:5] # Limit output to top 5 recommendations
+            courses=retrieved_courses[:5],
+            lacking_skills=lacking_skills,
+            matched_jobs=matched_jobs,
+            career_goal=request.career_goal
         )
         
     except Exception as e:
