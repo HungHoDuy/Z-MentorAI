@@ -19,10 +19,12 @@ app = FastAPI(title="Market Scout", version="1.0.0")
 class ScoutRequestBody(BaseModel):
     """Generic Market Scout request for an upstream orchestrator."""
 
-    user_query: str = Field(min_length=1)
+    user_query: str | None = Field(default=None, min_length=1)
     intent_hint: MarketScoutIntent | None = None
     user_context: dict[str, Any] = Field(default_factory=dict)
     entities_hint: dict[str, Any] | None = None
+    industry: str | None = Field(default=None, min_length=1)
+    target_role: str | None = Field(default=None, min_length=1)
 
 
 class SalaryBenchmarkRequest(BaseModel):
@@ -61,13 +63,26 @@ async def scout_market(
     body: ScoutRequestBody,
     agent: MarketScoutAgent = Depends(get_market_scout_agent),
 ) -> ScoutResponseBody:
+    user_query = _scout_user_query(body)
+    if user_query is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Either user_query or target_role/industry is required.",
+        )
+
+    entities_hint = dict(body.entities_hint or {})
+    if body.industry:
+        entities_hint.setdefault("industry", body.industry)
+    if body.target_role:
+        entities_hint.setdefault("target_role", body.target_role)
+
     return await _run_agent(
         agent,
         MarketScoutRequest(
-            user_query=body.user_query,
+            user_query=user_query,
             intent_hint=body.intent_hint,
             user_context=body.user_context,
-            entities_hint=body.entities_hint,
+            entities_hint=entities_hint or None,
         ),
     )
 
@@ -132,3 +147,18 @@ def _market_intent(trend_intent: TrendQueryIntent) -> MarketScoutIntent:
     if trend_intent is TrendQueryIntent.EXTERNAL_OUTLOOK:
         return MarketScoutIntent.JOB_DEMAND_FORECAST
     return MarketScoutIntent.TREND_TRACKER
+
+
+def _scout_user_query(body: ScoutRequestBody) -> str | None:
+    if body.user_query and body.user_query.strip():
+        return body.user_query.strip()
+
+    parts = []
+    if body.target_role and body.target_role.strip():
+        parts.append(body.target_role.strip())
+    if body.industry and body.industry.strip():
+        parts.append(f"nganh {body.industry.strip()}")
+    if not parts:
+        return None
+
+    return "Thong tin thi truong viec lam cho " + " trong ".join(parts)
