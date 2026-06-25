@@ -14,7 +14,7 @@ from backend.market_scout.services.salary_benchmark.salary_benchmark_service imp
 DEFAULT_LLM_MODEL = "gemini-2.5-flash"
 DEFAULT_VERTEX_LOCATION = "us-central1"
 PROMPT_VERSION = "salary-summary-v1"
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class ChatModel(Protocol):
