@@ -15,8 +15,8 @@ from backend.market_scout.services.trend_tracker.trend_summary_service import Tr
 
 DEFAULT_LLM_MODEL = "gemini-2.5-flash"
 DEFAULT_VERTEX_LOCATION = "us-central1"
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
-SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[1] / "prompts" / "trend_summary_system_prompt.txt"
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[2] / "prompts" / "trend_summary_system_prompt.txt"
 
 
 class ChatModel(Protocol):
