@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import unicodedata
 import httpx
 from fastmcp import FastMCP
 
@@ -119,13 +120,47 @@ def profile_scanner(
     })
 
 @mcp.tool()
-def market_scout(industry: str, target_role: str) -> dict:
-    """Use this tool to find market trends, current jobs, and salary expectations. 
-    Call this agent if you need information about the job market for a specific role and industry."""
-    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", {
+def market_scout(
+    industry: str,
+    target_role: str,
+    user_query: str = "",
+    intent_hint: str = "",
+) -> dict:
+    """Use this tool to find market trends, current jobs, and salary expectations.
+    Pass the original user question in user_query when available so Market Scout can route salary vs trend correctly.
+    intent_hint can be salary_benchmark, trend_tracker, job_demand_forecast, or industry_decline_risk."""
+    payload = {
         "industry": industry,
-        "target_role": target_role
-    })
+        "target_role": target_role,
+    }
+    if user_query.strip():
+        payload["user_query"] = user_query.strip()
+    if intent_hint.strip():
+        payload["intent_hint"] = intent_hint.strip()
+    elif _looks_like_salary_query(user_query):
+        payload["intent_hint"] = "salary_benchmark"
+
+    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", payload)
+
+
+def _looks_like_salary_query(query: str) -> bool:
+    normalized = _normalize_ascii(query)
+    salary_keywords = (
+        "luong",
+        "muc luong",
+        "thu nhap",
+        "salary",
+        "compensation",
+        "wage",
+        "pay",
+    )
+    return any(keyword in normalized for keyword in salary_keywords)
+
+
+def _normalize_ascii(value: str) -> str:
+    text = unicodedata.normalize("NFD", value.casefold().replace(chr(273), "d").replace(chr(272), "d"))
+    text = "".join(character for character in text if unicodedata.category(character) != "Mn")
+    return " ".join(text.split())
 
 @mcp.tool()
 def academic_architect(career_goal: str, current_skills: str) -> dict:
