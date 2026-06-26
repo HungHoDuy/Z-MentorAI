@@ -471,6 +471,10 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
 
   const handleAddToCalendar = async () => {
     if (!user || calendarStatus === 'loading') return;
+    if (courses.length === 0) return;
+    
+    const courseToSchedule = courses[0];
+
     setCalendarStatus('loading');
     try {
       const res = await fetch(`${backendUrl}/calendar/append`, {
@@ -482,7 +486,12 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
         body: JSON.stringify({
           career_goal: careerGoal,
           lacking_skills: lackingSkills,
-          courses: courses.map(c => ({ name: c.name, url: c.url }))
+          courses: [{ 
+            name: courseToSchedule.name, 
+            url: courseToSchedule.url,
+            duration: courseToSchedule.duration || '15 giờ',
+            workload: courseToSchedule.workload || ''
+          }]
         })
       });
       if (!res.ok) throw new Error('Không thể đồng bộ lịch học');
@@ -504,46 +513,99 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
       
       {courses.length > 0 && (
         <div className="academic-plan-courses">
-          <h4 className="courses-section-title">Khóa học đề xuất từ Coursera</h4>
-          <div className="course-cards-grid">
-            {courses.map((course) => {
+          <h4 className="courses-section-title">Khóa học tiêu biểu đề xuất</h4>
+          <div className="course-cards-grid single-course">
+            {courses.slice(0, 1).map((course) => {
               const scorePct = Math.round((course.score || 0) * 100);
               const certs = course.certificates || [];
-              const isSpec = certs.includes('Specialization');
+              const isSpec = certs.some(c => String(c).toLowerCase().includes('specialization'));
               const partnersList = (course.partners || [])
                 .map(p => typeof p === 'object' ? p.name : p)
                 .join(', ');
-                
+                 
               return (
-                <a 
+                <div 
                   key={course.course_id}
-                  href={course.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="course-card"
+                  className="course-card selected featured-course"
+                  style={{ position: 'relative' }}
                 >
                   <div className="course-card-top">
                     <span className="course-provider">{partnersList || 'Coursera'}</span>
                     <span className="course-score-badge">{scorePct}% phù hợp</span>
                   </div>
                   
-                  <h5 className="course-name">{course.name}</h5>
+                  <h5 className="course-name">
+                    🎓 {course.name}
+                  </h5>
                   <p className="course-desc-snippet">
                     {course.description 
-                      ? (course.description.length > 180 ? `${course.description.substring(0, 180)}...` : course.description)
+                      ? (course.description.length > 250 ? `${course.description.substring(0, 250)}...` : course.description)
                       : 'Không có mô tả chi tiết.'}
                   </p>
                   
-                  <div className="course-card-footer">
-                    <span className="course-type-tag">
-                      {isSpec ? 'Specialization' : 'Course'}
-                    </span>
-                    <span className="course-action-link">Xem trên Coursera →</span>
+                  <div className="course-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span className="course-type-tag">
+                        {isSpec ? 'Specialization' : 'Course'}
+                      </span>
+                      {course.workload ? (
+                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
+                          💼 {course.workload}
+                        </span>
+                      ) : (
+                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
+                          ⏱️ {course.duration || '15 giờ'}
+                        </span>
+                      )}
+                    </div>
+                    <a 
+                      href={course.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="course-action-link"
+                    >
+                      Xem trên Coursera →
+                    </a>
                   </div>
-                </a>
+                </div>
               );
             })}
           </div>
+          
+          {output.alternative_courses && output.alternative_courses.length > 0 && (
+            <div className="alternative-courses-section" style={{ marginTop: '1.2rem' }}>
+              <h5 className="alternative-courses-title" style={{ fontSize: '0.86rem', fontWeight: 750, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Khóa học thay thế đề xuất:
+              </h5>
+              <div className="alternative-courses-list" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {output.alternative_courses.map((altCourse) => (
+                  <a 
+                    key={altCourse.course_id}
+                    href={altCourse.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="alternative-course-link"
+                    style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 650,
+                      color: 'var(--accent, #0d9488)',
+                      padding: '6px 12px',
+                      background: 'var(--bg-app, #f4f6fa)',
+                      border: '1px solid var(--border-subtle, #dfe5ee)',
+                      borderRadius: '20px',
+                      textDecoration: 'none',
+                      transition: 'all 0.2s ease',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    📖 {altCourse.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -554,12 +616,12 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
           <h4>Lập kế hoạch học tập trên Google Calendar</h4>
         </div>
         <p className="calendar-card-desc">
-          Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho các khóa học trên Google Calendar.
+          Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
         </p>
         <div className="calendar-card-actions">
           {calendarStatus === 'idle' && (
-            <button className="calendar-sync-btn" onClick={handleAddToCalendar}>
-              Thêm lộ trình vào Google Calendar
+            <button className="calendar-sync-btn" onClick={handleAddToCalendar} disabled={courses.length === 0}>
+              Đồng bộ khóa học vào Google Calendar
             </button>
           )}
           {calendarStatus === 'loading' && (

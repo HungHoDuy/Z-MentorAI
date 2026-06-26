@@ -85,4 +85,6 @@ services:
       - USE_FIRESTORE=${USE_FIRESTORE:-false}
       - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-z-mentorai}
+    volumes:
+      - ${GCLOUD_CONFIG_DIR:-./.gcloud}:/root/.config/gcloud:ro
 

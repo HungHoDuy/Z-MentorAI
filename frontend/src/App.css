@@ -1961,6 +1961,19 @@
   box-shadow: 0 10px 20px rgba(248, 201, 107, 0.12), 0 2px 4px rgba(15, 23, 42, 0.04);
 }
 
+.course-card.selected {
+  border: 2px solid #f8c96b;
+  background: #fffbeb;
+  box-shadow: 0 8px 24px rgba(248, 201, 107, 0.15), 0 2px 4px rgba(15, 23, 42, 0.02);
+  transform: translateY(-2px);
+}
+
+.course-card.selected:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  box-shadow: 0 12px 28px rgba(248, 201, 107, 0.22), 0 4px 8px rgba(15, 23, 42, 0.04);
+}
+
 .course-card-top {
   display: flex;
   justify-content: space-between;

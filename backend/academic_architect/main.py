@@ -86,6 +86,7 @@ class ArchitectResponse(BaseModel):
     status: str
     academic_plan: str
     courses: Optional[List[dict]] = None
+    alternative_courses: Optional[List[dict]] = None
     lacking_skills: Optional[List[str]] = None
     matched_jobs: Optional[List[dict]] = None
     career_goal: Optional[str] = None
@@ -164,6 +165,26 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
         dist = doc_data.get("vector_distance")
         score = 1.0 - float(dist) if dist is not None else 0.0
         
+        # Extract or default duration
+        duration_val = doc_data.get("duration")
+        if not duration_val:
+            desc_lower = (doc_data.get("description") or "").lower()
+            name_lower = (doc_data.get("name") or "").lower()
+            text_to_search = name_lower + " " + desc_lower
+            
+            # Simple regex to extract hours if present
+            match = re.search(r'(\d+)\s*(hour|hr|giờ|hour|hrs)', text_to_search)
+            if match:
+                duration_val = f"{match.group(1)} giờ"
+            else:
+                certs_list = doc_data.get("certificates") or []
+                if any("specialization" in str(c).lower() for c in certs_list):
+                    duration_val = "3 tháng"
+                elif any("professional" in str(c).lower() for c in certs_list):
+                    duration_val = "6 tháng"
+                else:
+                    duration_val = "15 giờ"
+
         course = {
             "course_id": doc_data.get("course_id") or doc.id,
             "name": doc_data.get("name") or "",
@@ -174,13 +195,15 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
             "domain_types": doc_data.get("domain_types") or [],
             "partners": doc_data.get("partners") or [],
             "photo_url": doc_data.get("photo_url") or "",
-            "score": score
+            "score": score,
+            "duration": duration_val,
+            "workload": doc_data.get("workload") or ""
         }
         
         # Build Coursera URL
         slug = course.get("slug")
         certs = course.get("certificates") or []
-        is_spec = "Specialization" in certs
+        is_spec = any("specialization" in str(c).lower() for c in certs)
         if is_spec:
             course["url"] = f"https://www.coursera.org/specializations/{slug}"
         else:
@@ -400,7 +423,7 @@ Example response:
         for idx, c in enumerate(retrieved_courses):
             partners = ", ".join([p.get("name") if isinstance(p, dict) else str(p) for p in c.get("partners") or []])
             certs = ", ".join(c.get("certificates") or [])
-            courses_context += f"[{idx+1}] Tên: {c['name']} | Đối tác: {partners} | Chứng chỉ: {certs} | Loại: {c['course_type']}\nMô tả: {c['description'][:200]}...\n\n"
+            courses_context += f"[{idx+1}] Tên: {c['name']} | Đối tác: {partners} | Chứng chỉ: {certs} | Link: {c['url']} | Khối lượng: {c.get('workload', '')}\nMô tả: {c['description'][:200]}...\n\n"
             
         # 6. Format matched jobs list for LLM context
         jobs_md_list = ""
@@ -416,28 +439,53 @@ Target Career Goal: "{request.career_goal}"
 Current Skills: {json.dumps(user_skills)}
 Lacking Skills Identified: {json.dumps(lacking_skills)}
 
-Here are some open job postings matching this career path from our database:
-{jobs_md_list}
-
 We have retrieved the following relevant Coursera courses to bridge the skill gaps:
 {courses_context}
 
 Create a personalized, professional, and visually appealing academic roadmap in markdown format.
-Structure the roadmap with these sections:
+Structure the roadmap with exactly these three sections:
 1. **Phân tích khoảng trống kỹ năng (Skill Gap Analysis)**: Highlight what skills the user has and what they need to acquire.
-2. **Cơ hội việc làm mục tiêu (Target Job Opportunities)**: Mention the open job listings matching this career path, listing them with company and links. Keep the Careerviet links active.
-3. **Lộ trình học tập chi tiết (Detailed Study Roadmap)**: Organize the learning plan into clear steps/phases (e.g. Phase 1: Fundamentals, Phase 2: Advanced). For each phase, describe the skills acquired and recommend specific courses from the retrieved Coursera list by title.
-4. **Lập lịch học**: Add a concluding note letting the user know they can use the Google Calendar card below to sync this learning plan directly to their Google Calendar.
+2. **Lộ trình học tập chi tiết (Detailed Study Roadmap)**: Organize the learning plan into clear steps/phases (e.g. Phase 1: Fundamentals, Phase 2: Advanced). For each phase, describe the skills acquired. Recommend specific courses from the retrieved Coursera list.
+   **CRITICAL REQUIREMENT**: You MUST format each recommended course as a markdown link using its exact Link from the metadata above. E.g., format as `[Tên Khóa Học](exact_url_from_metadata)`. Explicitly label the primary recommended course (the best fit) and list the other courses as alternative options.
+3. **Lập lịch học**: Add a concluding note letting the user know they can use the Google Calendar card below to sync the primary recommended course directly to their Google Calendar.
 
 Keep the tone encouraging, structured, and goal-oriented. Use Vietnamese for the roadmap content.
 """
         res_roadmap = await llm.ainvoke(prompt_roadmap)
         roadmap_content = res_roadmap.content.strip()
         
+        # Let LLM select the single best course from the retrieved courses
+        best_course = retrieved_courses[0] if retrieved_courses else None
+        if len(retrieved_courses) > 1:
+            courses_list_text = "\n".join([f"Index {idx}: {c['name']} (Mô tả: {c['description'][:200]})" for idx, c in enumerate(retrieved_courses)])
+            prompt_select_best = f"""
+Dựa trên mục tiêu nghề nghiệp: "{request.career_goal}" và các kỹ năng còn thiếu: {json.dumps(lacking_skills)}.
+Hãy chọn ra đúng 1 khóa học phù hợp nhất, thiết thực nhất từ danh sách các khóa học Coursera dưới đây để người học bắt đầu ngay lập tức.
+Trả về duy nhất chỉ số Index của khóa học được chọn (ví dụ: 0 hoặc 1 hoặc 2), không trả thêm bất kỳ từ ngữ nào khác.
+
+Danh sách khóa học:
+{courses_list_text}
+"""
+            try:
+                res_best = await llm.ainvoke(prompt_select_best)
+                best_idx_str = res_best.content.strip()
+                match = re.search(r'\d+', best_idx_str)
+                if match:
+                    best_idx = int(match.group(0))
+                    if 0 <= best_idx < len(retrieved_courses):
+                        best_course = retrieved_courses[best_idx]
+                        logger.info(f"LLM selected best course: index {best_idx} ({best_course['name']})")
+            except Exception as e:
+                logger.error(f"Failed to let LLM select best course: {e}")
+                
+        selected_courses = [best_course] if best_course else []
+        alternative_courses = [c for c in retrieved_courses if c["course_id"] != (best_course["course_id"] if best_course else "")]
+        
         return ArchitectResponse(
             status="success",
             academic_plan=roadmap_content,
-            courses=retrieved_courses[:5],
+            courses=selected_courses,
+            alternative_courses=alternative_courses,
             lacking_skills=lacking_skills,
             matched_jobs=matched_jobs,
             career_goal=request.career_goal

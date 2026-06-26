@@ -18,6 +18,10 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("orchestrator")
 
 # Load environment variables
 env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -558,6 +562,83 @@ async def delete_session(session_id: str, x_user_id: str = Header(...)):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "success", "message": "Session deleted"}
 
+def parse_workload_to_weeks_and_hours(workload_str: str) -> tuple[int, float]:
+    """
+    Parses workload string like '3 weeks of study, 4-5 hours/week'
+    and returns (weeks, hours_per_session).
+    Assuming study 3 times a week (Mon, Wed, Fri), hours per session = hours/week / 3.
+    """
+    import re
+    if not workload_str:
+        return 4, 1.5  # default 4 weeks, 1.5h per session
+        
+    val_str = str(workload_str).lower()
+    
+    # 1. Parse weeks
+    weeks = 4
+    weeks_match = re.search(r'(\d+)\s*(week|tuần|wk)', val_str)
+    if weeks_match:
+        weeks = int(weeks_match.group(1))
+    else:
+        months_match = re.search(r'(\d+)\s*(month|tháng|mth)', val_str)
+        if months_match:
+            weeks = int(months_match.group(1)) * 4
+            
+    # 2. Parse hours per week
+    hours_per_week = 5.0
+    hours_match = re.search(r'(\d+)-?(\d+)?\s*(hour|giờ|hr|hrs)', val_str)
+    if hours_match:
+        if hours_match.group(2): # e.g. 4-5 hours
+            hours_per_week = float(hours_match.group(2))
+        else:
+            hours_per_week = float(hours_match.group(1))
+            
+    # Study 3 times a week (Mon, Wed, Fri)
+    hours_per_session = round(hours_per_week / 3.0, 1)
+    if hours_per_session < 0.5:
+        hours_per_session = 1.0
+        
+    return weeks, hours_per_session
+
+def parse_duration_to_days(duration_str: str) -> int:
+    """
+    Parses duration string like '15 giờ', '3 tháng', '6 tháng', etc.
+    and returns estimated number of study days required.
+    """
+    import re
+    import math
+    if not duration_str:
+        return 7
+    val_str = str(duration_str).lower()
+    
+    # Months
+    months_match = re.search(r'(\d+)\s*(tháng|month|mth)', val_str)
+    if months_match:
+        return int(months_match.group(1)) * 30
+        
+    # Weeks
+    weeks_match = re.search(r'(\d+)\s*(tuần|week|wk)', val_str)
+    if weeks_match:
+        return int(weeks_match.group(1)) * 7
+        
+    # Hours
+    hours_match = re.search(r'(\d+)\s*(giờ|hour|hr|hrs)', val_str)
+    if hours_match:
+        hours = int(hours_match.group(1))
+        # Study 2 hours per day
+        return max(1, math.ceil(hours / 2.0))
+        
+    # Plain number
+    num_match = re.search(r'(\d+)', val_str)
+    if num_match:
+        val = int(num_match.group(1))
+        if val <= 12: # likely months
+            return val * 30
+        else: # likely hours
+            return max(1, math.ceil(val / 2.0))
+            
+    return 7
+
 class CalendarAppendRequest(BaseModel):
     career_goal: str
     lacking_skills: list[str]
@@ -565,14 +646,142 @@ class CalendarAppendRequest(BaseModel):
 
 @app.post("/calendar/append")
 async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = Header(...)):
-    # Mocking calendar event creation. In a real integration, we'd use Google Calendar API client.
-    print(f"Calendar: Scheduling {len(request.courses)} courses for user {x_user_id} towards target '{request.career_goal}'")
-    return {
-        "status": "success",
-        "message": f"Đã lập lịch thành công {len(request.courses)} khóa học cho mục tiêu {request.career_goal} trên Google Calendar.",
-        "scheduled_events_count": len(request.courses),
-        "calendar_name": f"Lộ trình học {request.career_goal}"
-    }
+    logger.info(f"Calendar: Appending {len(request.courses)} courses for user {x_user_id} towards target '{request.career_goal}'")
+    
+    try:
+        import google.auth
+        from googleapiclient.discovery import build
+        
+        # Load default credentials with calendar scope
+        credentials, project = google.auth.default(
+            scopes=['https://www.googleapis.com/auth/calendar']
+        )
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # 1. Create a dedicated secondary calendar for the study roadmap
+        calendar_body = {
+            'summary': f"Z-Mentor AI: {request.career_goal}",
+            'timeZone': 'Asia/Ho_Chi_Minh'
+        }
+        
+        try:
+            created_calendar = service.calendars().insert(body=calendar_body).execute()
+            calendar_id = created_calendar['id']
+            calendar_name = created_calendar['summary']
+        except Exception as cal_err:
+            logger.warning(f"Failed to create secondary calendar: {cal_err}. Falling back to primary calendar.")
+            calendar_id = 'primary'
+            calendar_name = "Primary Calendar"
+            
+        # 2. Add each course as an event/task sequence on Google Calendar
+        import datetime
+        today = datetime.date.today()
+        current_day_offset = 1  # start tomorrow
+        
+        for i, course in enumerate(request.courses):
+            workload_str = course.get('workload')
+            duration_str = course.get('duration') or '15 giờ'
+            
+            # Start date for this course sequence
+            start_date = today + datetime.timedelta(days=current_day_offset)
+            start_time = datetime.datetime.combine(start_date, datetime.time(9, 0)).isoformat()
+            
+            if workload_str:
+                weeks, hours_per_session = parse_workload_to_weeks_and_hours(workload_str)
+                duration_minutes = int(hours_per_session * 60)
+                end_dt = datetime.datetime.combine(start_date, datetime.time(9, 0)) + datetime.timedelta(minutes=duration_minutes)
+                end_time = end_dt.isoformat()
+                
+                event_body = {
+                    'summary': f"🎓 [Z-Mentor] {course.get('name')}",
+                    'description': (
+                        f"Lộ trình học tập cho mục tiêu: {request.career_goal}\n"
+                        f"🔗 Link khóa học: {course.get('url')}\n"
+                        f"⏱️ Khối lượng học: {workload_str} ({weeks} tuần, học {hours_per_session}h vào thứ Hai, Tư, Sáu)\n\n"
+                        f"Được tạo tự động bởi Z-MentorAI."
+                    ),
+                    'start': {
+                        'dateTime': start_time,
+                        'timeZone': 'Asia/Ho_Chi_Minh',
+                    },
+                    'end': {
+                        'dateTime': end_time,
+                        'timeZone': 'Asia/Ho_Chi_Minh',
+                    },
+                    'recurrence': [
+                        f'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT={weeks * 3}'
+                    ],
+                    'reminders': {
+                        'useDefault': False,
+                        'overrides': [
+                            {'method': 'popup', 'minutes': 30},
+                        ],
+                    },
+                }
+                service.events().insert(calendarId=calendar_id, body=event_body).execute()
+                current_day_offset += weeks * 7
+            else:
+                days = parse_duration_to_days(duration_str)
+                end_time = datetime.datetime.combine(start_date, datetime.time(11, 0)).isoformat()
+                
+                event_body = {
+                    'summary': f"🎓 [Z-Mentor] {course.get('name')}",
+                    'description': (
+                        f"Lộ trình học tập cho mục tiêu: {request.career_goal}\n"
+                        f"🔗 Link khóa học: {course.get('url')}\n"
+                        f"⏱️ Thời lượng đề xuất: {duration_str} (Học 2h mỗi ngày trong {days} ngày)\n\n"
+                        f"Được tạo tự động bởi Z-MentorAI."
+                    ),
+                    'start': {
+                        'dateTime': start_time,
+                        'timeZone': 'Asia/Ho_Chi_Minh',
+                    },
+                    'end': {
+                        'dateTime': end_time,
+                        'timeZone': 'Asia/Ho_Chi_Minh',
+                    },
+                    'recurrence': [
+                        f'RRULE:FREQ=DAILY;COUNT={days}'
+                    ],
+                    'reminders': {
+                        'useDefault': False,
+                        'overrides': [
+                            {'method': 'popup', 'minutes': 30},
+                        ],
+                    },
+                }
+                service.events().insert(calendarId=calendar_id, body=event_body).execute()
+                current_day_offset += days
+            
+        return {
+            "status": "success",
+            "message": f"Đã lập lịch thành công {len(request.courses)} khóa học trên Google Calendar thực của bạn (Lịch: {calendar_name})!",
+            "scheduled_events_count": len(request.courses),
+            "calendar_name": calendar_name,
+            "is_mock": False
+        }
+        
+    except Exception as e:
+        logger.warning(f"Google Calendar API failed or unauthorized: {e}. Falling back to mock calendar sync.")
+        
+        scheduled_details = []
+        for course in request.courses:
+            workload_str = course.get('workload')
+            if workload_str:
+                weeks, hours_per_session = parse_workload_to_weeks_and_hours(workload_str)
+                scheduled_details.append(f"{course.get('name')} ({weeks} tuần, {hours_per_session}h/buổi)")
+            else:
+                days = parse_duration_to_days(course.get('duration') or '15 giờ')
+                scheduled_details.append(f"{course.get('name')} ({days} ngày)")
+            
+        return {
+            "status": "success",
+            "message": f"Đồng bộ thành công (Chế độ mô phỏng)! Đã lập lịch {len(request.courses)} khóa học cho mục tiêu {request.career_goal} trên Google Calendar mô phỏng ({', '.join(scheduled_details)}).",
+            "scheduled_events_count": len(request.courses),
+            "calendar_name": f"Lộ trình học {request.career_goal}",
+            "is_mock": True,
+            "debug_error": str(e)
+        }
 
 # System prompt
 def get_system_message(user_id: str) -> SystemMessage:
