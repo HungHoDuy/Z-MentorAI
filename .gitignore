@@ -37,6 +37,10 @@ backend/market_scout/service_account.json
 
 # Crawled data
 backend/crawl_jobs/*.json
+backend/academic_architect/*.json
+
+# Jupyter Notebooks
+*.ipynb
 
 # Terraform
 .terraform/
