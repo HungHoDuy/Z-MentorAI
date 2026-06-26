@@ -126,9 +126,9 @@ def market_scout(
     user_query: str = "",
     intent_hint: str = "",
 ) -> dict:
-    """Use this tool to find market trends, current jobs, and salary expectations.
-    Pass the original user question in user_query when available so Market Scout can route salary vs trend correctly.
-    intent_hint can be salary_benchmark, trend_tracker, job_demand_forecast, or industry_decline_risk."""
+    """Use this tool for job market trends, hiring demand, automation exposure, and general market outlook.
+    For salary or compensation questions, prefer the salary_benchmark tool.
+    If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
     payload = {
         "industry": industry,
         "target_role": target_role,
@@ -162,6 +162,13 @@ def _normalize_ascii(value: str) -> str:
     text = "".join(character for character in text if unicodedata.category(character) != "Mn")
     return " ".join(text.split())
 
+@mcp.tool()
+def salary_benchmark(user_query: str) -> dict:
+    """Use this tool when the user asks about salary, compensation, income, wage, pay, or salary benchmark.
+    Always pass the original user question as user_query."""
+    return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", {
+        "user_query": user_query,
+    })
 @mcp.tool()
 def academic_architect(career_goal: str, current_skills: str) -> dict:
     """Use this tool to create a roadmap to achieve a certain job description or career goal. 
