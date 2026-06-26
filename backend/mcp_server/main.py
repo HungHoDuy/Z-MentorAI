@@ -119,16 +119,29 @@ def profile_scanner(
     })
 
 @mcp.tool()
-def market_scout(industry: str, target_role: str) -> dict:
-    """Use this tool to find market trends, current jobs, and salary expectations. 
-    Call this agent if you need information about the job market for a specific role and industry."""
-    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", {
+def market_scout(
+    industry: str,
+    target_role: str,
+    user_query: str = "",
+    intent_hint: str = "",
+) -> dict:
+    """Use this tool for job market trends, hiring demand, automation exposure, and general market outlook.
+    For salary or compensation questions, prefer the salary_benchmark tool.
+    If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
+    payload = {
         "industry": industry,
         "target_role": target_role
     })
 
 @mcp.tool()
-def academic_architect(career_goal: str, user_id: str, current_skills: str = "") -> dict:
+def salary_benchmark(user_query: str) -> dict:
+    """Use this tool when the user asks about salary, compensation, income, wage, pay, or salary benchmark.
+    Always pass the original user question as user_query."""
+    return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", {
+        "user_query": user_query,
+    })
+@mcp.tool()
+def academic_architect(career_goal: str, current_skills: str) -> dict:
     """Use this tool to create a roadmap to achieve a certain job description or career goal. 
     It will perform a skill gap analysis using the user's scanned CV and recommend courses and jobs.
     
