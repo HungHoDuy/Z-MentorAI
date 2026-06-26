@@ -83,6 +83,7 @@ services:
       - .env
     environment:
       - USE_FIRESTORE=${USE_FIRESTORE:-false}
+      - USE_VERTEX_AI=${USE_VERTEX_AI:-false}
       - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-z-mentorai}
     volumes:
