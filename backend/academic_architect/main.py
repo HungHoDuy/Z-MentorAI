@@ -109,6 +109,27 @@ def load_jobs() -> List[dict]:
         logger.error(f"Error loading jobs file: {e}")
         return []
 
+# Cache for embeddings instances
+_embeddings_cache = {}
+
+def get_embeddings(dimensions: Optional[int] = None):
+    project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID")
+    location = os.getenv("VERTEX_AI_LOCATION", "asia-southeast1")
+    cache_key = (dimensions, project, location)
+    if cache_key not in _embeddings_cache:
+        kwargs = {
+            "model_name": "text-embedding-004",
+        }
+        if dimensions is not None:
+            kwargs["dimensions"] = dimensions
+        if project:
+            kwargs["project"] = project
+        if location:
+            kwargs["location"] = location
+        logger.info(f"Academic Architect: Initializing VertexAIEmbeddings with params {kwargs}")
+        _embeddings_cache[cache_key] = VertexAIEmbeddings(**kwargs)
+    return _embeddings_cache[cache_key]
+
 def perform_vector_search(search_text: str, search_mode: str, domain: Optional[str] = None, k: int = 5) -> tuple[List[dict], str]:
     """Helper to perform native Firestore vector search using find_nearest with domain pre-filtering."""
     normalized_mode = search_mode.strip().lower()
@@ -118,11 +139,11 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
     # 1. Embed query
     if normalized_mode == "name":
         # 128 dimensions for name embedding
-        embeddings = VertexAIEmbeddings(model_name="text-embedding-004", dimensions=128)
+        embeddings = get_embeddings(dimensions=128)
         vector_field = "name_embedding"
     else:
         # Default 768 dimensions for description embedding
-        embeddings = VertexAIEmbeddings(model_name="text-embedding-004")
+        embeddings = get_embeddings(dimensions=None)
         vector_field = "description_embedding"
         
     query_vector = embeddings.embed_query(search_text)
@@ -399,24 +420,35 @@ Example response:
         lacking_skills = analysis_data.get("lacking_skills", [])
         query_tasks = analysis_data.get("search_queries", [])
 
-        # 4. Perform vector search for each identified query
+        # 4. Perform vector search for each identified query in parallel
+        import asyncio
         retrieved_courses = []
         seen_course_ids = set()
-        
-        for task in query_tasks:
+
+        async def run_search(task):
             s_text = task.get("search_text")
             s_mode = task.get("search_mode", "description")
             s_domain = task.get("domain")
-            
-            if s_text:
-                try:
-                    results, domain_used = perform_vector_search(search_text=s_text, search_mode=s_mode, domain=s_domain, k=3)
-                    for c in results:
-                        if c["course_id"] not in seen_course_ids:
-                            seen_course_ids.add(c["course_id"])
-                            retrieved_courses.append(c)
-                except Exception as ex:
-                    logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
+            if not s_text:
+                return []
+            try:
+                # perform_vector_search is synchronous, run it in a thread pool
+                results, domain_used = await asyncio.to_thread(
+                    perform_vector_search, s_text, s_mode, s_domain, 3
+                )
+                return results
+            except Exception as ex:
+                logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
+                return []
+
+        search_tasks = [run_search(task) for task in query_tasks]
+        results_list = await asyncio.gather(*search_tasks)
+
+        for results in results_list:
+            for c in results:
+                if c["course_id"] not in seen_course_ids:
+                    seen_course_ids.add(c["course_id"])
+                    retrieved_courses.append(c)
                     
         # 5. Format course metadata for LLM plan generation context
         courses_context = ""
