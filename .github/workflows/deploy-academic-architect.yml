@@ -16,4 +16,5 @@ jobs:
     with:
       service_name: academic-architect
       build_context: ./backend/academic_architect
+      env_vars: USE_VERTEX_AI=true,GOOGLE_CLOUD_PROJECT=z-mentorai,USE_FIRESTORE=true,FIRESTORE_DATABASE=(default)
     secrets: inherit
