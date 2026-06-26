@@ -121,7 +121,7 @@ def profile_scanner(
 @mcp.tool()
 def market_scout(
     industry: str,
-    target_role: str,
+    target_role: str = "",
     user_query: str = "",
     intent_hint: str = "",
 ) -> dict:
