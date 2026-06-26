@@ -130,8 +130,41 @@ def market_scout(
     If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
     payload = {
         "industry": industry,
-        "target_role": target_role
-    })
+        "target_role": target_role,
+    }
+    if user_query.strip():
+        payload["user_query"] = user_query.strip()
+    if intent_hint.strip():
+        payload["intent_hint"] = intent_hint.strip()
+    elif _looks_like_salary_query(user_query):
+        payload["intent_hint"] = "salary_benchmark"
+
+    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", payload)
+
+
+def _looks_like_salary_query(query: str) -> bool:
+    normalized = _normalize_ascii(query)
+    salary_keywords = (
+        "luong",
+        "muc luong",
+        "thu nhap",
+        "salary",
+        "compensation",
+        "wage",
+        "pay",
+    )
+    return any(keyword in normalized for keyword in salary_keywords)
+
+
+def _normalize_ascii(value: str) -> str:
+    text = value.casefold().replace(chr(273), "d").replace(chr(272), "d")
+    text = "".join(
+        character
+        for character in __import__("unicodedata").normalize("NFD", text)
+        if __import__("unicodedata").category(character) != "Mn"
+    )
+    return " ".join(text.split())
+
 
 @mcp.tool()
 def salary_benchmark(user_query: str) -> dict:
@@ -140,11 +173,13 @@ def salary_benchmark(user_query: str) -> dict:
     return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", {
         "user_query": user_query,
     })
+
+
 @mcp.tool()
-def academic_architect(career_goal: str, current_skills: str) -> dict:
-    """Use this tool to create a roadmap to achieve a certain job description or career goal. 
+def academic_architect(career_goal: str, user_id: str = "", current_skills: str = "") -> dict:
+    """Use this tool to create a roadmap to achieve a certain job description or career goal.
     It will perform a skill gap analysis using the user's scanned CV and recommend courses and jobs.
-    
+
     Args:
         career_goal: the user's target career goal (e.g. 'Data Analyst', 'Frontend Engineer')
         user_id: the current user's User ID (Google ID) to lookup their scanned CV
@@ -153,9 +188,11 @@ def academic_architect(career_goal: str, current_skills: str) -> dict:
     return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
         "career_goal": career_goal,
         "current_skills": current_skills,
-        "user_id": user_id
+        "user_id": user_id,
     })
 
+
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8004))
+    port = int(os.getenv("PORT", "8080"))
+    logger.info("Starting MCP server", extra={"host": "0.0.0.0", "port": port, "transport": "sse"})
     mcp.run(transport="sse", host="0.0.0.0", port=port)
