@@ -62,25 +62,27 @@ class SalarySummaryService:
         self._llm = llm
 
     def summarize(self, user_query: str, benchmark: SalaryBenchmarkResult) -> SalarySummaryResult:
-        llm = self._llm or self._build_llm()
         payload = self._build_payload(user_query, benchmark)
         try:
+            llm = self._llm or self._build_llm()
             response = llm.invoke(
                 [
                     SystemMessage(content=_SYSTEM_PROMPT),
                     HumanMessage(content=json.dumps(payload, ensure_ascii=False, indent=2)),
                 ]
             )
-        except Exception as exc:
-            raise RuntimeError(
-                "Failed to summarize salary benchmark with Vertex AI model "
-                f"'{self.model_name}' in location '{self.location}'. "
-                "Check MARKET_SCOUT_LLM_MODEL / --llm-model and confirm the project has access to that model."
-            ) from exc
+            answer = _response_to_text(response).strip()
+            if answer:
+                return SalarySummaryResult(
+                    answer=answer,
+                    model_name=self.model_name,
+                )
+        except Exception:
+            pass
 
         return SalarySummaryResult(
-            answer=_response_to_text(response).strip(),
-            model_name=self.model_name,
+            answer=_deterministic_salary_answer(benchmark),
+            model_name=f"{self.model_name}:fallback",
         )
 
     def _build_llm(self) -> ChatModel:
@@ -137,6 +139,26 @@ def _salary_range_text(benchmark: SalaryBenchmarkResult) -> str | None:
     salary_range = benchmark.salary_range
     return f"{_format_vnd_million(salary_range.min)} - {_format_vnd_million(salary_range.max)} trieu VND/thang"
 
+
+def _deterministic_salary_answer(benchmark: SalaryBenchmarkResult) -> str:
+    if benchmark.salary_range is None:
+        return (
+            "Chua du du lieu de tinh benchmark luong dang tin cay cho vi tri nay. "
+            "Ket qua hien tai khong co mau luong phu hop sau khi loc du lieu."
+        )
+
+    role = benchmark.job_title or "vi tri nay"
+    location = benchmark.location or "khu vuc dang hoi"
+    experience = (
+        f" voi {benchmark.experience_years} nam kinh nghiem"
+        if benchmark.experience_years is not None
+        else ""
+    )
+    return (
+        f"Muc luong tham khao cho {role} tai {location}{experience} la khoang "
+        f"{_salary_range_text(benchmark)}, dua tren {benchmark.sample_size} mau viec lam phu hop. "
+        f"Do tin cay: {benchmark.confidence}."
+    )
 
 def _format_vnd_million(value: int) -> str:
     million_value = value / 1_000_000

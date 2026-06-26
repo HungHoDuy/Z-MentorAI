@@ -138,6 +138,12 @@ async def _run_agent(agent: MarketScoutAgent, request: MarketScoutRequest) -> Sc
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Market Scout dependencies are unavailable.",
         ) from exc
+    except Exception as exc:
+        logger.exception("Market Scout request failed unexpectedly")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Market Scout request failed unexpectedly.",
+        ) from exc
     return ScoutResponseBody(**response.to_dict())
 
 
