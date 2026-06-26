@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+from time import perf_counter
+from typing import Any
 import httpx
 from fastmcp import FastMCP
 
@@ -12,6 +14,16 @@ mcp = FastMCP("Agent MCP Server")
 PROFILE_SCANNER_URL = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
 MARKET_SCOUT_URL = os.getenv("MARKET_SCOUT_URL", "http://market-scout:8080")
 ACADEMIC_ARCHITECT_URL = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080")
+def _log_event(event: str, **fields: Any) -> None:
+    payload = {"event": event, **fields}
+    logger.info(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+def _short_text(value: str | None, max_length: int = 500) -> str:
+    text = " ".join((value or "").split())
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3] + "..."
 
 def _upstream_error_payload(
     method: str,
@@ -36,17 +48,21 @@ def _upstream_error_payload(
     return payload
 
 def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
+    start = perf_counter()
     try:
         response = httpx.post(f"{url}{endpoint}", json=payload, timeout=180.0)
         response.raise_for_status()
+        _log_event("mcp_upstream_success", endpoint=endpoint, status_code=response.status_code, duration_ms=round((perf_counter() - start) * 1000, 2))
         return response.json()
     except httpx.HTTPStatusError as exc:
         error_payload = _upstream_error_payload("POST", url, endpoint, exc, exc.response)
-        logger.error("Upstream POST request failed", extra=error_payload)
+        error_payload["duration_ms"] = round((perf_counter() - start) * 1000, 2)
+        logger.error(json.dumps({"event": "mcp_upstream_error", **error_payload}, ensure_ascii=False, default=str))
         return error_payload
     except Exception as exc:
         error_payload = _upstream_error_payload("POST", url, endpoint, exc)
-        logger.exception("Upstream POST request failed", extra=error_payload)
+        error_payload["duration_ms"] = round((perf_counter() - start) * 1000, 2)
+        logger.exception(json.dumps({"event": "mcp_upstream_exception", **error_payload}, ensure_ascii=False, default=str))
         return error_payload
 
 def get_data_sync(url: str, endpoint: str) -> dict:
@@ -83,6 +99,16 @@ def profile_scanner(
     Scores are integers from 1 to 5.
     """
     normalized_task = task.strip().lower()
+    sub_agent = "holland_test" if normalized_task in {"holland", "holland_start", "riasec", "riasec_start", "holland_score", "riasec_score"} or answers_json.strip() else "scan_cv"
+    _log_event(
+        "mcp_tool_call",
+        agent="profile_scanner",
+        sub_agent=sub_agent,
+        user_id=user_id,
+        user_query=_short_text(background_info),
+        task=normalized_task,
+        has_cv_document=bool(cv_document_id),
+    )
 
     if normalized_task in {"holland", "holland_start", "riasec", "riasec_start"}:
         return get_data_sync(PROFILE_SCANNER_URL, f"/holland/start/{user_id}")
@@ -128,6 +154,15 @@ def market_scout(
     """Use this tool for job market trends, hiring demand, automation exposure, and general market outlook.
     For salary or compensation questions, prefer the salary_benchmark tool.
     If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
+    sub_agent = intent_hint.strip() or ("salary_benchmark" if _looks_like_salary_query(user_query) else "trend_tracker")
+    _log_event(
+        "mcp_tool_call",
+        agent="market_scout",
+        sub_agent=sub_agent,
+        user_query=_short_text(user_query),
+        industry=industry,
+        target_role=target_role,
+    )
     payload = {
         "industry": industry,
         "target_role": target_role,
@@ -170,6 +205,7 @@ def _normalize_ascii(value: str) -> str:
 def salary_benchmark(user_query: str) -> dict:
     """Use this tool when the user asks about salary, compensation, income, wage, pay, or salary benchmark.
     Always pass the original user question as user_query."""
+    _log_event("mcp_tool_call", agent="market_scout", sub_agent="salary_benchmark", user_query=_short_text(user_query))
     return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", {
         "user_query": user_query,
     })
@@ -185,6 +221,7 @@ def academic_architect(career_goal: str, user_id: str = "", current_skills: str 
         user_id: the current user's User ID (Google ID) to lookup their scanned CV
         current_skills: optional comma-separated current skills, if CV is not available
     """
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="roadmap", user_query=_short_text(career_goal), user_id=user_id)
     return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
         "career_goal": career_goal,
         "current_skills": current_skills,

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import json
+import logging
+from time import perf_counter
 from typing import Any
 
 from backend.market_scout.repositories.trend_tracker.automation_risk_repository import AutomationRiskRepository
@@ -16,6 +19,27 @@ from backend.market_scout.services.trend_tracker.hybrid_signal_service import Hy
 from backend.market_scout.services.trend_tracker.skill_frequency_service import SkillFrequencyService
 from backend.market_scout.services.trend_tracker.trend_query_normalizer import TrendQueryNormalizer
 
+logger = logging.getLogger("market_scout")
+
+
+def _log_step(step: str, query_input: TrendQueryInput, start: float, **fields: Any) -> None:
+    logger.info(
+        json.dumps(
+            {
+                "event": "market_scout_step",
+                "agent": "market_scout",
+                "sub_agent": getattr(query_input.intent, "value", str(query_input.intent)),
+                "step": step,
+                "duration_ms": round((perf_counter() - start) * 1000, 2),
+                "job_family_id": query_input.job_family_id,
+                "job_category_id": query_input.job_category_id,
+                "location_id": query_input.location_id,
+                **fields,
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+    )
 
 @dataclass(frozen=True)
 class TrendTrackerFlowResult:
@@ -55,11 +79,29 @@ class TrendTrackerFlow:
         as_of_date: date | None = None,
         external_published_after: date | None = None,
     ) -> TrendTrackerFlowResult:
+        normalize_start = perf_counter()
         query = self.query_normalizer.normalize(query_input)
+        _log_step(
+            "trend_normalize_query",
+            query_input,
+            normalize_start,
+            normalized_job_family_id=query.job_family_id,
+            normalized_job_category_id=query.job_category_id,
+            normalized_location_id=query.location_id,
+        )
+
+        evaluate_start = perf_counter()
         signal = self.hybrid_signal_service.evaluate(
             query,
             as_of_date=as_of_date,
             external_published_after=external_published_after,
+        )
+        _log_step(
+            "trend_hybrid_signal_evaluate",
+            query_input,
+            evaluate_start,
+            signal=signal.signal,
+            confidence=signal.confidence,
         )
         return TrendTrackerFlowResult(query=query, signal=signal)
 
