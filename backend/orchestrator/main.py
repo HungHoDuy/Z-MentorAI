@@ -252,14 +252,20 @@ def normalize_tool_output(output: Any) -> dict:
 
 def summarize_tool_calls(tool_calls: list[dict]) -> str:
     for tool_call in tool_calls:
-        if tool_call.get("name") == "academic_architect":
+        name = tool_call.get("name")
+        if name == "academic_architect":
             return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
-        output = normalize_tool_output(tool_call.get("output"))
-        if output.get("feature") == "holland_assessment":
-            if output.get("questions"):
-                return "Đã tạo biểu mẫu Holland Test."
-            if output.get("top_code"):
-                return "Đã chấm điểm Holland Test."
+        elif name == "market_scout":
+            return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
+        elif name == "profile_scanner":
+            output = normalize_tool_output(tool_call.get("output"))
+            if output.get("feature") == "holland_assessment":
+                if output.get("questions"):
+                    return "Đã tạo biểu mẫu Holland Test."
+                if output.get("top_code"):
+                    return "Đã chấm điểm Holland Test và lưu kết quả RIASEC."
+            elif output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+                return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
 
 
@@ -360,7 +366,7 @@ async def save_chat_exchange(
     if session.get("title") == "New Chat":
         try:
             title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {user_message}"
-            res = await llm.ainvoke(title_prompt)
+            res = await llm.ainvoke([HumanMessage(content=title_prompt)])
             new_title = res.content.strip().replace('"', '').replace("'", "")
             if new_title:
                 session["title"] = new_title
@@ -785,6 +791,8 @@ async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = He
 
 # System prompt
 def get_system_message(user_id: str) -> SystemMessage:
+    import datetime
+    current_date = datetime.date.today().strftime("%d/%m/%Y")
     return SystemMessage(content=(
         "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
         "You have access to three specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
@@ -797,7 +805,12 @@ def get_system_message(user_id: str) -> SystemMessage:
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "For course roadmap or learning planning, call the academic_architect tool with the user's target career goal, user_id (pass the current user's User ID), and optionally current_skills. "
-        "When calling academic_architect, write a short, friendly summary or introduction (1-2 sentences) in your final response. Do not repeat or copy the entire academic plan or list of courses, as the Academic Architect tool widget will display them beautifully. "
+        f"Today's date is {current_date}. "
+        "When calling academic_architect, you will receive the recommended courses and lacking skills metadata. You MUST write the detailed study roadmap in your final response in Vietnamese so it streams token-by-token to the user. "
+        "Structure the roadmap with exactly these three sections:\n"
+        "1. **Phân tích khoảng trống kỹ năng (Skill Gap Analysis)**: Highlight what skills the user has and what they need to acquire.\n"
+        f"2. **Lộ trình học tập chi tiết (Detailed Study Roadmap)**: Organize the learning plan into clear steps/phases. Calculate and display exact start/end dates for each phase based on today's date ({current_date}), estimating workloads. For each course link you recommend, you MUST format it as a markdown link using its exact URL from the tool output, and append its duration/workload in parentheses (e.g. `[Tên Khóa Học](url) - 5 tuần (3-4 giờ/tuần)`). Label alternative reference courses directly under each primary course as 'Khóa tham khảo thêm:' instead of 'Lựa chọn thay thế'.\n"
+        "3. **Lập lịch học**: Remind the user they can sync the primary recommended course directly to their Google Calendar using the button in the widget below.\n"
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
         "If you need more information from the user before you can use a tool, ask them directly."

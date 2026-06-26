@@ -571,41 +571,7 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
               );
             })}
           </div>
-          
-          {output.alternative_courses && output.alternative_courses.length > 0 && (
-            <div className="alternative-courses-section" style={{ marginTop: '1.2rem' }}>
-              <h5 className="alternative-courses-title" style={{ fontSize: '0.86rem', fontWeight: 750, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Khóa học thay thế đề xuất:
-              </h5>
-              <div className="alternative-courses-list" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {output.alternative_courses.map((altCourse) => (
-                  <a 
-                    key={altCourse.course_id}
-                    href={altCourse.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="alternative-course-link"
-                    style={{
-                      fontSize: '0.78rem',
-                      fontWeight: 650,
-                      color: 'var(--accent, #0d9488)',
-                      padding: '6px 12px',
-                      background: 'var(--bg-app, #f4f6fa)',
-                      border: '1px solid var(--border-subtle, #dfe5ee)',
-                      borderRadius: '20px',
-                      textDecoration: 'none',
-                      transition: 'all 0.2s ease',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    📖 {altCourse.name}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+
         </div>
       )}
 
@@ -672,7 +638,7 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
     && normalizedOutput?.grade
     && status === 'completed';
   const shouldRenderAcademicPlan = toolName === 'academic_architect'
-    && normalizedOutput?.academic_plan
+    && (normalizedOutput?.academic_plan || normalizedOutput?.courses)
     && status === 'completed';
   const toolLabel = isHollandOutput && toolName === 'profile_scanner'
     ? `${info.label} · Holland Test`
