@@ -13,6 +13,10 @@ on:
         required: false
         type: string
         default: ''
+      env_vars:
+        required: false
+        type: string
+        default: ''
 
 env:
   PROJECT_ID: z-mentorai
@@ -57,4 +61,8 @@ jobs:
     # 6. Deploy to Cloud Run
     - name: Deploy to Cloud Run
       run: |
-        gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        if [ -n "${{ inputs.env_vars }}" ]; then
+          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --set-env-vars="${{ inputs.env_vars }}" --quiet
+        else
+          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+        fi
