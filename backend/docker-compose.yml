@@ -10,8 +10,6 @@ services:
     environment:
       - MCP_SERVER_URL=${MCP_SERVER_URL:-http://mcp-server:8080/sse}
       - PROFILE_SCANNER_URL=${PROFILE_SCANNER_URL:-http://profile-scanner:8080}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - USE_FIRESTORE=${USE_FIRESTORE:-false}
       - USE_VERTEX_AI=${USE_VERTEX_AI:-false}
       - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
@@ -32,6 +30,7 @@ services:
     env_file:
       - .env
     environment:
+      - PORT=8080
       - PROFILE_SCANNER_URL=${PROFILE_SCANNER_URL:-http://profile-scanner:8080}
       - MARKET_SCOUT_URL=${MARKET_SCOUT_URL:-http://market-scout:8080}
       - ACADEMIC_ARCHITECT_URL=${ACADEMIC_ARCHITECT_URL:-http://academic-architect:8080}
@@ -62,7 +61,6 @@ services:
       - DOCUMENT_AI_PROCESSOR_NAME=${DOCUMENT_AI_PROCESSOR_NAME}
       - USE_VERTEX_AI=${USE_VERTEX_AI:-false}
       - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-asia-southeast1}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - PROFILE_AI_EXTRACTION_ENABLED=${PROFILE_AI_EXTRACTION_ENABLED:-false}
       - PROFILE_AI_MODEL_NAME=${PROFILE_AI_MODEL_NAME:-gemini-2.5-flash}
     volumes:
@@ -74,12 +72,6 @@ services:
       dockerfile: backend/market_scout/Dockerfile
     ports:
       - "8002:8080"
-    environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /var/secrets/google/service_account.json
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-z-mentorai}
-      MARKET_SCOUT_FIRESTORE_DATABASE: ${MARKET_SCOUT_FIRESTORE_DATABASE:-(default)}
-    volumes:
-      - ${MARKET_SCOUT_SERVICE_ACCOUNT_PATH:-./market_scout/service_account.json}:/var/secrets/google/service_account.json:ro
 
   academic-architect:
     build:
@@ -87,3 +79,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8003:8080"
+    env_file:
+      - .env
+    environment:
+      - USE_FIRESTORE=${USE_FIRESTORE:-false}
+      - USE_VERTEX_AI=${USE_VERTEX_AI:-false}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-(default)}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-z-mentorai}
+    volumes:
+      - ${GCLOUD_CONFIG_DIR:-./.gcloud}:/root/.config/gcloud:ro
+

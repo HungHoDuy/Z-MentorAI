@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import unicodedata
 import httpx
 from fastmcp import FastMCP
 
@@ -38,7 +37,7 @@ def _upstream_error_payload(
 
 def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
-        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=60.0)
+        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=180.0)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as exc:
@@ -131,36 +130,8 @@ def market_scout(
     If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
     payload = {
         "industry": industry,
-        "target_role": target_role,
-    }
-    if user_query.strip():
-        payload["user_query"] = user_query.strip()
-    if intent_hint.strip():
-        payload["intent_hint"] = intent_hint.strip()
-    elif _looks_like_salary_query(user_query):
-        payload["intent_hint"] = "salary_benchmark"
-
-    return fetch_data_sync(MARKET_SCOUT_URL, "/scout", payload)
-
-
-def _looks_like_salary_query(query: str) -> bool:
-    normalized = _normalize_ascii(query)
-    salary_keywords = (
-        "luong",
-        "muc luong",
-        "thu nhap",
-        "salary",
-        "compensation",
-        "wage",
-        "pay",
-    )
-    return any(keyword in normalized for keyword in salary_keywords)
-
-
-def _normalize_ascii(value: str) -> str:
-    text = unicodedata.normalize("NFD", value.casefold().replace(chr(273), "d").replace(chr(272), "d"))
-    text = "".join(character for character in text if unicodedata.category(character) != "Mn")
-    return " ".join(text.split())
+        "target_role": target_role
+    })
 
 @mcp.tool()
 def salary_benchmark(user_query: str) -> dict:
@@ -172,11 +143,19 @@ def salary_benchmark(user_query: str) -> dict:
 @mcp.tool()
 def academic_architect(career_goal: str, current_skills: str) -> dict:
     """Use this tool to create a roadmap to achieve a certain job description or career goal. 
-    It will provide data on courses needed to complete and skills needed to acquire."""
+    It will perform a skill gap analysis using the user's scanned CV and recommend courses and jobs.
+    
+    Args:
+        career_goal: the user's target career goal (e.g. 'Data Analyst', 'Frontend Engineer')
+        user_id: the current user's User ID (Google ID) to lookup their scanned CV
+        current_skills: optional comma-separated current skills, if CV is not available
+    """
     return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
         "career_goal": career_goal,
-        "current_skills": current_skills
+        "current_skills": current_skills,
+        "user_id": user_id
     })
 
 if __name__ == "__main__":
-    mcp.run(transport="sse", host="0.0.0.0", port=8080)
+    port = int(os.getenv("PORT", 8004))
+    mcp.run(transport="sse", host="0.0.0.0", port=port)
