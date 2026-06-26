@@ -460,7 +460,198 @@ function HollandTestForm({ output, onSendMessage }) {
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage }) {
+function AcademicPlanWidget({ output, user, backendUrl }) {
+  const plan = output.academic_plan || '';
+  const courses = output.courses || [];
+  const lackingSkills = output.lacking_skills || [];
+  const careerGoal = output.career_goal || 'Lộ trình học tập';
+
+  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
+  const [calendarMessage, setCalendarMessage] = useState('');
+
+  const handleAddToCalendar = async () => {
+    if (!user || calendarStatus === 'loading') return;
+    if (courses.length === 0) return;
+    
+    const courseToSchedule = courses[0];
+
+    setCalendarStatus('loading');
+    try {
+      const res = await fetch(`${backendUrl}/calendar/append`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': user.google_id
+        },
+        body: JSON.stringify({
+          career_goal: careerGoal,
+          lacking_skills: lackingSkills,
+          courses: [{ 
+            name: courseToSchedule.name, 
+            url: courseToSchedule.url,
+            duration: courseToSchedule.duration || '15 giờ',
+            workload: courseToSchedule.workload || ''
+          }]
+        })
+      });
+      if (!res.ok) throw new Error('Không thể đồng bộ lịch học');
+      const data = await res.json();
+      setCalendarStatus('success');
+      setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
+    } catch (err) {
+      console.error(err);
+      setCalendarStatus('error');
+      setCalendarMessage('Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
+    }
+  };
+
+  return (
+    <div className="academic-plan-widget">
+      <div className="academic-plan-markdown">
+        <ReactMarkdown>{plan}</ReactMarkdown>
+      </div>
+      
+      {courses.length > 0 && (
+        <div className="academic-plan-courses">
+          <h4 className="courses-section-title">Khóa học tiêu biểu đề xuất</h4>
+          <div className="course-cards-grid single-course">
+            {courses.slice(0, 1).map((course) => {
+              const scorePct = Math.round((course.score || 0) * 100);
+              const certs = course.certificates || [];
+              const isSpec = certs.some(c => String(c).toLowerCase().includes('specialization'));
+              const partnersList = (course.partners || [])
+                .map(p => typeof p === 'object' ? p.name : p)
+                .join(', ');
+                 
+              return (
+                <div 
+                  key={course.course_id}
+                  className="course-card selected featured-course"
+                  style={{ position: 'relative' }}
+                >
+                  <div className="course-card-top">
+                    <span className="course-provider">{partnersList || 'Coursera'}</span>
+                    <span className="course-score-badge">{scorePct}% phù hợp</span>
+                  </div>
+                  
+                  <h5 className="course-name">
+                    🎓 {course.name}
+                  </h5>
+                  <p className="course-desc-snippet">
+                    {course.description 
+                      ? (course.description.length > 250 ? `${course.description.substring(0, 250)}...` : course.description)
+                      : 'Không có mô tả chi tiết.'}
+                  </p>
+                  
+                  <div className="course-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span className="course-type-tag">
+                        {isSpec ? 'Specialization' : 'Course'}
+                      </span>
+                      {course.workload ? (
+                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
+                          💼 {course.workload}
+                        </span>
+                      ) : (
+                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
+                          ⏱️ {course.duration || '15 giờ'}
+                        </span>
+                      )}
+                    </div>
+                    <a 
+                      href={course.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="course-action-link"
+                    >
+                      Xem trên Coursera →
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {output.alternative_courses && output.alternative_courses.length > 0 && (
+            <div className="alternative-courses-section" style={{ marginTop: '1.2rem' }}>
+              <h5 className="alternative-courses-title" style={{ fontSize: '0.86rem', fontWeight: 750, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Khóa học thay thế đề xuất:
+              </h5>
+              <div className="alternative-courses-list" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {output.alternative_courses.map((altCourse) => (
+                  <a 
+                    key={altCourse.course_id}
+                    href={altCourse.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="alternative-course-link"
+                    style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 650,
+                      color: 'var(--accent, #0d9488)',
+                      padding: '6px 12px',
+                      background: 'var(--bg-app, #f4f6fa)',
+                      border: '1px solid var(--border-subtle, #dfe5ee)',
+                      borderRadius: '20px',
+                      textDecoration: 'none',
+                      transition: 'all 0.2s ease',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    📖 {altCourse.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Google Calendar Sync Widget */}
+      <div className="calendar-sync-card">
+        <div className="calendar-card-header">
+          <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
+          <h4>Lập kế hoạch học tập trên Google Calendar</h4>
+        </div>
+        <p className="calendar-card-desc">
+          Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
+        </p>
+        <div className="calendar-card-actions">
+          {calendarStatus === 'idle' && (
+            <button className="calendar-sync-btn" onClick={handleAddToCalendar} disabled={courses.length === 0}>
+              Đồng bộ khóa học vào Google Calendar
+            </button>
+          )}
+          {calendarStatus === 'loading' && (
+            <button className="calendar-sync-btn loading" disabled>
+              <span className="btn-spinner" />
+              Đang đồng bộ...
+            </button>
+          )}
+          {calendarStatus === 'success' && (
+            <div className="calendar-sync-success-msg">
+              <span className="success-check">✓</span>
+              <span>{calendarMessage}</span>
+            </div>
+          )}
+          {calendarStatus === 'error' && (
+            <div className="calendar-sync-error-msg">
+              <span className="error-cross">✕</span>
+              <span>{calendarMessage}</span>
+              <button className="calendar-retry-btn" onClick={handleAddToCalendar}>
+                Thử lại
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolCallWidget({ toolName, output, status, onSendMessage, user, backendUrl }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -479,6 +670,9 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
     && status === 'completed';
   const shouldRenderProfileScanResult = isProfileScanOutput
     && normalizedOutput?.grade
+    && status === 'completed';
+  const shouldRenderAcademicPlan = toolName === 'academic_architect'
+    && normalizedOutput?.academic_plan
     && status === 'completed';
   const toolLabel = isHollandOutput && toolName === 'profile_scanner'
     ? `${info.label} · Holland Test`
@@ -524,6 +718,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
                 <HollandResultCard result={normalizedOutput} />
               ) : shouldRenderProfileScanResult ? (
                 <ProfileScanResultCard result={normalizedOutput} />
+              ) : shouldRenderAcademicPlan ? (
+                <AcademicPlanWidget output={normalizedOutput} user={user} backendUrl={backendUrl} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
@@ -767,7 +963,7 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
   );
 }
 
-function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage }) {
+function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl }) {
   return (
     <div className="messages-feed">
       {messages.map((msg) => {
@@ -787,6 +983,8 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                 output={toolCall.output}
                 status={toolCall.status}
                 onSendMessage={onSendMessage}
+                user={user}
+                backendUrl={backendUrl}
               />
             ))}
 
@@ -898,7 +1096,8 @@ function ChatWorkspace({
   onCvAttachClick,
   onCvFileChange,
   onRemoveCvAttachment,
-  cvUploadError
+  cvUploadError,
+  backendUrl
 }) {
   return (
     <div className="chat-area">
@@ -911,6 +1110,8 @@ function ChatWorkspace({
           activeAgents={activeAgents}
           messagesEndRef={messagesEndRef}
           onSendMessage={onSendMessage}
+          user={user}
+          backendUrl={backendUrl}
         />
       )}
 
@@ -1565,6 +1766,7 @@ export default function App() {
           onCvFileChange={handleCvFileChange}
           onRemoveCvAttachment={handleRemoveCvAttachment}
           cvUploadError={cvUploadError}
+          backendUrl={backendUrl}
         />
       </main>
 

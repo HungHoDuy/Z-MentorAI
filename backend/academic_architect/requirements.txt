@@ -3,3 +3,8 @@ uvicorn
 langchain
 langchain-core
 pydantic
+numpy
+google-cloud-firestore
+langchain-google-genai
+langchain-google-vertexai
+python-dotenv
