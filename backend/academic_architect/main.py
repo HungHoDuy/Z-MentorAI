@@ -109,6 +109,27 @@ def load_jobs() -> List[dict]:
         logger.error(f"Error loading jobs file: {e}")
         return []
 
+# Cache for embeddings instances
+_embeddings_cache = {}
+
+def get_embeddings(dimensions: Optional[int] = None):
+    project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID")
+    location = os.getenv("VERTEX_AI_LOCATION", "asia-southeast1")
+    cache_key = (dimensions, project, location)
+    if cache_key not in _embeddings_cache:
+        kwargs = {
+            "model_name": "text-embedding-004",
+        }
+        if dimensions is not None:
+            kwargs["dimensions"] = dimensions
+        if project:
+            kwargs["project"] = project
+        if location:
+            kwargs["location"] = location
+        logger.info(f"Academic Architect: Initializing VertexAIEmbeddings with params {kwargs}")
+        _embeddings_cache[cache_key] = VertexAIEmbeddings(**kwargs)
+    return _embeddings_cache[cache_key]
+
 def perform_vector_search(search_text: str, search_mode: str, domain: Optional[str] = None, k: int = 5) -> tuple[List[dict], str]:
     """Helper to perform native Firestore vector search using find_nearest with domain pre-filtering."""
     normalized_mode = search_mode.strip().lower()
@@ -118,11 +139,11 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
     # 1. Embed query
     if normalized_mode == "name":
         # 128 dimensions for name embedding
-        embeddings = VertexAIEmbeddings(model_name="text-embedding-004", dimensions=128)
+        embeddings = get_embeddings(dimensions=128)
         vector_field = "name_embedding"
     else:
         # Default 768 dimensions for description embedding
-        embeddings = VertexAIEmbeddings(model_name="text-embedding-004")
+        embeddings = get_embeddings(dimensions=None)
         vector_field = "description_embedding"
         
     query_vector = embeddings.embed_query(search_text)
@@ -399,31 +420,42 @@ Example response:
         lacking_skills = analysis_data.get("lacking_skills", [])
         query_tasks = analysis_data.get("search_queries", [])
 
-        # 4. Perform vector search for each identified query
+        # 4. Perform vector search for each identified query in parallel
+        import asyncio
         retrieved_courses = []
         seen_course_ids = set()
-        
-        for task in query_tasks:
+
+        async def run_search(task):
             s_text = task.get("search_text")
             s_mode = task.get("search_mode", "description")
             s_domain = task.get("domain")
-            
-            if s_text:
-                try:
-                    results, domain_used = perform_vector_search(search_text=s_text, search_mode=s_mode, domain=s_domain, k=3)
-                    for c in results:
-                        if c["course_id"] not in seen_course_ids:
-                            seen_course_ids.add(c["course_id"])
-                            retrieved_courses.append(c)
-                except Exception as ex:
-                    logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
-                    
+            if not s_text:
+                return []
+            try:
+                # perform_vector_search is synchronous, run it in a thread pool
+                results, domain_used = await asyncio.to_thread(
+                    perform_vector_search, s_text, s_mode, s_domain, 3
+                )
+                return results
+            except Exception as ex:
+                logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
+                return []
+
+        search_tasks = [run_search(task) for task in query_tasks]
+        results_list = await asyncio.gather(*search_tasks)
+
+        for results in results_list:
+            for c in results:
+                if c["course_id"] not in seen_course_ids:
+                    seen_course_ids.add(c["course_id"])
+                    retrieved_courses.append(c)
+
         # 5. Format course metadata for LLM plan generation context
         courses_context = ""
         for idx, c in enumerate(retrieved_courses):
             partners = ", ".join([p.get("name") if isinstance(p, dict) else str(p) for p in c.get("partners") or []])
             certs = ", ".join(c.get("certificates") or [])
-            courses_context += f"[{idx+1}] Tên: {c['name']} | Đối tác: {partners} | Chứng chỉ: {certs} | Link: {c['url']} | Khối lượng: {c.get('workload', '')}\nMô tả: {c['description'][:200]}...\n\n"
+            courses_context += f"[{idx}] Tên: {c['name']} | Đối tác: {partners} | Chứng chỉ: {certs} | Link: {c['url']} | Khối lượng: {c.get('workload', '')}\nMô tả: {c['description'][:200]}...\n\n"
             
         # 6. Format matched jobs list for LLM context
         jobs_md_list = ""
@@ -442,42 +474,50 @@ Lacking Skills Identified: {json.dumps(lacking_skills)}
 We have retrieved the following relevant Coursera courses to bridge the skill gaps:
 {courses_context}
 
-Create a personalized, professional, and visually appealing academic roadmap in markdown format.
+Please execute these steps:
+Step 1: Create a personalized, professional, and visually appealing academic roadmap in markdown format.
 Structure the roadmap with exactly these three sections:
 1. **Phân tích khoảng trống kỹ năng (Skill Gap Analysis)**: Highlight what skills the user has and what they need to acquire.
 2. **Lộ trình học tập chi tiết (Detailed Study Roadmap)**: Organize the learning plan into clear steps/phases (e.g. Phase 1: Fundamentals, Phase 2: Advanced). For each phase, describe the skills acquired. Recommend specific courses from the retrieved Coursera list.
    **CRITICAL REQUIREMENT**: You MUST format each recommended course as a markdown link using its exact Link from the metadata above. E.g., format as `[Tên Khóa Học](exact_url_from_metadata)`. Explicitly label the primary recommended course (the best fit) and list the other courses as alternative options.
 3. **Lập lịch học**: Add a concluding note letting the user know they can use the Google Calendar card below to sync the primary recommended course directly to their Google Calendar.
 
-Keep the tone encouraging, structured, and goal-oriented. Use Vietnamese for the roadmap content.
-"""
-        res_roadmap = await llm.ainvoke(prompt_roadmap)
-        roadmap_content = res_roadmap.content.strip()
-        
-        # Let LLM select the single best course from the retrieved courses
-        best_course = retrieved_courses[0] if retrieved_courses else None
-        if len(retrieved_courses) > 1:
-            courses_list_text = "\n".join([f"Index {idx}: {c['name']} (Mô tả: {c['description'][:200]})" for idx, c in enumerate(retrieved_courses)])
-            prompt_select_best = f"""
-Dựa trên mục tiêu nghề nghiệp: "{request.career_goal}" và các kỹ năng còn thiếu: {json.dumps(lacking_skills)}.
-Hãy chọn ra đúng 1 khóa học phù hợp nhất, thiết thực nhất từ danh sách các khóa học Coursera dưới đây để người học bắt đầu ngay lập tức.
-Trả về duy nhất chỉ số Index của khóa học được chọn (ví dụ: 0 hoặc 1 hoặc 2), không trả thêm bất kỳ từ ngữ nào khác.
+Step 2: Select the index of the single best course (from 0 to {len(retrieved_courses)-1}) from the retrieved Coursera courses that fits the goal.
 
-Danh sách khóa học:
-{courses_list_text}
+Return the output as a valid JSON object with these keys:
+- "academic_plan": the markdown content of the roadmap generated in Step 1 (written in Vietnamese).
+- "best_course_index": the integer index of the selected best course from Step 2. If no courses are available, set this to 0.
+
+Do not add any markdown formatting wrapper, extra text, or prefix outside the JSON.
 """
+        roadmap_content = ""
+        best_course = retrieved_courses[0] if retrieved_courses else None
+        
+        try:
+            res_roadmap = await llm.ainvoke(prompt_roadmap)
+            raw_content = res_roadmap.content.strip()
+            
+            # Clean any markdown JSON wrapper code blocks
+            if raw_content.startswith("```json"):
+                raw_content = raw_content[7:]
+            if raw_content.endswith("```"):
+                raw_content = raw_content[:-3]
+            raw_content = raw_content.strip()
+            
             try:
-                res_best = await llm.ainvoke(prompt_select_best)
-                best_idx_str = res_best.content.strip()
-                match = re.search(r'\d+', best_idx_str)
-                if match:
-                    best_idx = int(match.group(0))
-                    if 0 <= best_idx < len(retrieved_courses):
-                        best_course = retrieved_courses[best_idx]
-                        logger.info(f"LLM selected best course: index {best_idx} ({best_course['name']})")
-            except Exception as e:
-                logger.error(f"Failed to let LLM select best course: {e}")
-                
+                roadmap_data = json.loads(raw_content)
+                roadmap_content = roadmap_data.get("academic_plan", "")
+                best_idx = roadmap_data.get("best_course_index", 0)
+                if retrieved_courses and isinstance(best_idx, int) and 0 <= best_idx < len(retrieved_courses):
+                    best_course = retrieved_courses[best_idx]
+                    logger.info(f"LLM selected best course from combined prompt: index {best_idx} ({best_course['name']})")
+            except Exception as parse_err:
+                logger.warning(f"Failed to parse LLM roadmap JSON: {parse_err}. Falling back to using raw content.")
+                roadmap_content = raw_content
+        except Exception as e:
+            logger.error(f"Error during LLM roadmap generation: {e}")
+            raise
+
         selected_courses = [best_course] if best_course else []
         alternative_courses = [c for c in retrieved_courses if c["course_id"] != (best_course["course_id"] if best_course else "")]
         
@@ -490,7 +530,6 @@ Danh sách khóa học:
             matched_jobs=matched_jobs,
             career_goal=request.career_goal
         )
-        
     except Exception as e:
         logger.exception("Error during academic plan generation")
         raise HTTPException(status_code=500, detail=str(e))

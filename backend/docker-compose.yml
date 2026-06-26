@@ -68,8 +68,8 @@ services:
 
   market-scout:
     build:
-      context: ./market_scout
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: backend/market_scout/Dockerfile
     ports:
       - "8002:8080"
 
