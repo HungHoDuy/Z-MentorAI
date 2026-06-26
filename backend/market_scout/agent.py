@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import json
+import logging
+from time import perf_counter
 from typing import Any
 
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow, SalaryBenchmarkFlowResult
@@ -9,6 +12,22 @@ from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest, 
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryInput, TrendQueryIntent
 from backend.market_scout.services.trend_tracker.trend_llm_summary_service import TrendLlmSummaryService
 
+logger = logging.getLogger("market_scout")
+
+
+def _log_event(event: str, **fields: Any) -> None:
+    logger.info(json.dumps({"event": event, **fields}, ensure_ascii=False, default=str))
+
+
+def _duration_ms(start: float) -> float:
+    return round((perf_counter() - start) * 1000, 2)
+
+
+def _short_query(query: str, max_length: int = 500) -> str:
+    text = " ".join(query.split())
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3] + "..."
 
 class MarketScoutAgent:
     def __init__(
@@ -34,31 +53,84 @@ class MarketScoutAgent:
         self.default_fetch_k = default_fetch_k
 
     async def run(self, request: MarketScoutRequest | str, user_context: dict[str, Any] | None = None) -> MarketScoutResponse:
+        request_start = perf_counter()
         if isinstance(request, str):
             request = MarketScoutRequest(user_query=request, user_context=user_context or {})
 
+        _log_event(
+            "market_scout_request_start",
+            agent="market_scout",
+            user_query=_short_query(request.user_query),
+            intent_hint=str(request.intent_hint) if request.intent_hint is not None else None,
+        )
+        intent_start = perf_counter()
         intent = await self._resolve_intent(request)
+        _log_event(
+            "market_scout_step",
+            agent="market_scout",
+            sub_agent=intent.value,
+            step="resolve_intent",
+            duration_ms=_duration_ms(intent_start),
+            user_query=_short_query(request.user_query),
+        )
+
         if intent == MarketScoutIntent.SALARY_BENCHMARK:
             salary_flow = self.salary_flow or SalaryBenchmarkFlow()
+            flow_start = perf_counter()
             result = salary_flow.run(
                 request.user_query,
                 top_k=self.default_top_k,
                 fetch_k=self.default_fetch_k,
             )
-            return self._compose_salary_response(result)
+            _log_event(
+                "market_scout_step",
+                agent="market_scout",
+                sub_agent="salary_benchmark",
+                step="salary_flow_total",
+                duration_ms=_duration_ms(flow_start),
+                user_query=_short_query(request.user_query),
+            )
+            response = self._compose_salary_response(result)
+            _log_event(
+                "market_scout_request_end",
+                agent="market_scout",
+                sub_agent="salary_benchmark",
+                confidence=response.confidence,
+                duration_ms=_duration_ms(request_start),
+                user_query=_short_query(request.user_query),
+            )
+            return response
 
         if intent in {
             MarketScoutIntent.TREND_TRACKER,
             MarketScoutIntent.JOB_DEMAND_FORECAST,
             MarketScoutIntent.INDUSTRY_DECLINE_RISK,
         }:
-            return await self._run_trend(request, intent)
+            response = await self._run_trend(request, intent)
+            _log_event(
+                "market_scout_request_end",
+                agent="market_scout",
+                sub_agent=intent.value,
+                confidence=response.confidence,
+                duration_ms=_duration_ms(request_start),
+                user_query=_short_query(request.user_query),
+            )
+            return response
 
         if intent is MarketScoutIntent.MIXED:
-            return self._compose_unsupported_response(intent)
+            response = self._compose_unsupported_response(intent)
+        else:
+            response = self._compose_clarification_response()
 
-        return self._compose_clarification_response()
-
+        _log_event(
+            "market_scout_request_end",
+            agent="market_scout",
+            sub_agent=intent.value,
+            confidence=response.confidence,
+            duration_ms=_duration_ms(request_start),
+            user_query=_short_query(request.user_query),
+        )
+        return response
     async def _resolve_intent(self, request: MarketScoutRequest) -> MarketScoutIntent:
         if request.intent_hint is not None:
             return MarketScoutIntent.from_value(request.intent_hint)
@@ -102,15 +174,41 @@ class MarketScoutAgent:
         market_intent: MarketScoutIntent,
     ) -> MarketScoutResponse:
         try:
+            input_start = perf_counter()
             trend_input = await self._trend_query_input(request, market_intent)
+            _log_event(
+                "market_scout_step",
+                agent="market_scout",
+                sub_agent=market_intent.value,
+                step="trend_build_query_input",
+                duration_ms=_duration_ms(input_start),
+                user_query=_short_query(request.user_query),
+            )
+            flow_start = perf_counter()
             trend_flow = self.trend_flow or TrendTrackerFlow()
             flow_result = trend_flow.run(trend_input)
+            _log_event(
+                "market_scout_step",
+                agent="market_scout",
+                sub_agent=market_intent.value,
+                step="trend_flow_total",
+                duration_ms=_duration_ms(flow_start),
+                user_query=_short_query(request.user_query),
+            )
         except ValueError as exc:
             return self._compose_trend_clarification_response(market_intent, str(exc))
 
+        summary_start = perf_counter()
         summary = self.response_composer.summarize(flow_result)
+        _log_event(
+            "market_scout_step",
+            agent="market_scout",
+            sub_agent=market_intent.value,
+            step="trend_summary",
+            duration_ms=_duration_ms(summary_start),
+            user_query=_short_query(request.user_query),
+        )
         return self._compose_trend_response(market_intent, flow_result, summary)
-
     async def _trend_query_input(
         self,
         request: MarketScoutRequest,
