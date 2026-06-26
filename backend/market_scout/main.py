@@ -23,8 +23,8 @@ class ScoutRequestBody(BaseModel):
     intent_hint: MarketScoutIntent | None = None
     user_context: dict[str, Any] = Field(default_factory=dict)
     entities_hint: dict[str, Any] | None = None
-    industry: str | None = Field(default=None, min_length=1)
-    target_role: str | None = Field(default=None, min_length=1)
+    industry: str | None = None
+    target_role: str | None = None
 
 
 class SalaryBenchmarkRequest(BaseModel):
