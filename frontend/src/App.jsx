@@ -97,7 +97,7 @@ const suggestedQuestions = [
     agent: 'academic_architect',
     title: 'Dựng lộ trình học',
     desc: 'Tạo các bước học để lấp khoảng trống mục tiêu',
-    prompt: 'Tôi muốn trở thành Cloud DevOps Engineer. Hãy dựng cho tôi một lộ trình khóa học và kỹ năng cần bổ sung.'
+    prompt: 'Tôi muốn xây dựng lộ trình học tập.'
   },
   {
     agent: 'profile_scanner',
