@@ -3,6 +3,8 @@ import sys
 import time
 import json
 import logging
+import uuid
+import datetime
 from typing import Any, Optional, List
 from pathlib import Path
 
@@ -77,6 +79,9 @@ class SearchResponse(BaseModel):
 
 import re
 
+class SkillsUpdateRequest(BaseModel):
+    skills: List[str]
+
 class ArchitectRequest(BaseModel):
     career_goal: str
     current_skills: str
@@ -96,6 +101,24 @@ def get_firestore_client():
     if db_name and db_name != "(default)":
         return firestore.Client(database=db_name)
     return firestore.Client()
+
+LOCAL_SKILLS_DB_PATH = Path(__file__).resolve().parent / "user_skills_db.json"
+
+def read_local_skills_db() -> dict:
+    if not LOCAL_SKILLS_DB_PATH.exists():
+        return {}
+    try:
+        with open(LOCAL_SKILLS_DB_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def write_local_skills_db(db_data: dict):
+    try:
+        with open(LOCAL_SKILLS_DB_PATH, "w", encoding="utf-8") as f:
+            json.dump(db_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Failed to write local skills db: {e}")
 
 def load_jobs() -> List[dict]:
     jobs_path = Path(__file__).resolve().parent / "first_page_jobs.json"
@@ -267,20 +290,28 @@ async def create_plan(request: ArchitectRequest):
     # 1. Retrieve user's current skills from Firestore if user_id is provided
     user_skills = []
     if request.user_id:
-        try:
-            db = get_firestore_client()
-            cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", request.user_id).stream()
-            cv_docs = list(cv_docs_query)
-            if cv_docs:
-                cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
-                latest_doc = cv_docs[0].to_dict()
-                profile_analysis = latest_doc.get("profile_analysis", {})
-                user_skills = profile_analysis.get("extracted_skills", []) or latest_doc.get("extracted_skills", [])
-                if not user_skills:
-                    user_skills = profile_analysis.get("structured_profile", {}).get("skills", [])
-                logger.info(f"Retrieved user skills from Firestore for user {request.user_id}: {user_skills}")
-        except Exception as ex:
-            logger.error(f"Failed to query user CV documents from Firestore: {ex}")
+        if USE_FIRESTORE:
+            try:
+                db = get_firestore_client()
+                cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", request.user_id).stream()
+                cv_docs = list(cv_docs_query)
+                if cv_docs:
+                    cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
+                    latest_doc = cv_docs[0].to_dict()
+                    profile_analysis = latest_doc.get("profile_analysis", {})
+                    user_skills = profile_analysis.get("extracted_skills", []) or latest_doc.get("extracted_skills", [])
+                    if not user_skills:
+                        user_skills = profile_analysis.get("structured_profile", {}).get("skills", [])
+                    logger.info(f"Retrieved user skills from Firestore for user {request.user_id}: {user_skills}")
+            except Exception as ex:
+                logger.error(f"Failed to query user CV documents from Firestore: {ex}")
+        
+        # Fallback to local DB if no skills found in Firestore or Firestore disabled
+        if not user_skills:
+            local_db = read_local_skills_db()
+            user_skills = local_db.get(request.user_id, [])
+            if user_skills:
+                logger.info(f"Retrieved user skills from local DB for user {request.user_id}: {user_skills}")
 
     # Fallback to current_skills if no skills found in CV document
     if not user_skills and request.current_skills:
@@ -492,6 +523,83 @@ Danh sách khóa học:
     except Exception as e:
         logger.exception("Error during academic plan generation")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/skills/{user_id}")
+async def get_user_skills(user_id: str):
+    user_skills = []
+    # 1. Try Firestore if enabled
+    if USE_FIRESTORE:
+        try:
+            db = get_firestore_client()
+            cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", user_id).stream()
+            cv_docs = list(cv_docs_query)
+            if cv_docs:
+                cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
+                latest_doc = cv_docs[0].to_dict()
+                profile_analysis = latest_doc.get("profile_analysis", {})
+                user_skills = profile_analysis.get("extracted_skills", []) or latest_doc.get("extracted_skills", [])
+                if not user_skills:
+                    user_skills = profile_analysis.get("structured_profile", {}).get("skills", [])
+        except Exception as e:
+            logger.error(f"Failed to get user skills from Firestore: {e}")
+            
+    # 2. Try local DB fallback (or if Firestore returned nothing)
+    if not user_skills:
+        local_db = read_local_skills_db()
+        user_skills = local_db.get(user_id, [])
+        
+    return {"skills": user_skills}
+
+@app.post("/skills/{user_id}")
+async def update_user_skills(user_id: str, request: SkillsUpdateRequest):
+    # 1. Update Firestore if enabled
+    updated_firestore = False
+    if USE_FIRESTORE:
+        try:
+            db = get_firestore_client()
+            cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", user_id).stream()
+            cv_docs = list(cv_docs_query)
+            
+            if cv_docs:
+                cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
+                latest_doc_ref = cv_docs[0].reference
+                latest_doc = cv_docs[0].to_dict()
+                
+                # Update standard locations
+                updates = {
+                    "extracted_skills": request.skills,
+                    "analyzed_at": datetime.datetime.utcnow().isoformat() + "Z"
+                }
+                
+                # Also nested locations
+                if "profile_analysis" in latest_doc:
+                    profile_analysis = latest_doc["profile_analysis"] or {}
+                    profile_analysis["extracted_skills"] = request.skills
+                    if "structured_profile" in profile_analysis:
+                        structured_profile = profile_analysis["structured_profile"] or {}
+                        structured_profile["skills"] = request.skills
+                        profile_analysis["structured_profile"] = structured_profile
+                    updates["profile_analysis"] = profile_analysis
+                    
+                latest_doc_ref.update(updates)
+                logger.info(f"Updated user skills in Firestore for user {user_id} in doc {latest_doc_ref.id}")
+                updated_firestore = True
+        except Exception as e:
+            logger.error(f"Failed to update user skills in Firestore: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    # 2. Update local DB
+    try:
+        local_db = read_local_skills_db()
+        local_db[user_id] = request.skills
+        write_local_skills_db(local_db)
+        logger.info(f"Updated user skills in local DB for user {user_id}: {request.skills}")
+    except Exception as e:
+        logger.error(f"Failed to update user skills in local DB: {e}")
+        if not updated_firestore:
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    return {"status": "success", "skills": request.skills}
 
 @app.get("/health")
 async def health_check():
