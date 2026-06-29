@@ -365,7 +365,7 @@ async def save_chat_exchange(
             assistant_record["tool_calls"] = assistant_tool_calls
         session["messages"].append(assistant_record)
     
-    if session.get("title") == "New Chat":
+    if session.get("title") in ("New Chat", "Cuộc trò chuyện mới"):
         try:
             title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {user_message}"
             res = await llm.ainvoke([HumanMessage(content=title_prompt)])
