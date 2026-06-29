@@ -67,6 +67,49 @@ def test_agent_maps_decline_risk_to_automation_exposure_by_default() -> None:
     assert trend_flow.inputs[0].intent == TrendQueryIntent.AUTOMATION_EXPOSURE
 
 
+
+
+def test_agent_maps_legacy_market_scout_industry_to_trend_category_and_location() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="nhu cau tuyen dung nganh banking tai Ha Noi co cao khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+                entities_hint={"industry": "banking"},
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_category_id="banking",
+        location_id="ha-noi",
+    )
+
+
+def test_agent_maps_legacy_target_role_to_trend_category_and_location() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="backend engineer tai Ha Noi co dang tuyen dung nhieu khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+                entities_hint={"target_role": "backend engineer"},
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_category_id="software_it",
+        location_id="ha-noi",
+    )
+
 def _trend_result() -> TrendTrackerFlowResult:
     query = TrendQuery(
         intent=TrendQueryIntent.CURRENT_DEMAND,
