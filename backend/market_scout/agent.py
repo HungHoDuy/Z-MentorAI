@@ -3,15 +3,14 @@ from __future__ import annotations
 import inspect
 import json
 import logging
-import re
 from time import perf_counter
-import unicodedata
 from typing import Any
 
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow, SalaryBenchmarkFlowResult
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlow, TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest, MarketScoutResponse
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryInput, TrendQueryIntent
+from backend.market_scout.services.trend_tracker.trend_entity_extractor_service import TrendEntityExtractorService
 from backend.market_scout.services.trend_tracker.trend_llm_summary_service import TrendLlmSummaryService
 
 logger = logging.getLogger("market_scout")
@@ -41,6 +40,7 @@ class MarketScoutAgent:
         trend_flow: Any | None = None,
         hybrid_flow: Any | None = None,
         response_composer: Any | None = None,
+        trend_entity_extractor: TrendEntityExtractorService | None = None,
         default_top_k: int = 30,
         default_fetch_k: int | None = 80,
     ) -> None:
@@ -51,6 +51,7 @@ class MarketScoutAgent:
         self.trend_flow = trend_flow
         self.hybrid_flow = hybrid_flow
         self.response_composer = response_composer or TrendLlmSummaryService()
+        self.trend_entity_extractor = trend_entity_extractor or TrendEntityExtractorService()
         self.default_top_k = default_top_k
         self.default_fetch_k = default_fetch_k
 
@@ -237,7 +238,7 @@ class MarketScoutAgent:
             entities.update(context_trend)
         if request.entities_hint:
             entities.update(request.entities_hint)
-        _enrich_legacy_trend_entities(entities, request.user_query)
+        entities.update(self.trend_entity_extractor.extract(request.user_query, entities))
         if self.entity_extractor is not None:
             try:
                 extracted = self.entity_extractor.extract(request.user_query, request.user_context)
@@ -351,129 +352,6 @@ _TREND_ENTITY_FIELDS = {
     "location",
 }
 
-_LEGACY_CATEGORY_ALIASES = {
-    "banking": "banking",
-    "ngan hang": "banking",
-    "nganh ngan hang": "banking",
-    "finance banking": "banking",
-    "y te": "healthcare_beauty",
-    "nganh y te": "healthcare_beauty",
-    "healthcare": "healthcare_beauty",
-    "cntt": "software_it",
-    "cong nghe thong tin": "software_it",
-    "it": "software_it",
-    "software": "software_it",
-    "phan mem": "software_it",
-    "sale": "sales_business",
-    "sales": "sales_business",
-    "ban hang": "sales_business",
-    "kinh doanh": "sales_business",
-}
-
-_ROLE_CATEGORY_ALIASES = {
-    "backend engineer": "software_it",
-    "backend developer": "software_it",
-    "frontend engineer": "software_it",
-    "frontend developer": "software_it",
-    "software engineer": "software_it",
-    "developer": "software_it",
-    "lap trinh vien": "software_it",
-    "tu van tai chinh": "finance_investment",
-    "chuyen vien tu van tai chinh": "finance_investment",
-    "nhan vien tin dung": "banking",
-    "giao dich vien": "banking",
-    "bac si": "healthcare_beauty",
-    "dieu duong": "healthcare_beauty",
-    "duoc si": "pharmaceuticals_cosmetics",
-}
-
-_LOCATION_QUERY_ALIASES = {
-    "ha noi": "ha-noi",
-    "hn": "ha-noi",
-    "hanoi": "ha-noi",
-    "ho chi minh": "ho-chi-minh",
-    "tp ho chi minh": "ho-chi-minh",
-    "hcm": "ho-chi-minh",
-    "tphcm": "ho-chi-minh",
-    "sai gon": "ho-chi-minh",
-    "da nang": "da-nang",
-}
-
-_JOB_FAMILY_IDS = {
-    "digital_telecom",
-    "commercial",
-    "finance_legal",
-    "people_services",
-    "operations",
-    "supply_chain",
-    "industrial_technical",
-    "business_support",
-    "science_laboratory",
-    "creative_media",
-    "property_consumer",
-    "agriculture_environment",
-}
-
-
-def _enrich_legacy_trend_entities(entities: dict[str, Any], user_query: str) -> None:
-    if not any(entities.get(key) for key in ("job_category_id", "job_category", "job_family_id")):
-        category_or_family = _legacy_category_or_family(entities.get("industry"))
-        if category_or_family in _JOB_FAMILY_IDS:
-            entities["job_family_id"] = category_or_family
-        elif category_or_family:
-            entities["job_category_id"] = category_or_family
-
-    if not any(entities.get(key) for key in ("job_category_id", "job_category", "job_family_id")):
-        role_category = _legacy_role_category(entities.get("target_role") or user_query)
-        if role_category:
-            entities["job_category_id"] = role_category
-
-    if not any(entities.get(key) for key in ("location_id", "location")):
-        location_id = _legacy_location_id(user_query)
-        if location_id:
-            entities["location_id"] = location_id
-
-
-
-def _legacy_category_or_family(value: Any) -> str | None:
-    key = _entity_text_key(value)
-    if not key:
-        return None
-    snake_key = key.replace(" ", "_")
-    if snake_key in _JOB_FAMILY_IDS:
-        return snake_key
-    return _LEGACY_CATEGORY_ALIASES.get(key) or snake_key
-
-
-def _legacy_role_category(value: Any) -> str | None:
-    key = _entity_text_key(value)
-    if not key:
-        return None
-    for alias, category_id in _ROLE_CATEGORY_ALIASES.items():
-        if alias in key:
-            return category_id
-    return None
-
-
-def _legacy_location_id(value: Any) -> str | None:
-    key = _entity_text_key(value)
-    if not key:
-        return None
-    for alias, location_id in _LOCATION_QUERY_ALIASES.items():
-        if re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", key):
-            return location_id
-    return None
-
-
-def _entity_text_key(value: Any) -> str:
-    if value is None:
-        return ""
-    text = str(value).replace(chr(273), "d").replace(chr(272), "D")
-    text = unicodedata.normalize("NFD", text)
-    text = "".join(character for character in text if unicodedata.category(character) != "Mn")
-    text = text.casefold()
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
 def _salary_limitations(result: SalaryBenchmarkFlowResult) -> list[str]:
     benchmark = result.benchmark
     limitations: list[str] = []
@@ -515,3 +393,4 @@ _TREND_KEYWORDS = (
     "tuyen nhieu",
     "tuyển nhiều",
 )
+
