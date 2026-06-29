@@ -110,6 +110,45 @@ def test_agent_maps_legacy_target_role_to_trend_category_and_location() -> None:
         location_id="ha-noi",
     )
 
+
+def test_agent_extracts_job_family_and_location_from_user_query() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="nhu cau tuyen dung vi tri nhan vien commercial tai Ha Noi co cao khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_family_id="commercial",
+        location_id="ha-noi",
+    )
+
+
+def test_agent_extracts_job_category_and_location_from_user_query() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="nhu cau tuyen dung nganh banking tai Ha Noi co cao khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_category_id="banking",
+        location_id="ha-noi",
+    )
 def _trend_result() -> TrendTrackerFlowResult:
     query = TrendQuery(
         intent=TrendQueryIntent.CURRENT_DEMAND,
@@ -134,3 +173,4 @@ def _trend_result() -> TrendTrackerFlowResult:
             limitations=["One snapshot is not a trend."],
         ),
     )
+
