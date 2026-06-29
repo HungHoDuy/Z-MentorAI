@@ -143,6 +143,45 @@ def academic_architect(career_goal: str, user_id: str, current_skills: str = "")
         "user_id": user_id
     })
 
+@mcp.tool()
+def academic_architect_input_verifier(
+    career_goal: str,
+    user_id: str,
+    current_skills: str = "",
+    action: str = "verify"
+) -> dict:
+    """Use this tool to present the inputs (career goal and current skills) to the user for validation.
+    It will load/save skills from/to the backend and return the inputs for confirmation.
+    
+    Args:
+        career_goal: the user's target career goal (e.g. 'Data Analyst', 'Frontend Engineer')
+        user_id: the current user's User ID (Google ID)
+        current_skills: optional comma-separated list of skills to set/update. If empty, it loads current skills from backend.
+        action: 'verify' to display inputs, 'update' to update skills in database, or 'confirm' when user confirms.
+    """
+    if action == "update" or (action == "verify" and current_skills.strip()):
+        skills_list = [s.strip() for s in current_skills.split(",") if s.strip()]
+        res = fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/skills/{user_id}", {"skills": skills_list})
+        return {
+            "status": "success",
+            "feature": "academic_architect_confirm",
+            "career_goal": career_goal,
+            "current_skills": skills_list,
+            "action": action
+        }
+    
+    # Otherwise verify / load
+    res = get_data_sync(ACADEMIC_ARCHITECT_URL, f"/skills/{user_id}")
+    skills_list = res.get("skills", [])
+    
+    return {
+        "status": "success",
+        "feature": "academic_architect_confirm",
+        "career_goal": career_goal,
+        "current_skills": skills_list,
+        "action": action
+    }
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8004))
     mcp.run(transport="sse", host="0.0.0.0", port=port)

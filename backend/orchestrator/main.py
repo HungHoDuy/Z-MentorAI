@@ -255,6 +255,8 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
         name = tool_call.get("name")
         if name == "academic_architect":
             return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
+        elif name == "academic_architect_input_verifier":
+            return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
         elif name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
         elif name == "profile_scanner":
@@ -804,7 +806,11 @@ def get_system_message(user_id: str) -> SystemMessage:
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
-        "For course roadmap or learning planning, call the academic_architect tool with the user's target career goal, user_id (pass the current user's User ID), and optionally current_skills. "
+        "For course roadmap or learning planning: "
+        "1. First, you MUST call the `academic_architect_input_verifier` tool with target career_goal, user_id, and action='verify' to load and show the target career goal and current skills to the user for validation. "
+        "2. If `academic_architect_input_verifier` returns empty current_skills, stop and politely ask the user to upload their CV first before building a roadmap. "
+        "3. If the user edits the skills (e.g. requests to add, remove, or modify skills, or types a message like 'thêm kỹ năng Python' or 'xóa kỹ năng Java'), calculate the new list of skills, then call `academic_architect_input_verifier` with action='update', user_id, career_goal, and the updated list of current_skills (as a comma-separated string) to update the backend database. Then explain the updated inputs. "
+        "4. ONLY call the `academic_architect` tool with the user's target career_goal, user_id, and optionally current_skills once the user explicitly confirms (e.g., clicks the confirm button which sends 'Xác nhận và dựng lộ trình học tập', or says 'Đồng ý', 'Xác nhận', 'Confirm'). "
         f"Today's date is {current_date}. "
         "When calling academic_architect, you will receive the recommended courses and lacking skills metadata. You MUST write the detailed study roadmap in your final response in Vietnamese so it streams token-by-token to the user. "
         "Structure the roadmap with exactly these three sections:\n"

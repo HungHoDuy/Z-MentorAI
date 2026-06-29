@@ -64,6 +64,13 @@ const agentInfo = {
     icon: GraduationCap,
     themeClass: 'architect',
     accent: '#f8c96b'
+  },
+  academic_architect_input_verifier: {
+    label: 'Xác Nhận Đầu Vào',
+    description: 'Kiểm tra kỹ năng và mục tiêu trước khi lập lộ trình.',
+    icon: GraduationCap,
+    themeClass: 'architect',
+    accent: '#f8c96b'
   }
 };
 
@@ -460,8 +467,83 @@ function HollandTestForm({ output, onSendMessage }) {
   );
 }
 
-function AcademicPlanWidget({ output, user, backendUrl }) {
-  const plan = output.academic_plan || '';
+function AcademicArchitectInputConfirmWidget({ output, onSendMessage }) {
+  const normalized = normalizeToolOutput(output) || {};
+  const careerGoal = normalized.career_goal || '';
+  const skills = normalized.current_skills || [];
+  const [newSkill, setNewSkill] = useState('');
+
+  const handleAddSkill = () => {
+    if (!newSkill.trim()) return;
+    onSendMessage(`thêm kỹ năng ${newSkill.trim()}`);
+    setNewSkill('');
+  };
+
+  const handleRemoveSkill = (skill) => {
+    onSendMessage(`xóa kỹ năng ${skill}`);
+  };
+
+  const handleConfirm = () => {
+    onSendMessage("Xác nhận và dựng lộ trình học tập");
+  };
+
+  return (
+    <div className="academic-confirm-widget">
+      <div className="confirm-widget-header">
+        <h4>Xác nhận thông tin lộ trình học tập</h4>
+        <p>Vui lòng kiểm tra mục tiêu nghề nghiệp và các kỹ năng của bạn trước khi chúng tôi tạo lộ trình.</p>
+      </div>
+      
+      <div className="confirm-field">
+        <span className="field-label">Mục tiêu nghề nghiệp:</span>
+        <strong className="field-value">{careerGoal || 'Chưa xác định'}</strong>
+      </div>
+      
+      <div className="confirm-field">
+        <span className="field-label">Kỹ năng hiện tại của bạn:</span>
+        <div className="confirm-skills-list">
+          {skills.map((skill) => (
+            <span key={skill} className="skill-confirm-tag">
+              {skill}
+              <button 
+                type="button" 
+                className="skill-remove-btn" 
+                onClick={() => handleRemoveSkill(skill)}
+                title="Xóa kỹ năng này"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {skills.length === 0 && <em style={{ fontSize: '0.85em', color: 'var(--text-muted)' }}>Chưa có kỹ năng nào. Bạn có thể thêm ở dưới.</em>}
+        </div>
+      </div>
+      
+      <div className="confirm-actions-bar">
+        <div className="add-skill-inline">
+          <input 
+            type="text" 
+            placeholder="Thêm kỹ năng mới..." 
+            value={newSkill} 
+            onChange={(e) => setNewSkill(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddSkill();
+              }
+            }}
+          />
+          <button type="button" onClick={handleAddSkill}>Thêm</button>
+        </div>
+        <button type="button" className="confirm-generate-btn" onClick={handleConfirm}>
+          Xác nhận & Dựng lộ trình
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CalendarSyncWidget({ output, user, backendUrl }) {
   const courses = output.courses || [];
   const lackingSkills = output.lacking_skills || [];
   const careerGoal = output.career_goal || 'Lộ trình học tập';
@@ -506,112 +588,41 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
   };
 
   return (
-    <div className="academic-plan-widget">
-      <div className="academic-plan-markdown">
-        <ReactMarkdown>{plan}</ReactMarkdown>
+    <div className="calendar-sync-card">
+      <div className="calendar-card-header">
+        <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
+        <h4>Lập kế hoạch học tập trên Google Calendar</h4>
       </div>
-      
-      {courses.length > 0 && (
-        <div className="academic-plan-courses">
-          <h4 className="courses-section-title">Khóa học tiêu biểu đề xuất</h4>
-          <div className="course-cards-grid single-course">
-            {courses.slice(0, 1).map((course) => {
-              const scorePct = Math.round((course.score || 0) * 100);
-              const certs = course.certificates || [];
-              const isSpec = certs.some(c => String(c).toLowerCase().includes('specialization'));
-              const partnersList = (course.partners || [])
-                .map(p => typeof p === 'object' ? p.name : p)
-                .join(', ');
-                 
-              return (
-                <div 
-                  key={course.course_id}
-                  className="course-card selected featured-course"
-                  style={{ position: 'relative' }}
-                >
-                  <div className="course-card-top">
-                    <span className="course-provider">{partnersList || 'Coursera'}</span>
-                    <span className="course-score-badge">{scorePct}% phù hợp</span>
-                  </div>
-                  
-                  <h5 className="course-name">
-                    🎓 {course.name}
-                  </h5>
-                  <p className="course-desc-snippet">
-                    {course.description 
-                      ? (course.description.length > 250 ? `${course.description.substring(0, 250)}...` : course.description)
-                      : 'Không có mô tả chi tiết.'}
-                  </p>
-                  
-                  <div className="course-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span className="course-type-tag">
-                        {isSpec ? 'Specialization' : 'Course'}
-                      </span>
-                      {course.workload ? (
-                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
-                          💼 {course.workload}
-                        </span>
-                      ) : (
-                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
-                          ⏱️ {course.duration || '15 giờ'}
-                        </span>
-                      )}
-                    </div>
-                    <a 
-                      href={course.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="course-action-link"
-                    >
-                      Xem trên Coursera →
-                    </a>
-                  </div>
-                </div>
-              );
-            })}
+      <p className="calendar-card-desc">
+        Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
+      </p>
+      <div className="calendar-card-actions">
+        {calendarStatus === 'idle' && (
+          <button className="calendar-sync-btn" onClick={handleAddToCalendar} disabled={courses.length === 0}>
+            Đồng bộ khóa học vào Google Calendar
+          </button>
+        )}
+        {calendarStatus === 'loading' && (
+          <button className="calendar-sync-btn loading" disabled>
+            <span className="btn-spinner" />
+            Đang đồng bộ...
+          </button>
+        )}
+        {calendarStatus === 'success' && (
+          <div className="calendar-sync-success-msg">
+            <span className="success-check">✓</span>
+            <span>{calendarMessage}</span>
           </div>
-
-        </div>
-      )}
-
-      {/* Google Calendar Sync Widget */}
-      <div className="calendar-sync-card">
-        <div className="calendar-card-header">
-          <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
-          <h4>Lập kế hoạch học tập trên Google Calendar</h4>
-        </div>
-        <p className="calendar-card-desc">
-          Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
-        </p>
-        <div className="calendar-card-actions">
-          {calendarStatus === 'idle' && (
-            <button className="calendar-sync-btn" onClick={handleAddToCalendar} disabled={courses.length === 0}>
-              Đồng bộ khóa học vào Google Calendar
+        )}
+        {calendarStatus === 'error' && (
+          <div className="calendar-sync-error-msg">
+            <span className="error-cross">✕</span>
+            <span>{calendarMessage}</span>
+            <button className="calendar-retry-btn" onClick={handleAddToCalendar}>
+              Thử lại
             </button>
-          )}
-          {calendarStatus === 'loading' && (
-            <button className="calendar-sync-btn loading" disabled>
-              <span className="btn-spinner" />
-              Đang đồng bộ...
-            </button>
-          )}
-          {calendarStatus === 'success' && (
-            <div className="calendar-sync-success-msg">
-              <span className="success-check">✓</span>
-              <span>{calendarMessage}</span>
-            </div>
-          )}
-          {calendarStatus === 'error' && (
-            <div className="calendar-sync-error-msg">
-              <span className="error-cross">✕</span>
-              <span>{calendarMessage}</span>
-              <button className="calendar-retry-btn" onClick={handleAddToCalendar}>
-                Thử lại
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -637,8 +648,7 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
   const shouldRenderProfileScanResult = isProfileScanOutput
     && normalizedOutput?.grade
     && status === 'completed';
-  const shouldRenderAcademicPlan = toolName === 'academic_architect'
-    && (normalizedOutput?.academic_plan || normalizedOutput?.courses)
+  const shouldRenderVerifier = toolName === 'academic_architect_input_verifier'
     && status === 'completed';
   const toolLabel = isHollandOutput && toolName === 'profile_scanner'
     ? `${info.label} · Holland Test`
@@ -684,8 +694,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
                 <HollandResultCard result={normalizedOutput} />
               ) : shouldRenderProfileScanResult ? (
                 <ProfileScanResultCard result={normalizedOutput} />
-              ) : shouldRenderAcademicPlan ? (
-                <AcademicPlanWidget output={normalizedOutput} user={user} backendUrl={backendUrl} />
+              ) : shouldRenderVerifier ? (
+                <AcademicArchitectInputConfirmWidget output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
@@ -941,7 +951,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
           <div key={msg.id} className={`message-wrapper ${msg.role}`}>
             <div className="message-header">{msg.role === 'user' ? 'Bạn' : 'Điều phối viên'}</div>
 
-            {msg.role === 'assistant' && visibleToolCalls.map((toolCall) => (
+            {msg.role === 'assistant' && visibleToolCalls.filter(toolCall => toolCall.name !== 'academic_architect').map((toolCall) => (
               <ToolCallWidget
                 key={toolCall.id}
                 toolName={toolCall.name}
@@ -962,7 +972,22 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                     <p>{msg.content}</p>
                   </>
                 ) : (
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <>
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    {(() => {
+                      const academicToolCall = msg.toolCalls?.find(
+                        (t) => t.name === 'academic_architect' && t.status === 'completed'
+                      );
+                      if (!academicToolCall) return null;
+                      const output = normalizeToolOutput(academicToolCall.output);
+                      if (!output) return null;
+                      return (
+                        <div className="orches-calendar-sync-wrapper" style={{ marginTop: '1rem' }}>
+                          <CalendarSyncWidget output={output} user={user} backendUrl={backendUrl} />
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
             )}
