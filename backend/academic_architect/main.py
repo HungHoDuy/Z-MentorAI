@@ -36,6 +36,7 @@ COLLECTION_NAME = "learning_material"
 llm = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
+USE_FIRESTORE = os.getenv("USE_FIRESTORE", "false").lower() == "true"
 
 if USE_VERTEX_AI:
     from langchain_google_vertexai import ChatVertexAI
