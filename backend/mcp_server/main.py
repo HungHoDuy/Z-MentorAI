@@ -25,6 +25,45 @@ def _short_text(value: str | None, max_length: int = 500) -> str:
         return text
     return text[: max_length - 3] + "..."
 
+def _log_upstream_response(endpoint: str, data: dict[str, Any], duration_ms: float) -> None:
+    if endpoint not in {"/scout", "/salary-benchmark"}:
+        return
+    answer = str(data.get("answer") or "")
+    job_sources = _extract_job_sources(data)
+    _log_event(
+        "mcp_market_scout_response",
+        endpoint=endpoint,
+        intent=data.get("intent"),
+        confidence=data.get("confidence"),
+        duration_ms=duration_ms,
+        answer_preview=_short_text(answer, max_length=1000),
+        answer_has_url=("http://" in answer or "https://" in answer),
+        top_level_sources_count=len(data.get("sources") or []) if isinstance(data.get("sources"), list) else 0,
+        job_sources_count=len(job_sources),
+        job_sources_preview=[_job_source_preview(item) for item in job_sources[:5]],
+    )
+
+
+def _extract_job_sources(data: dict[str, Any]) -> list[dict[str, Any]]:
+    data_payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+    job_sources = data_payload.get("job_sources")
+    if isinstance(job_sources, list):
+        return [item for item in job_sources if isinstance(item, dict)]
+    signal = data_payload.get("signal") if isinstance(data_payload.get("signal"), dict) else {}
+    signal_sources = signal.get("job_sources")
+    if isinstance(signal_sources, list):
+        return [item for item in signal_sources if isinstance(item, dict)]
+    return []
+
+
+def _job_source_preview(source: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "company": source.get("company"),
+        "job_title": source.get("job_title"),
+        "job_url": source.get("job_url"),
+        "score": source.get("score"),
+    }
+
 def _upstream_error_payload(
     method: str,
     url: str,
@@ -52,8 +91,11 @@ def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
         response = httpx.post(f"{url}{endpoint}", json=payload, timeout=180.0)
         response.raise_for_status()
-        _log_event("mcp_upstream_success", endpoint=endpoint, status_code=response.status_code, duration_ms=round((perf_counter() - start) * 1000, 2))
-        return response.json()
+        data = response.json()
+        duration_ms = round((perf_counter() - start) * 1000, 2)
+        _log_event("mcp_upstream_success", endpoint=endpoint, status_code=response.status_code, duration_ms=duration_ms)
+        _log_upstream_response(endpoint=endpoint, data=data, duration_ms=duration_ms)
+        return data
     except httpx.HTTPStatusError as exc:
         error_payload = _upstream_error_payload("POST", url, endpoint, exc, exc.response)
         error_payload["duration_ms"] = round((perf_counter() - start) * 1000, 2)
