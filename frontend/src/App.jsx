@@ -973,7 +973,61 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                   </>
                 ) : (
                   <>
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    {(() => {
+                      const academicToolCall = msg.toolCalls?.find(
+                        (t) => t.name === 'academic_architect' && t.status === 'completed'
+                      );
+                      const output = academicToolCall ? normalizeToolOutput(academicToolCall.output) : null;
+                      const courses = output ? [
+                        ...(output.courses || []),
+                        ...(output.alternative_courses || [])
+                      ] : [];
+
+                      return (
+                        <ReactMarkdown
+                          components={{
+                            a: ({ href, children, ...props }) => {
+                              const matchedCourse = courses.find(c => {
+                                if (!c.url || !href) return false;
+                                const cleanHref = href.toLowerCase().replace(/\/$/, "");
+                                const cleanCourseUrl = c.url.toLowerCase().replace(/\/$/, "");
+                                return cleanHref === cleanCourseUrl || (c.slug && cleanHref.endsWith(c.slug.toLowerCase()));
+                              });
+
+                              if (matchedCourse) {
+                                return (
+                                  <a
+                                    href={matchedCourse.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="markdown-course-link-card"
+                                    {...props}
+                                  >
+                                    <span className="markdown-course-link-icon" role="img" aria-label="course">🎓</span>
+                                    <div className="markdown-course-link-content">
+                                      <div className="markdown-course-link-title">{matchedCourse.name || children}</div>
+                                      <div className="markdown-course-link-duration">⏱️ {matchedCourse.duration || '15 giờ'}</div>
+                                    </div>
+                                    <div className="markdown-course-link-action">
+                                      <span>Học ngay</span>
+                                      <ArrowRight size={14} />
+                                    </div>
+                                  </a>
+                                );
+                              }
+
+                              return (
+                                <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                                  {children}
+                                </a>
+                              );
+                            }
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      );
+                    })()}
                     {(() => {
                       const academicToolCall = msg.toolCalls?.find(
                         (t) => t.name === 'academic_architect' && t.status === 'completed'

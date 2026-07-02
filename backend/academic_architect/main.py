@@ -247,12 +247,7 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
         
         # Build Coursera URL
         slug = course.get("slug")
-        certs = course.get("certificates") or []
-        is_spec = any("specialization" in str(c).lower() for c in certs)
-        if is_spec:
-            course["url"] = f"https://www.coursera.org/specializations/{slug}"
-        else:
-            course["url"] = f"https://www.coursera.org/learn/{slug}"
+        course["url"] = f"https://www.coursera.org/learn/{slug}"
             
         results.append(course)
         
