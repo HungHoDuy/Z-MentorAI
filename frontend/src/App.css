@@ -2540,3 +2540,69 @@
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Custom Course Link Card in Markdown Chat */
+.markdown-course-link-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-decoration: none !important;
+  padding: 0.85rem 1.1rem;
+  margin: 0.75rem 0;
+  background: #ffffff;
+  border: 1px solid rgba(248, 201, 107, 0.4);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(248, 201, 107, 0.05);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: inherit !important;
+}
+
+.markdown-course-link-card:hover {
+  transform: translateY(-2px);
+  border-color: #f8c96b;
+  box-shadow: 0 8px 16px rgba(248, 201, 107, 0.15);
+  background: #fffbeb;
+}
+
+.markdown-course-link-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.markdown-course-link-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex-grow: 1;
+  text-align: left;
+}
+
+.markdown-course-link-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #7c2d12;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.markdown-course-link-duration {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.markdown-course-link-action {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #c2410c;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.markdown-course-link-card:hover .markdown-course-link-action {
+  transform: translateX(3px);
+  color: #ea580c;
+}
