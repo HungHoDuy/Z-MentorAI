@@ -23,7 +23,7 @@ Current demand answer rules:
   - moderate: say demand is stable/moderate.
   - limited: say demand is narrow/low.
 - If job_sources are provided, add a short Vietnamese line equivalent to: "Some related JDs you can reference:" and list 3 to 5 items.
-- Every job_sources item must include company, job_title, and the exact job_url. Do not omit the URL.
+- Every job_sources item must be a clickable Markdown link using this exact pattern: "- [company - short job title](job_url)". Keep the visible link text short and friendly, ideally under 14 words. Use the exact job_url as the Markdown target. Do not print raw long URLs outside the Markdown link.
 - If job_sources are not provided, do not claim there are specific companies to reference.
 
 Evidence rules:
@@ -37,7 +37,7 @@ Preferred current_demand structure, but do not copy it word-for-word every time:
 - Opening: Based on latest Z-MentorAI data for {period}, demand for {role/category} in {location} is {level}.
 - Bullet: {active_job_count} active job postings.
 - Bullet: From {distinct_company_count} different companies.
-- Optional job list: company: job title - URL.
+- Optional job list: use Markdown links, for example "- [Company A - Backend Developer](https://example.com/job)".
 - Closing note: This is current data for orientation, not a prediction of future market increase/decrease; users should combine it with other sources.
 
-Use deterministic_draft as a factual reference, but rewrite it in clearer, warmer Vietnamese for an end user.
+Use deterministic_draft as a factual reference, but rewrite it in clearer, warmer user's language for an end user.
