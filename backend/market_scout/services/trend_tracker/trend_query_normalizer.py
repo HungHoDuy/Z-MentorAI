@@ -58,12 +58,10 @@ class TrendQueryNormalizer:
                 "job_family_id does not match the resolved job_category_id."
             )
         resolved_family_id = family_id or category_family_id
-        if not resolved_family_id:
-            raise ValueError("A job_family_id or job_category_id is required for MVP trend queries.")
+        
 
         location_id = self._resolve_location(query_input.location_id or query_input.location)
-        if not location_id:
-            raise ValueError("A location_id or location is required for MVP trend queries.")
+        
 
         return TrendQuery(
             intent=intent,

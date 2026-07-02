@@ -63,6 +63,29 @@ class TrendJobFactRepository:
 
         return sorted(facts_by_job_key.values(), key=lambda fact: fact.job_key)
 
+    def list_for_role_search(
+        self,
+        *,
+        location_id: str | None = None,
+        max_scan: int = 2000,
+    ) -> list[JobCategoryTrendJobFact]:
+        """Return candidate facts for role resolution, optionally narrowed by location."""
+
+        if max_scan <= 0:
+            raise ValueError("max_scan must be positive.")
+
+        firestore_query = self.firestore_client.collection(self.collection_name)
+        if location_id:
+            firestore_query = _apply_where(firestore_query, "location_ids", "array_contains", location_id)
+        firestore_query = firestore_query.limit(max_scan)
+
+        facts: list[JobCategoryTrendJobFact] = []
+        for document in firestore_query.stream(timeout=self.stream_timeout):
+            fact = job_category_trend_fact_from_document(document.id, document.to_dict() or {})
+            if fact is not None:
+                facts.append(fact)
+        return facts
+
 
 def job_category_trend_fact_from_document(
     document_id: str,
