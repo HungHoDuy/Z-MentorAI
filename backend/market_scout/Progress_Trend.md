@@ -1,50 +1,83 @@
-# Trend Tracker MVP Progress
+# Trend Tracker Progress
 
-## Mục đích
+## Mục tiêu
 
-Tài liệu này ghi nhận tiến độ Trend Tracker MVP theo mô hình **Hybrid Market Intelligence**:
+Trend Tracker là nhánh Market Scout dùng để trả lời các câu hỏi về nhu cầu tuyển dụng hiện tại, kỹ năng đang được nhắc nhiều trong JD, mức độ automation exposure và external outlook có citation.
 
-- Internal data trả lời current demand và current skill requirements.
-- External evidence chỉ enrich external outlook hoặc automation exposure.
-- Một snapshot tuần không được dùng để khẳng định thị trường tăng hoặc giảm.
-- LLM chỉ diễn đạt evidence đã được dịch vụ deterministic chuẩn bị; không tự tạo trend score hay citation.
+Nguyên tắc hiện tại:
 
-Trạng thái hiện tại: **đã hoàn thành step 1-7 ở mức code foundation; step 7 chưa có claim external đã xác minh để ghi Firestore.**
+- Dữ liệu nội bộ từ `trend_job_facts_v2` và `trend_snapshots_v2` là nguồn chính cho current demand/current skill demand.
+- Một snapshot tuần chỉ được xem là current-demand baseline, không được kết luận thị trường đang tăng hoặc giảm.
+- External evidence chỉ dùng để bổ sung bối cảnh hoặc outlook, không thay thế số liệu nội bộ.
+- Automation exposure là đánh giá task-level exposure, không phải dự báo một nghề sẽ bị đào thải.
+- LLM chỉ dùng để hiểu query và diễn đạt lại payload đã có evidence; không được tự tạo metric, citation hoặc trend score.
 
-## Nền tảng dữ liệu đã có
+## Dữ liệu và collection hiện có
 
-| Collection | Trạng thái | Vai trò |
+| Collection/File | Trạng thái | Vai trò |
 | --- | --- | --- |
-| `data_for_vectorize` | Có dữ liệu crawl | JD raw đã clean từ CareerViet. |
-| `trend_job_facts_v2` | Đã build | JD chuẩn hóa theo `job_category_id` và `job_family_id`. |
+| `data_for_vectorize` | Có dữ liệu crawl | JD raw/clean từ CareerViet. |
+| `trend_job_facts_v2` | Đã build | JD chuẩn hóa theo job category, job family, location, company, ngày cập nhật/hết hạn. |
 | `trend_snapshots_v2` | Đã build | Aggregate theo `job_family_id + location_id + week`. |
-| `automation_risk_lookup` | Có seed MVP 12 category | Task-level automation exposure baseline có source metadata và caveat. |
-| `trend_sources` | Chưa ingest | Metadata cho report/article đã review. |
-| `trend_evidence` | Chưa ingest | Claim external đã review, liên kết tới `trend_sources`. |
+| `automation_risk_lookup` | Đã seed MVP | Lookup automation exposure theo `job_category_id`. |
+| `trend_sources` | Đã có pipeline ingest | Metadata nguồn external report/article. |
+| `trend_evidence` | Đã có pipeline ingest | Claim external có citation và source link. |
+| `data/vietnam_locations.json` | Đã thêm | Local taxonomy 63 tỉnh/thành Việt Nam để resolve location. |
 
-Snapshot nội bộ đang có là `2026-W25`, từ `2026-06-15` đến `2026-06-21`. Đây là current-demand baseline, không phải directional trend.
+Snapshot nội bộ hiện dùng là `2026-W25`, giai đoạn `2026-06-15` đến `2026-06-21`. Đây là baseline một tuần, chưa đủ để tính MoM/QoQ.
 
-## Quy tắc evidence xuyên suốt
+## Rule evidence
 
-1. Internal demand chỉ có ý nghĩa khi `active_job_count >= 10` và `distinct_company_count >= 3`.
-2. Một snapshot chỉ trả current demand, không trả tăng/giảm.
-3. `updated_job_count` chỉ là listing freshness; không phải số job mới hoặc hiring velocity đã xác minh.
-4. External evidence phải khớp `job_family_id`, `location_id`, thời gian công bố và reliability threshold.
-5. Automation exposure nói về task exposure; không phải dự báo role bị đào thải.
-6. Category/family snapshot là membership metric: không cộng các family để suy ra tổng số JD thị trường.
+1. Current demand chỉ đủ mẫu khi `active_job_count >= 10` và `distinct_company_count >= 3`.
+2. Không trả `increase/decrease` khi mới có một snapshot.
+3. `updated_job_count` chỉ phản ánh listing freshness, không phải số job mới được đăng.
+4. `job_family_id` dùng để query snapshot ổn định vì snapshot hiện aggregate theo family + location.
+5. `job_category_id` dùng để narrow query, automation exposure và lọc fact khi cần.
+6. Role tự nhiên như `backend engineer`, `bác sĩ`, `kế toán tổng hợp` chưa có role-level snapshot riêng; cần role resolver/hybrid search để map về category/family.
 
-## Step 1 - Trend Query Contract và Normalizer
+## Step 1 - Job Category Taxonomy và Fact Normalize v2
 
 **Trạng thái: Hoàn thành**
 
-### Mục tiêu
+### Đã triển khai
 
-Chuẩn hóa input của người dùng thành query xác định, chỉ cho phép các intent và entity mà MVP có dữ liệu trả lời.
+- `schemas/trend_tracker/job_category_taxonomy.py`
+- `services/trend_tracker/job_category_taxonomy_service.py`
+- `services/trend_tracker/job_category_trend_job_fact_normalizer.py`
+- `pipelines/trend_tracker/profile_job_category_labels_pipeline.py`
+- `pipelines/trend_tracker/normalize_job_category_trend_job_facts_pipeline.py`
+
+### Chức năng
+
+- Profile raw `Ngành nghề` từ `data_for_vectorize`.
+- Map label ngành nghề raw sang `job_category_id` và `job_family_id`.
+- Tạo `trend_job_facts_v2` với các field chính: `raw_job_category_labels`, `job_category_ids`, `job_family_ids`, `location_ids`, `company_key`, `source_updated_at`, `source_expires_at`, `requirements_text`, `description_text`, `taxonomy_version`.
+
+## Step 2 - Build Job Family Trend Snapshots v2
+
+**Trạng thái: Hoàn thành**
 
 ### Đã triển khai
 
-- `schemas/trend_query.py`
-- `services/trend_query_normalizer.py`
+- `schemas/trend_tracker/job_family_trend_snapshot.py`
+- `services/trend_tracker/job_family_trend_snapshot_builder.py`
+- `pipelines/trend_tracker/build_job_family_trend_snapshots_pipeline.py`
+- `run_buildJobFamilyTrendSnapshots.py`
+
+### Chức năng
+
+- Build `trend_snapshots_v2` theo `job_family_id + location_id + period`.
+- Tính `observed_job_count`, `active_job_count`, `unknown_active_job_count`, `updated_job_count`, `distinct_company_count`, `source_job_counts`.
+- Không build snapshot theo từng role tự nhiên để tránh dữ liệu quá phân mảnh.
+
+## Step 3 - Trend Query Contract và Normalizer
+
+**Trạng thái: Hoàn thành**
+
+### Đã triển khai
+
+- `schemas/trend_tracker/trend_query.py`
+- `services/trend_tracker/trend_query_normalizer.py`
 - `tests/test_trend_query_normalizer.py`
 
 ### Chức năng
@@ -52,265 +85,297 @@ Chuẩn hóa input của người dùng thành query xác định, chỉ cho ph�
 - Nhận các intent: `current_demand`, `current_skill_demand`, `automation_exposure`, `external_outlook`, `demand_pressure`.
 - Normalize `job_category_id`, `job_family_id`, `location_id`.
 - Map `job_category_id` sang `job_family_id` qua `JobCategoryTaxonomyService`.
-- Reject trường hợp category và family mâu thuẫn.
-- Chưa nhận role-level query vì chưa có Role Taxonomy.
+- Reject category/family mâu thuẫn.
 
-### Output
-
-`TrendQuery` có canonical `job_family_id`, optional `job_category_id`, `location_id` và intent.
-
-## Step 2 - Trend Snapshot Repository
+## Step 4 - Repository Layer
 
 **Trạng thái: Hoàn thành**
 
-### Mục tiêu
-
-Đọc snapshot v2 mới nhất theo cohort `job_family_id + location_id`.
-
 ### Đã triển khai
 
-- `schemas/trend_snapshot_read.py`
-- `repositories/trend_snapshot_repository.py`
-- `tests/test_trend_snapshot_repository.py`
+- `repositories/trend_tracker/trend_snapshot_repository.py`
+- `repositories/trend_tracker/trend_job_fact_repository.py`
+- `repositories/trend_tracker/automation_risk_repository.py`
+- `repositories/trend_tracker/trend_evidence_repository.py`
 
 ### Chức năng
 
-- Query `trend_snapshots_v2` theo family và location, lấy `period` mới nhất.
-- Parse snapshot đúng schema v2.
-- Tính freshness theo `period_end`: `fresh`, `aging`, `stale`.
-- Tính sample status: `sufficient` hoặc `insufficient_evidence` theo threshold nội bộ.
+- `TrendSnapshotRepository`: lấy snapshot mới nhất theo `job_family_id + location_id`.
+- `TrendJobFactRepository`: lấy active facts cho một snapshot, có thể lọc thêm `job_category_id`.
+- `AutomationRiskRepository`: lookup automation exposure theo category.
+- `TrendEvidenceRepository`: query external evidence theo family, location, reliability và published date.
 
 ### Lưu ý vận hành
 
-Firestore cần composite index: `job_family_id ASC`, `location_id ASC`, `period DESC`.
+Firestore cần composite index cho snapshot query: `job_family_id ASC`, `location_id ASC`, `period DESC`.
 
-## Step 3 - Trend Job Fact Repository
-
-**Trạng thái: Hoàn thành**
-
-### Mục tiêu
-
-Lấy cohort JD active tương ứng với một snapshot để phục vụ skill frequency hoặc các signal dựa trên raw fact.
-
-### Đã triển khai
-
-- `repositories/trend_job_fact_repository.py`
-- `tests/test_trend_job_fact_repository.py`
-
-### Chức năng
-
-- Query `trend_job_facts_v2` qua `job_family_ids array_contains`.
-- Filter tiếp theo location, optional `job_category_id` và `source_expires_at >= snapshot.period_end`.
-- Dedupe theo `job_key`, ưu tiên fact mới nhất.
-- Không dựa vào trường `is_active` cũ; active được quyết định bằng expiry date tại mốc snapshot.
-
-## Step 4 - Current Demand Service
+## Step 5 - Current Demand Service
 
 **Trạng thái: Hoàn thành**
 
-### Mục tiêu
-
-Biến một snapshot đủ mẫu thành current-demand signal có thể giải thích.
-
 ### Đã triển khai
 
-- `schemas/current_demand.py`
-- `services/current_demand_service.py`
+- `schemas/trend_tracker/current_demand.py`
+- `services/trend_tracker/current_demand_service.py`
 - `tests/test_current_demand_service.py`
 
-### Rule
+### Rule hiện tại
 
 | Điều kiện | Output |
 | --- | --- |
-| `active_job_count < 10` hoặc `distinct_company_count < 3` | `insufficient_evidence`, `limited`, confidence `low` |
-| Đạt minimum sample nhưng chưa đạt high threshold | `current_demand_moderate` |
+| Không đủ `active_job_count >= 10` hoặc `distinct_company_count >= 3` | `insufficient_evidence`, confidence `low` |
+| Đủ minimum sample nhưng chưa đạt high threshold | `current_demand_moderate` |
 | `active_job_count >= 25` và `distinct_company_count >= 10` | `current_demand_high` |
 
-### Output
+Kết quả là current demand, không phải directional trend.
 
-Signal luôn có active jobs, distinct companies, period, confidence và limitations. Không trả `increase`, `decrease` hoặc gọi kết quả là trend.
-
-## Step 5 - Skill Frequency Service
+## Step 6 - Current Skill Demand Service
 
 **Trạng thái: Hoàn thành**
 
-### Mục tiêu
-
-Trả các skill được nhắc nhiều trong cohort JD active hiện tại.
-
 ### Đã triển khai
 
-- `schemas/current_skill_demand.py`
-- `services/skill_frequency_service.py`
+- `schemas/trend_tracker/current_skill_demand.py`
+- `services/trend_tracker/skill_frequency_service.py`
 - `tests/test_skill_frequency_service.py`
 
 ### Chức năng
 
-- Đọc active facts qua `TrendJobFactRepository`.
+- Lấy active facts từ `trend_job_facts_v2`.
 - Ghép `requirements_text` và `description_text`.
-- Normalize tiếng Việt không dấu, sau đó match keyword taxonomy theo job family.
-- Mỗi skill tối đa được đếm một lần trên một JD.
-- Trả `skill_id`, `job_count`, `job_share`, sample size và top-k skills.
-
-### Taxonomy hiện có
-
-- Common: Excel, English, Office productivity.
-- `finance_legal`: IFRS, tax, SAP, Power BI, ACCA, CPA, CFA.
-- `digital_telecom`: Python, Java, JavaScript, React, SQL, AWS, Docker, Kubernetes, Git.
-- `operations`: ISO, HACCP, Lean, Six Sigma, ERP, SAP, WMS, TMS.
-- `commercial`: CRM, sales, digital marketing, SEO, Google Ads.
+- Match keyword taxonomy theo family.
+- Trả top skills với `job_count`, `job_share`, `sample_size`.
 
 ### Giới hạn
 
-Đây là `current_skill_demand`, không phải skill growth. Taxonomy còn cần mở rộng dần theo coverage thực tế của JD.
+Đây là `current_skill_demand`, không phải skill growth. Skill taxonomy vẫn còn cần mở rộng theo coverage dữ liệu thực tế.
 
-## Step 6 - Automation Risk Repository và Lookup MVP
+## Step 7 - Automation Exposure
 
-**Trạng thái: Hoàn thành ở mức MVP**
-
-### Mục tiêu
-
-Trả task-level automation exposure theo `job_category_id`, có source và caveat rõ ràng.
+**Trạng thái: Hoàn thành MVP**
 
 ### Đã triển khai
 
-- `schemas/automation_risk.py`
-- `repositories/automation_risk_repository.py`
-- `services/automation_exposure_service.py`
-- `services/automation_risk_seed.py`
-- `pipelines/seed_automation_risk_lookup_pipeline.py`
+- `schemas/trend_tracker/automation_risk.py`
+- `services/trend_tracker/automation_exposure_service.py`
+- `services/trend_tracker/automation_risk_seed.py`
+- `pipelines/trend_tracker/seed_automation_risk_lookup_pipeline.py`
 - `run_seedAutomationRiskLookup.py`
-- Tests automation lookup/service.
 
-### Dữ liệu hiện có
+### Chức năng
 
-- Seed 12 category phổ biến, ví dụ `accounting_audit`, `banking`, `administration_secretarial`, `customer_service`, `sales_business`, `marketing`, `logistics`, `software_it`.
-- Mỗi record gồm `exposure_level`, `risk_reason`, `protected_tasks`, `at_risk_tasks`, source URL, published date và caveat.
+- Lookup theo `job_category_id`, không lookup theo family chung chung.
+- Output gồm `exposure_level`, `risk_reason`, `protected_tasks`, `at_risk_tasks`, source URL/published date/caveat.
+- Nếu không có mapping thì trả `insufficient_evidence`.
 
-### Output
+## Step 8 - External Evidence Ingest
 
-- Có mapping: `automation_exposure`, confidence `medium`.
-- Không có mapping: `insufficient_evidence`, confidence `low`.
-
-### Giới hạn
-
-Lookup hiện là curated global baseline, không phải Vietnam-specific measured risk. Không dùng để kết luận role sẽ bị thay thế. Coverage 12/70 category là intentional MVP scope; category còn lại cần evidence review trước khi được assess.
-
-## Step 7 - Trend Evidence Repository và Manual Ingest
-
-**Trạng thái: Code hoàn thành; dữ liệu external chưa ingest**
-
-### Mục tiêu
-
-Lưu report/article metadata riêng với từng claim để dùng cho `external_outlook`, không thay thế internal snapshot.
+**Trạng thái: Code hoàn thành; dữ liệu phụ thuộc manual ingest**
 
 ### Đã triển khai
 
-- `schemas/trend_external_evidence.py`
-- `repositories/trend_evidence_repository.py`
-- `pipelines/ingest_trend_evidence_pipeline.py`
+- `schemas/trend_tracker/trend_external_evidence.py`
+- `pipelines/trend_tracker/ingest_trend_evidence_pipeline.py`
 - `run_ingestTrendEvidence.py`
 - `examples/trend_evidence_input.template.json`
 - `tests/test_trend_evidence_repository.py`
 - `tests/test_ingest_trend_evidence_pipeline.py`
 
-### `trend_sources`
+### Chức năng
 
-Một document/source gồm:
+- Tách `trend_sources` và `trend_evidence`.
+- Mỗi claim có citation, direction, metric optional, confidence và link về source.
+- Query external outlook có filter reliability và location scope.
 
-- `source_id`, title, publisher, `source_type`, URL.
-- `published_at`, `fetched_at`, optional content hash.
-- `reliability_score` từ 0 đến 1.
-- `scope_location_ids` và `scope_period`.
-- Notes về methodology, sample hoặc giới hạn nguồn.
+## Step 9 - Hybrid Signal Service
 
-### `trend_evidence`
+**Trạng thái: Hoàn thành**
 
-Một document/claim gồm:
+### Đã triển khai
 
-- `evidence_id`, `source_id`.
-- `job_family_ids`, optional `job_category_ids`, `location_ids`, period.
-- Direction, exact claim, optional metric value/unit.
-- Citation cụ thể: trang, section, bảng hoặc stable anchor.
-- Confidence của claim.
+- `schemas/trend_tracker/hybrid_signal.py`
+- `services/trend_tracker/hybrid_signal_service.py`
 
-### Query rule
+### Chức năng
 
-`TrendEvidenceRepository.list_for_external_outlook()` chỉ trả evidence khi:
+Orchestrate bốn nhóm output:
 
-1. Family khớp query.
-2. Location khớp cả `trend_evidence.location_ids` và `trend_sources.scope_location_ids`.
-3. Source đạt `min_reliability_score`.
-4. Source không cũ hơn `published_after` nếu query có mốc này.
+- `current_demand`
+- `current_skill_demand`
+- `automation_exposure`
+- `external_outlook`
 
-Kết quả được sort theo ngày công bố mới nhất và reliability cao hơn.
+Rule chính:
 
-### Việc dữ liệu còn thiếu
+- Không có snapshot hoặc snapshot thiếu sample -> `insufficient_evidence`.
+- Một snapshot -> `directional_trend = false`.
+- Có external evidence phù hợp -> confidence có thể `medium`.
+- Internal-only -> confidence `low`.
+- `demand_pressure` hiện trả `out_of_scope` vì thiếu applicant volume/time-to-fill/vacancy duration.
 
-Chưa có 8-12 claim external được verify để ghi vào Firestore. Không dùng các claim ví dụ trong solution document làm dữ liệu thật. Khi có report/PDF/URL đã kiểm tra, điền JSON template và chạy:
+## Step 10 - Trend Tracker Flow và Agent Integration
+
+**Trạng thái: Hoàn thành MVP**
+
+### Đã triển khai
+
+- `flows/trend_tracker_flow.py`
+- `services/trend_tracker/trend_summary_service.py`
+- `services/trend_tracker/trend_llm_summary_service.py`
+- `prompts/trend_summary_system_prompt.txt`
+- `run_trendTracker.py`
+- Integration trong `agent.py` và `main.py`.
+- `tests/test_trend_tracker_flow.py`
+- `tests/test_trend_agent_integration.py`
+
+### Chức năng
+
+- Normalize query.
+- Retrieve snapshot/facts/automation/external evidence theo intent.
+- Gọi `HybridSignalService`.
+- Trả structured result cho summary layer.
+- Có structured log từng step trong `TrendTrackerFlow` gồm duration, sub-agent, category/family/location và signal.
+
+## Step 11 - Query Understanding Service
+
+**Trạng thái: Hoàn thành foundation**
+
+### Đã triển khai
+
+- `schemas/market_scout_query_understanding.py`
+- `services/market_scout_query_understanding_service.py`
+- `prompts/market_scout_query_understanding_system_prompt.txt`
+- `local_scripts/trend_tracker/run_queryUnderstanding.py`
+- `tests/test_market_scout_query_understanding_service.py`
+
+### Chức năng
+
+- Classify intent cấp Market Scout: `salary_benchmark`, `trend_tracker`, `unclear`.
+- Nếu là salary: tận dụng `SalaryQueryNormalizer` để extract `job_title`, `location`, `experience_years`.
+- Nếu là trend: dùng LLM structured output để extract `trend_intent`, `role_mention`, `location_text`, `job_category_hint`, `job_family_hint`, `requested_signal`.
+- Có fallback heuristic cho trend intent như automation/AI replacement, skill demand, forecast/outlook.
+
+### Local test
 
 ```powershell
-python backend/market_scout/run_ingestTrendEvidence.py `
-  --input backend/market_scout/examples/trend_evidence_input.template.json `
-  --dry-run
+& F:\Z-MentorAI\venv\Scripts\python.exe backend/market_scout/local_scripts/trend_tracker/run_queryUnderstanding.py `
+  --query "Nhu cầu tuyển dụng backend engineer tại Hà Nội có cao không?"
 ```
 
-Sau khi review output, bỏ `--dry-run` để ghi `trend_sources` và `trend_evidence`.
+## Step 12 - Location Resolver Production Foundation
 
-## Step 8 - Signal Synthesizer
+**Trạng thái: Hoàn thành**
 
-**Trạng thái: Chưa bắt đầu**
+### Đã triển khai
 
-### Mục tiêu
+- `data/vietnam_locations.json`
+- `schemas/trend_tracker/location_resolution.py`
+- `services/trend_tracker/location_resolver_service.py`
+- `tests/test_location_resolver_service.py`
 
-Orchestrate các service đã có theo intent và trả một evidence payload thống nhất cho response composer.
+### Chức năng
 
-### Cần triển khai
+- Resolve location bằng local taxonomy 63 tỉnh/thành Việt Nam.
+- Hỗ trợ alias phổ biến như `HN`, `Hà Nội`, `HCM`, `TP Hồ Chí Minh`, `Sài Gòn`.
+- Output gồm `location_id`, `canonical_name`, `matched_text`, `confidence`, `resolution_method`.
 
-- `current_demand`: snapshot repository -> `CurrentDemandService`.
-- `current_skill_demand`: snapshot -> fact repository -> `SkillFrequencyService`.
-- `automation_exposure`: normalized category -> `AutomationExposureService`.
-- `external_outlook`: `TrendEvidenceRepository` với scope matching strict.
-- `demand_pressure`: trả `out_of_scope` vì chưa có applicant volume, time-to-fill hoặc vacancy duration.
-- Đảm bảo external evidence chỉ enrich context, không ghi đè internal metrics.
+## Step 13 - Structured Category/Family Mapping
 
-## Step 9 - Response Composer và LLM Summary Contract
+**Trạng thái: Hoàn thành**
 
-**Trạng thái: Chưa bắt đầu**
+### Đã triển khai
 
-### Mục tiêu
+- Cập nhật `services/trend_tracker/trend_entity_extractor_service.py`.
+- Cập nhật `_TREND_ENTITY_FIELDS` trong `agent.py` để nhận thêm `job_category_hint`, `job_family_hint`.
+- Cập nhật tests liên quan trong `tests/test_trend_entity_extractor_service.py`.
 
-Biến deterministic signal payload thành response chatbot rõ ràng, có nguồn và limitations.
+### Chức năng
 
-### Cần triển khai
+- Nếu query understanding hoặc orchestrator gửi category/family rõ, hệ thống map trực tiếp bằng `JobCategoryTaxonomyService`.
+- Hỗ trợ input: `job_category_id`, `job_category`, `job_category_hint`, `job_family_id`, `job_family_hint`.
+- Nếu category resolve được, tự suy ra `job_family_id` tương ứng.
+- Nếu không có structured hint, vẫn fallback qua text/category alias/legacy `industry`/role alias/location resolver.
 
-- Template cho `current_demand`, `current_skill_demand`, `automation_exposure`, `external_outlook` và out-of-scope redirect.
-- Render active job count, company count, period, sample/confidence và citation links.
-- Bắt buộc nêu: một snapshot là current baseline, không phải trend.
-- LLM chỉ viết summary dựa trên payload; không tự thêm metric, claim hay citation.
+### Test đã chạy gần nhất
 
-## Step 10 - Trend Tracker Flow, Agent Integration và QA
+```powershell
+$env:PYTHONPATH='.'
+& F:\Z-MentorAI\venv\Scripts\python.exe -m pytest `
+  backend/market_scout/tests/test_trend_entity_extractor_service.py `
+  backend/market_scout/tests/test_trend_agent_integration.py `
+  backend/market_scout/tests/test_trend_query_normalizer.py `
+  -q
+```
 
-**Trạng thái: Chưa bắt đầu**
+Kết quả: `14 passed`.
 
-### Mục tiêu
+## Pending - Role Semantic Lookup từ `trend_job_facts_v2`
 
-Kết nối toàn bộ MVP vào `MarketScoutAgent` và kiểm thử end-to-end.
+**Trạng thái: Chưa triển khai**
 
-### Cần triển khai
+Đây là phần quan trọng tiếp theo để xử lý các câu hỏi role tự nhiên, ví dụ:
 
-- Tạo `flows/trend_tracker_flow.py` để orchestrate step 1-9.
-- Inject repositories/services để test không cần Firestore thật.
-- Route intent trend từ `agent.py` vào flow.
-- Dry-run bộ câu hỏi gồm: đủ mẫu, thiếu mẫu, không có snapshot, không có category mapping, không có automation mapping, external evidence scope mismatch, supply-gap redirect.
-- Kiểm tra source links, limitations và confidence trên mọi response.
+- `backend engineer tại Hà Nội có đang tuyển nhiều không?`
+- `bác sĩ ở Hồ Chí Minh nhu cầu có cao không?`
+- `kế toán tổng hợp ở Đà Nẵng có dễ tìm việc không?`
 
-## Kiểm thử hiện tại
+### Hướng làm đề xuất
 
-Focused test suite cho các phần đã code đã chạy thành công: **23 passed**.
+1. LLM query understanding lấy `role_mention` và `location_text`.
+2. Location resolver map `location_text` -> `location_id`.
+3. Nếu có `job_category_hint` hoặc `job_family_hint`, map trực tiếp bằng taxonomy.
+4. Nếu chỉ có `role_mention`, search hybrid vào `trend_job_facts_v2`:
+   - keyword trên `job_title`, `requirements_text`, `description_text`
+   - semantic search nếu đã embedding/index fact text
+5. Aggregate top-k facts để suy ra category/family có evidence mạnh nhất.
+6. Dùng category/family/location đã resolve để query `trend_snapshots_v2`.
+7. Trả structured evidence gồm snapshot-level demand và role-level matched facts để summary layer diễn đạt.
 
-Pytest có warning quyền ghi `.pytest_cache`; warning này không ảnh hưởng kết quả test.
+### Cần quyết định trước khi code
+
+- Dùng embedding/index nào cho `trend_job_facts_v2`: Firestore vector, Vertex Matching Engine, hoặc index nội bộ hiện có.
+- Text embedding nên lấy từ `job_title + raw category + requirements + description`.
+- Top-k mặc định user muốn: `5`.
+- Cần threshold để tránh map sai role khi top-k quá yếu.
+
+## Các câu hỏi Trend Tracker hiện trả lời tốt nhất
+
+Các câu hỏi có category/family/location rõ hoặc resolve được:
+
+- `Nhu cầu tuyển dụng sales tại Hải Dương có cao không?`
+- `Ngành banking tại Hà Nội có nhu cầu tuyển dụng cao không?`
+- `Kỹ năng nào đang được nhắc nhiều trong nhóm CNTT tại Hồ Chí Minh?`
+- `Công việc kế toán có automation exposure như thế nào?`
+
+Các câu hỏi role tự nhiên hiện còn hạn chế nếu không map được role sang category/family:
+
+- `backend engineer tại Hà Nội có đang tuyển nhiều không?`
+- `bác sĩ ở Hà Nội có nhu cầu cao không?`
+
+## Verification hiện tại
+
+Các test đã được thêm/cập nhật quanh những phần chính:
+
+- Query normalizer
+- Snapshot repository
+- Job fact repository
+- Current demand
+- Skill frequency
+- Automation exposure
+- Trend evidence ingest/repository
+- Hybrid signal/Trend flow
+- Agent integration
+- Query understanding
+- Location resolver
+- Trend entity extractor
+
+Khi sửa tiếp role resolver, cần thêm test cho:
+
+- Role mention -> top-k fact matches
+- Aggregate top-k -> category/family winner
+- Low-confidence/no-match -> `insufficient_evidence`
+- End-to-end trend query role tự nhiên -> snapshot result
 
 ## Next Action
 
-Step tiếp theo là **Step 8 - Signal Synthesizer**. Tuy nhiên, trước khi demo `external_outlook`, cần curate và verify 8-12 external claim thật ở Step 7 để collection có evidence hợp lệ.
+Bước tiếp theo nên làm là **Role Semantic Lookup từ `trend_job_facts_v2`**. Mục tiêu là bỏ phụ thuộc vào alias hardcode cho role và cho phép query tự nhiên map về category/family bằng evidence từ JD hiện có.

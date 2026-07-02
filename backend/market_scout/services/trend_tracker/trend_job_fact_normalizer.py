@@ -35,6 +35,8 @@ DEFAULT_LOCATION_ALIASES = {
     "ha noi": "ha-noi",
     "hn": "ha-noi",
     "da nang": "da-nang",
+    "hp": "hai-phong",
+    "hai phong": "hai-phong"
 }
 
 DEFAULT_INDUSTRY_ALIASES = {

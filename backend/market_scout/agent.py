@@ -220,8 +220,8 @@ class MarketScoutAgent:
         entities = await self._trend_entities(request)
         return TrendQueryInput(
             intent=_trend_intent_or_default(entities.get("trend_intent"), market_intent),
-            job_family_id=_text_or_none(entities.get("job_family_id")),
-            job_category_id=_text_or_none(entities.get("job_category_id")),
+            job_family_id=_text_or_none(entities.get("job_family_id") or entities.get("resolved_job_family_id")),
+            job_category_id=_text_or_none(entities.get("job_category_id") or entities.get("resolved_job_category_id")),
             job_category=_text_or_none(entities.get("job_category")),
             location_id=_text_or_none(entities.get("location_id")),
             location=_text_or_none(entities.get("location")),
@@ -345,11 +345,17 @@ def _text_or_none(value: Any) -> str | None:
 
 _TREND_ENTITY_FIELDS = {
     "trend_intent",
+    "role_mention",
     "job_family_id",
+    "resolved_job_family_id",
+    "job_family_hint",
     "job_category_id",
+    "resolved_job_category_id",
     "job_category",
+    "job_category_hint",
     "location_id",
     "location",
+    "location_text",
 }
 
 def _salary_limitations(result: SalaryBenchmarkFlowResult) -> list[str]:
@@ -393,4 +399,3 @@ _TREND_KEYWORDS = (
     "tuyen nhieu",
     "tuyển nhiều",
 )
-
