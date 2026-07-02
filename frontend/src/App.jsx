@@ -87,6 +87,13 @@ const suggestedQuestions = [
     desc: 'Kiểm tra nhóm RIASEC và gợi ý hướng nghề phù hợp',
     prompt: 'Tôi muốn làm Holland Test / RIASEC để xem nhóm nghề nghiệp nào phù hợp với tôi.'
   },
+
+  {
+    agent: 'profile_scanner',
+    title: 'MI Test',
+    desc: 'Khám phá nhóm năng lực và kiểu học nổi trội',
+    prompt: 'Tôi muốn làm MI Test / Multiple Intelligences để xem nhóm năng lực và kiểu học nào phù hợp với tôi.'
+  },
   {
     agent: 'market_scout',
     title: 'Khảo sát thị trường',
@@ -177,25 +184,30 @@ function normalizeStoredToolCalls(toolCalls = []) {
 function hasHollandInteractiveToolCall(toolCalls = []) {
   return toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    return output?.feature === 'holland_assessment'
-      && (output?.questions || output?.top_code);
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    return isAssessmentOutput
+      && (output?.questions || output?.top_code || output?.top_dimensions || output?.result_code);
   });
 }
 
 function getVisibleToolCalls(toolCalls = []) {
   const hasSuccessfulHollandResult = toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    return output?.feature === 'holland_assessment' && output?.top_code;
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    return isAssessmentOutput && (output?.top_code || output?.top_dimensions || output?.result_code);
   });
 
   if (!hasSuccessfulHollandResult) return toolCalls;
 
   return toolCalls.filter((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    const isSupersededHollandError = output?.feature === 'holland_assessment'
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    const isSupersededHollandError = isAssessmentOutput
       && (output?.status === 'error' || output?.error)
       && !output?.questions
-      && !output?.top_code;
+      && !output?.top_code
+      && !output?.top_dimensions
+      && !output?.result_code;
     return !isSupersededHollandError;
   });
 }
@@ -209,9 +221,38 @@ const riasecLabels = {
   C: 'Conventional - Quy củ'
 };
 
+const multipleIntelligenceLabels = {
+  linguistic: 'Ngôn ngữ',
+  logical_math: 'Logic / Toán học',
+  spatial: 'Không gian / Hình ảnh',
+  bodily_kinesthetic: 'Vận động / Thực hành',
+  musical: 'Âm nhạc / Nhịp điệu',
+  interpersonal: 'Giao tiếp / Thấu hiểu người khác',
+  intrapersonal: 'Tự nhận thức',
+  naturalistic: 'Thiên nhiên / Phân loại hệ thống'
+};
+
+function getAssessmentDisplayConfig(result) {
+  if (result?.feature === 'assessment') {
+    return {
+      eyebrow: `Kết quả ${result.title || 'Assessment'}`,
+      title: result.result_code || result.top_dimensions?.join(' / ') || result.title || 'Đang cập nhật',
+      labels: result.dimension_labels || multipleIntelligenceLabels,
+      answerUnit: 'câu đã trả lời'
+    };
+  }
+
+  return {
+    eyebrow: 'Kết quả Holland Test',
+    title: result?.top_code || 'Đang cập nhật',
+    labels: riasecLabels,
+    answerUnit: 'câu đã trả lời'
+  };
+}
+
 function HollandResultCard({ result }) {
   const scores = result?.scores || {};
-  const topCode = result?.top_code || 'Đang cập nhật';
+  const displayConfig = getAssessmentDisplayConfig(result);
   const answeredCount = result?.answered_count;
   const hasScores = Object.keys(scores).length > 0;
 
@@ -219,21 +260,21 @@ function HollandResultCard({ result }) {
     <div className="holland-result-card">
       <div className="holland-result-header">
         <div>
-          <div className="holland-eyebrow">Kết quả Holland Test</div>
-          <h3>{topCode}</h3>
+          <div className="holland-eyebrow">{displayConfig.eyebrow}</div>
+          <h3>{displayConfig.title}</h3>
           <p>{result?.interpretation_vi || 'Agent đã ghi nhận kết quả bài test của bạn.'}</p>
         </div>
         {answeredCount && (
           <div className="holland-result-count">
             <strong>{answeredCount}</strong>
-            <span>câu đã trả lời</span>
+            <span>{displayConfig.answerUnit}</span>
           </div>
         )}
       </div>
 
       {hasScores && (
-        <div className="holland-score-list" aria-label="Điểm RIASEC">
-          {Object.entries(riasecLabels).map(([code, label]) => {
+        <div className="holland-score-list" aria-label="Điểm assessment">
+          {Object.entries(displayConfig.labels).map(([code, label]) => {
             const score = Number(scores[code] || 0);
             const percent = Math.round(score * 100);
             return (
@@ -249,6 +290,17 @@ function HollandResultCard({ result }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {Array.isArray(result?.recommendations_vi) && result.recommendations_vi.length > 0 && (
+        <div className="profile-scan-grid">
+          <div>
+            <span className="profile-scan-section-title">Gợi ý học tập</span>
+            <ul className="profile-recommendations">
+              {result.recommendations_vi.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
         </div>
       )}
     </div>
@@ -372,6 +424,11 @@ function HollandTestForm({ output, onSendMessage }) {
   const [submitError, setSubmitError] = useState('');
   const questions = output?.questions || [];
   const latestResult = output?.latest_result;
+  const isGenericAssessment = output?.feature === 'assessment';
+  const assessmentType = output?.assessment_type || 'holland_riasec';
+  const assessmentTitle = output?.title || 'Holland Test';
+  const assessmentEyebrow = output?.eyebrow_vi || 'Bài đánh giá RIASEC';
+  const assessmentDescription = output?.description_vi || 'Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.';
   const answeredCount = Object.keys(answers).length;
   const isComplete = answeredCount === questions.length;
 
@@ -383,13 +440,22 @@ function HollandTestForm({ output, onSendMessage }) {
       question_id: question.id,
       score: answers[question.id]
     }));
-    const displayText = `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
-    const backendText = [
-      'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
-      '```json',
-      JSON.stringify(payload, null, 2),
-      '```'
-    ].join('\n');
+    const displayText = isGenericAssessment
+      ? `Mình đã hoàn thành ${assessmentTitle} với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả vào hồ sơ của mình.`
+      : `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
+    const backendText = isGenericAssessment
+      ? [
+        `Mình đã hoàn thành ${assessmentTitle}. Hãy chấm điểm bằng profile_scanner tool với task="assessment_score", assessment_type="${assessmentType}" và answers_json sau:`,
+        '```json',
+        JSON.stringify(payload, null, 2),
+        '```'
+      ].join('\n')
+      : [
+        'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
+        '```json',
+        JSON.stringify(payload, null, 2),
+        '```'
+      ].join('\n');
     setSubmitting(true);
     setSubmitError('');
     const ok = await onSendMessage({
@@ -408,9 +474,9 @@ function HollandTestForm({ output, onSendMessage }) {
     <div className="holland-form">
       <div className="holland-form-header">
         <div>
-          <div className="holland-eyebrow">Bài đánh giá RIASEC</div>
-          <h3>Holland Test</h3>
-          <p>Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.</p>
+          <div className="holland-eyebrow">{assessmentEyebrow}</div>
+          <h3>{assessmentTitle}</h3>
+          <p>{assessmentDescription}</p>
         </div>
         <div className="holland-progress">
           <strong>{answeredCount}/{questions.length}</strong>
@@ -421,15 +487,15 @@ function HollandTestForm({ output, onSendMessage }) {
       {latestResult && (
         <div className="holland-latest">
           <span>Kết quả gần nhất</span>
-          <strong>{latestResult.top_code}</strong>
+          <strong>{latestResult.top_code || latestResult.result_code || latestResult.top_dimensions?.join(' / ')}</strong>
           <small>{latestResult.interpretation_vi}</small>
         </div>
       )}
 
       <div className="holland-scale">
-        <span>1 - Rất không giống</span>
-        <span>3 - Trung lập</span>
-        <span>5 - Rất giống</span>
+        <span>1 - {output?.scale?.['1'] || 'Rất không giống'}</span>
+        <span>3 - {output?.scale?.['3'] || 'Trung lập'}</span>
+        <span>5 - {output?.scale?.['5'] || 'Rất giống'}</span>
       </div>
 
       <div className="holland-question-list">
@@ -628,7 +694,7 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage, user, backendUrl }) {
+function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -638,20 +704,21 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
   const Icon = info.icon;
   const normalizedOutput = normalizeToolOutput(output);
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
+  const isAssessmentOutput = normalizedOutput?.feature === 'assessment';
   const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
-  const shouldRenderHollandForm = isHollandOutput
+  const shouldRenderHollandForm = (isHollandOutput || isAssessmentOutput)
     && normalizedOutput?.questions
     && status === 'completed';
-  const shouldRenderHollandResult = isHollandOutput
-    && normalizedOutput?.top_code
+  const shouldRenderHollandResult = (isHollandOutput || isAssessmentOutput)
+    && (normalizedOutput?.top_code || normalizedOutput?.top_dimensions || normalizedOutput?.result_code)
     && status === 'completed';
   const shouldRenderProfileScanResult = isProfileScanOutput
     && normalizedOutput?.grade
     && status === 'completed';
   const shouldRenderVerifier = toolName === 'academic_architect_input_verifier'
     && status === 'completed';
-  const toolLabel = isHollandOutput && toolName === 'profile_scanner'
-    ? `${info.label} · Holland Test`
+  const toolLabel = (isHollandOutput || isAssessmentOutput) && toolName === 'profile_scanner'
+    ? `${info.label} · ${normalizedOutput?.title || 'Assessment'}`
     : info.label;
 
   return (
