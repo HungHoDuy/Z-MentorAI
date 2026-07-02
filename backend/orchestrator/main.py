@@ -253,30 +253,34 @@ def normalize_tool_output(output: Any) -> dict:
 def summarize_tool_calls(tool_calls: list[dict]) -> str:
     for tool_call in tool_calls:
         name = tool_call.get("name")
+        output = normalize_tool_output(tool_call.get("output"))
         if name == "academic_architect":
             return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
-        elif name == "academic_architect_input_verifier":
+        if name == "academic_architect_input_verifier":
             return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
-        elif name == "market_scout":
+        if name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
-        elif name == "profile_scanner":
-            output = normalize_tool_output(tool_call.get("output"))
+        if name == "profile_scanner":
+            if output.get("feature") == "assessment":
+                if output.get("questions"):
+                    return f"Đã tạo biểu mẫu {output.get('title', 'assessment')}."
+                if output.get("top_dimensions"):
+                    return f"Đã chấm điểm {output.get('title', 'assessment')}."
             if output.get("feature") == "holland_assessment":
                 if output.get("questions"):
                     return "Đã tạo biểu mẫu Holland Test."
                 if output.get("top_code"):
                     return "Đã chấm điểm Holland Test và lưu kết quả RIASEC."
-            elif output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+            if output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
                 return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
-
 
 def sanitize_user_message_for_history(user_message: str) -> str:
     content = (user_message or "").strip()
     if not content:
         return ""
 
-    if "holland_score" not in content and "answers_json" not in content:
+    if "holland_score" not in content and "assessment_score" not in content and "answers_json" not in content:
         return content
 
     answered_count = None
@@ -293,9 +297,20 @@ def sanitize_user_message_for_history(user_message: str) -> str:
             answered_count = None
 
     if answered_count:
+        if "assessment_score" in content or "multiple_intelligences" in content:
+            return (
+                f"Mình đã hoàn thành bài MI với {answered_count} câu trả lời. "
+                "Hãy chấm điểm và lưu kết quả Multiple Intelligences vào hồ sơ của mình."
+            )
         return (
             f"Mình đã hoàn thành Holland Test với {answered_count} câu trả lời. "
             "Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình."
+        )
+
+    if "assessment_score" in content or "multiple_intelligences" in content:
+        return (
+            "Mình đã hoàn thành bài MI. "
+            "Hãy chấm điểm và lưu kết quả Multiple Intelligences vào hồ sơ của mình."
         )
 
     return (
@@ -804,6 +819,10 @@ def get_system_message(user_id: str) -> SystemMessage:
         "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
+        "The MI / Multiple Intelligences assessment is a Profile Scanner capability for learning style and intelligence tendency, not an official MBTI test. "
+        "If the user asks for MI, Multiple Intelligences, tri thong minh da dang, learning style, study style, MBTI, or personality-style testing, call profile_scanner with task='assessment_start' and assessment_type='multiple_intelligences'. "
+        "When the user provides MI answers, convert them into answers_json and call profile_scanner with task='assessment_score' and assessment_type='multiple_intelligences'. "
+        "If the latest user message explicitly says to call profile_scanner with task='assessment_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
