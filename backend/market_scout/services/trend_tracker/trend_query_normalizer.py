@@ -68,6 +68,7 @@ class TrendQueryNormalizer:
             job_family_id=resolved_family_id,
             location_id=location_id,
             job_category_id=category_id,
+            job_sources=list(query_input.job_sources),
         )
 
     def _normalize_intent(self, value: TrendQueryIntent | str) -> TrendQueryIntent:

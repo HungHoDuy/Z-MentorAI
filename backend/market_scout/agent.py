@@ -225,6 +225,7 @@ class MarketScoutAgent:
             job_category=_text_or_none(entities.get("job_category")),
             location_id=_text_or_none(entities.get("location_id")),
             location=_text_or_none(entities.get("location")),
+            job_sources=_job_sources_or_empty(entities.get("job_sources")),
         )
 
     async def _trend_entities(self, request: MarketScoutRequest) -> dict[str, Any]:
@@ -336,6 +337,11 @@ def _trend_intent_or_default(value: Any, market_intent: MarketScoutIntent) -> Tr
     return TrendQueryIntent.CURRENT_DEMAND
 
 
+def _job_sources_or_empty(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
 def _text_or_none(value: Any) -> str | None:
     if value is None:
         return None
@@ -356,6 +362,7 @@ _TREND_ENTITY_FIELDS = {
     "location_id",
     "location",
     "location_text",
+    "job_sources",
 }
 
 def _salary_limitations(result: SalaryBenchmarkFlowResult) -> list[str]:

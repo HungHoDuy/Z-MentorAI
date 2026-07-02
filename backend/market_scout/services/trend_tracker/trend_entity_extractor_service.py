@@ -136,6 +136,13 @@ class TrendEntityExtractorService:
         extracted["role_resolution_confidence"] = resolution.confidence
         if resolution.matches:
             extracted["role_match_method"] = resolution.matches[0].match_method
+            job_sources = [
+                _job_source_from_match(match)
+                for match in resolution.matches[:5]
+                if getattr(match, "job_url", None)
+            ]
+            if job_sources:
+                extracted["job_sources"] = job_sources
 
     def category_definition_from_hint(self, value: Any):
         key = text_key(value)
@@ -222,6 +229,19 @@ def text_key(value: Any) -> str:
 def contains_text_phrase(text: str, phrase: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text) is not None
 
+
+def _job_source_from_match(match: Any) -> dict[str, Any]:
+    return {
+        "job_key": getattr(match, "job_key", None),
+        "company": getattr(match, "company", None),
+        "job_title": getattr(match, "job_title", None),
+        "job_url": getattr(match, "job_url", None),
+        "score": round(getattr(match, "score", 0.0), 4),
+        "match_method": getattr(match, "match_method", None),
+        "location_ids": list(getattr(match, "location_ids", None) or []),
+        "job_category_ids": list(getattr(match, "job_category_ids", None) or []),
+        "job_family_ids": list(getattr(match, "job_family_ids", None) or []),
+    }
 
 def _optional_text(value: Any) -> str | None:
     if value is None:

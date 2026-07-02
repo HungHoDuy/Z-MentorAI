@@ -137,6 +137,8 @@ def role_fact_match_from_mapping_document(
     return RoleFactMatch(
         job_key=_optional_text(data.get("job_key")) or document_id,
         job_title=job_title,
+        company=_optional_text(data.get("company")),
+        job_url=_optional_text(data.get("job_url")),
         job_category_ids=job_category_ids,
         job_family_ids=job_family_ids,
         location_ids=location_ids,

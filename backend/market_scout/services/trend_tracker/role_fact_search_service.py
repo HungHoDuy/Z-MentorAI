@@ -108,6 +108,8 @@ class RoleFactSearchService:
                     matches_by_key[semantic_match.job_key] = RoleFactMatch(
                         job_key=preferred.job_key,
                         job_title=preferred.job_title,
+                        company=preferred.company,
+                        job_url=preferred.job_url,
                         job_category_ids=preferred.job_category_ids,
                         job_family_ids=preferred.job_family_ids,
                         location_ids=preferred.location_ids,
@@ -236,6 +238,8 @@ class RoleFactSearchService:
         return RoleFactMatch(
             job_key=fact.job_key,
             job_title=fact.job_title,
+            company=fact.company,
+            job_url=fact.job_url,
             job_category_ids=list(fact.job_category_ids),
             job_family_ids=list(fact.job_family_ids),
             location_ids=list(fact.location_ids),

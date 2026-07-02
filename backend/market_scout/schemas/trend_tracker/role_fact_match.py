@@ -10,19 +10,23 @@ class RoleFactMatch:
 
     job_key: str
     job_title: str
-    job_category_ids: list[str]
-    job_family_ids: list[str]
-    location_ids: list[str]
-    score: float
-    match_method: str
+    company: str | None = None
+    job_url: str | None = None
+    job_category_ids: list[str] = None
+    job_family_ids: list[str] = None
+    location_ids: list[str] = None
+    score: float = 0.0
+    match_method: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "job_key": self.job_key,
             "job_title": self.job_title,
-            "job_category_ids": list(self.job_category_ids),
-            "job_family_ids": list(self.job_family_ids),
-            "location_ids": list(self.location_ids),
+            "company": self.company,
+            "job_url": self.job_url,
+            "job_category_ids": list(self.job_category_ids or []),
+            "job_family_ids": list(self.job_family_ids or []),
+            "location_ids": list(self.location_ids or []),
             "score": round(self.score, 4),
             "match_method": self.match_method,
         }
