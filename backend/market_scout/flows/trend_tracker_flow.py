@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 import json
 import logging
@@ -47,6 +47,7 @@ class TrendTrackerFlowResult:
 
     query: TrendQuery
     signal: HybridSignalResult
+    job_sources: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +57,7 @@ class TrendTrackerFlowResult:
                 "job_category_id": self.query.job_category_id,
                 "location_id": self.query.location_id,
             },
+            "job_sources": [dict(source) for source in self.job_sources],
             "signal": self.signal.to_dict(),
         }
 
@@ -68,9 +70,12 @@ class TrendTrackerFlow:
         *,
         query_normalizer: TrendQueryNormalizer | None = None,
         hybrid_signal_service: HybridSignalService | None = None,
+        fact_repository: TrendJobFactRepository | None = None,
     ) -> None:
         self.query_normalizer = query_normalizer or TrendQueryNormalizer()
         self.hybrid_signal_service = hybrid_signal_service or _build_hybrid_signal_service()
+        self.fact_repository = fact_repository
+        self.enable_job_source_fallback = fact_repository is not None or hybrid_signal_service is None
 
     def run(
         self,
@@ -103,8 +108,23 @@ class TrendTrackerFlow:
             signal=signal.signal,
             confidence=signal.confidence,
         )
-        return TrendTrackerFlowResult(query=query, signal=signal)
+        job_sources = list(query.job_sources) or self._fallback_job_sources(query)
+        return TrendTrackerFlowResult(query=query, signal=signal, job_sources=job_sources)
 
+
+    def _fallback_job_sources(self, query: TrendQuery) -> list[dict[str, Any]]:
+        if not self.enable_job_source_fallback or not query.job_family_id or not query.location_id:
+            return []
+        try:
+            fact_repository = self.fact_repository or TrendJobFactRepository()
+            return fact_repository.list_job_sources(
+                job_family_id=query.job_family_id,
+                job_category_id=query.job_category_id,
+                location_id=query.location_id,
+                limit=5,
+            )
+        except Exception:
+            return []
 
 def _build_hybrid_signal_service() -> HybridSignalService:
     snapshot_repository = TrendSnapshotRepository()
