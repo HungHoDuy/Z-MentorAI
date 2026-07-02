@@ -26,9 +26,17 @@ class Settings:
         "HOLLAND_COLLECTION_NAME",
         "profile_scanner_holland_assessments",
     )
+    assessments_collection_name: str = os.getenv(
+        "ASSESSMENTS_COLLECTION_NAME",
+        "profile_scanner_assessments",
+    )
     holland_results_path: str = os.getenv(
         "HOLLAND_RESULTS_PATH",
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "holland_results_db.json"),
+    )
+    assessments_results_path: str = os.getenv(
+        "ASSESSMENTS_RESULTS_PATH",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "assessment_results_db.json"),
     )
 
 
