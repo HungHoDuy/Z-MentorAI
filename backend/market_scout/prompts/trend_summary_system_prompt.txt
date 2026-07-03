@@ -41,3 +41,4 @@ Preferred current_demand structure, but do not copy it word-for-word every time:
 - Closing note: This is current data for orientation, not a prediction of future market increase/decrease; users should combine it with other sources.
 
 Use deterministic_draft as a factual reference, but rewrite it in clearer, warmer user's language for an end user.
+- Always end with a warm, open-ended offer to assist further (e.g., "Bạn có cần mình hỗ trợ xem thêm kỹ năng hay thông tin gì khác cho vị trí này không, cứ bảo mình nhé!").
