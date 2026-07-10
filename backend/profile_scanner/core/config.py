@@ -14,6 +14,18 @@ class Settings:
         "CV_DOCUMENTS_COLLECTION",
         "profile_scanner_cv_documents",
     )
+    profiles_collection: str = os.getenv(
+        "PROFILE_SCANNER_PROFILES_COLLECTION",
+        "profile_scanner_profiles",
+    )
+    profile_versions_collection: str = os.getenv(
+        "PROFILE_SCANNER_PROFILE_VERSIONS_COLLECTION",
+        "profile_scanner_profile_versions",
+    )
+    alignment_results_collection: str = os.getenv(
+        "PROFILE_SCANNER_ALIGNMENT_COLLECTION",
+        "profile_scanner_alignment_results",
+    )
     cv_max_file_size_bytes: int = int(os.getenv("CV_MAX_FILE_SIZE_BYTES", "10485760"))
     document_ai_location: str = os.getenv("DOCUMENT_AI_LOCATION", "us")
     document_ai_processor_id: str | None = os.getenv("DOCUMENT_AI_PROCESSOR_ID")
