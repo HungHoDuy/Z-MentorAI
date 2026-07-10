@@ -261,6 +261,10 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
         if name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
         if name == "profile_scanner":
+            if output.get("feature") == "profile_confirmation":
+                return output.get("message_vi", "Đã cập nhật trạng thái hồ sơ cá nhân.")
+            if output.get("feature") == "career_alignment":
+                return "Đã tổng hợp mức độ phù hợp giữa CV, Holland và MI."
             if output.get("feature") == "assessment":
                 if output.get("questions"):
                     return f"Đã tạo biểu mẫu {output.get('title', 'assessment')}."
@@ -272,6 +276,9 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
                 if output.get("top_code"):
                     return "Đã chấm điểm Holland Test và lưu kết quả RIASEC."
             if output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+                profile_action = output.get("profile_action") or {}
+                if profile_action.get("message_vi"):
+                    return profile_action["message_vi"]
                 return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
 
@@ -824,6 +831,10 @@ def get_system_message(user_id: str) -> SystemMessage:
         "When the user provides MI answers, convert them into answers_json and call profile_scanner with task='assessment_score' and assessment_type='multiple_intelligences'. "
         "If the latest user message explicitly says to call profile_scanner with task='assessment_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
+        "If the user provides or changes a target role after uploading a CV, call profile_scanner with task='scan_profile' and target_role set to the user's exact role. Profile Scanner will select the user's latest CV when cv_document_id is unavailable. "
+        "If the latest user message explicitly requests profile_confirm and includes cv_document_id plus decision, call profile_scanner immediately with task='profile_confirm', the exact cv_document_id, and decision. Do not reinterpret the decision. "
+        "If the user asks whether their CV direction conflicts with Holland or MI, or asks for a combined career alignment analysis, call profile_scanner with task='career_alignment'. "
+        "Career alignment is deterministic: never invent a conflict state or use MI as proof that a career is unsuitable. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "For course roadmap or learning planning: "

@@ -128,16 +128,20 @@ def profile_scanner(
     task: str = "scan_profile",
     answers_json: str = "",
     cv_document_id: str = "",
-    assessment_type: str = ""
+    assessment_type: str = "",
+    decision: str = "",
+    target_role: str = ""
 ) -> dict:
     """Use this Profile Scanner agent tool for CV/profile scanning and career/profile assessments.
 
     Supported task values:
-    - scan_profile: scan a previously uploaded CV document when cv_document_id is provided.
+    - scan_profile: scan a CV by cv_document_id, or the user's latest CV when no id is available; pass target_role when explicit.
     - holland_start: start the Holland/RIASEC test and return the question bank.
     - holland_score: score and save completed Holland/RIASEC answers.
     - assessment_start: start a supported assessment, for example assessment_type="multiple_intelligences".
     - assessment_score: score and save a supported assessment.
+    - profile_confirm: accept, update, overwrite, or reject a CV profile proposal.
+    - career_alignment: synthesize canonical CV profile, Holland, and MI results.
 
     For scoring tasks, answers_json must be a JSON array like:
     [{"question_id":"R1","score":5},{"question_id":"I1","score":4}]
@@ -163,7 +167,12 @@ def profile_scanner(
         "holland_score",
         "riasec_score",
     }
-    sub_agent = "assessment" if is_assessment_task else "holland_test" if is_holland_task or answers_json.strip() else "scan_cv"
+    if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
+        sub_agent = "career_alignment"
+    elif normalized_task in {"profile_confirm", "confirm_profile"}:
+        sub_agent = "canonical_profile"
+    else:
+        sub_agent = "assessment" if is_assessment_task else "holland_test" if is_holland_task or answers_json.strip() else "scan_cv"
     _log_event(
         "mcp_tool_call",
         agent="profile_scanner",
@@ -174,6 +183,22 @@ def profile_scanner(
         assessment_type=normalized_assessment_type,
         has_cv_document=bool(cv_document_id),
     )
+
+    if normalized_task in {"profile_confirm", "confirm_profile"}:
+        if not cv_document_id or decision not in {"accept", "update", "overwrite", "reject"}:
+            return {
+                "status": "error",
+                "feature": "profile_confirmation",
+                "error": "cv_document_id and a valid decision are required.",
+            }
+        return fetch_data_sync(PROFILE_SCANNER_URL, "/profiles/confirm", {
+            "user_id": user_id,
+            "cv_document_id": cv_document_id,
+            "decision": decision,
+        })
+
+    if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
+        return fetch_data_sync(PROFILE_SCANNER_URL, f"/alignment/synthesize/{user_id}", {})
 
     if normalized_task in {
         "mi",
@@ -248,7 +273,8 @@ def profile_scanner(
     return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
         "user_id": user_id,
         "background_info": background_info,
-        "cv_document_id": cv_document_id
+        "cv_document_id": cv_document_id,
+        "target_role": target_role,
     })
 
 @mcp.tool()
