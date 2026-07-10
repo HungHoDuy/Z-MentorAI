@@ -109,8 +109,8 @@ const suggestedQuestions = [
   {
     agent: 'profile_scanner',
     title: 'Tư vấn tổng hợp',
-    desc: 'Kích hoạt tất cả agent để kiểm tra định hướng từ đầu đến cuối',
-    prompt: 'Hãy đánh giá hồ sơ của tôi cho vị trí Entry-Level Data Analyst. Kinh nghiệm hiện tại của tôi gồm truy vấn SQL và dựng mô hình Excel. Hãy quét nền tảng, khảo sát thị trường và thiết kế lộ trình học cho tôi.'
+    desc: 'Đối chiếu CV, Holland và MI để kiểm tra định hướng',
+    prompt: 'Hãy tổng hợp CV, Holland và MI của tôi để kiểm tra định hướng nghề nghiệp có đang xung đột hay không.'
   }
 ];
 
@@ -185,8 +185,14 @@ function hasHollandInteractiveToolCall(toolCalls = []) {
   return toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
     const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
-    return isAssessmentOutput
-      && (output?.questions || output?.top_code || output?.top_dimensions || output?.result_code);
+    const hasProfileAction = output?.feature === 'profile_scan'
+      && Array.isArray(output?.profile_action?.options)
+      && output.profile_action.options.length > 0;
+    return (isAssessmentOutput
+      && (output?.questions || output?.top_code || output?.top_dimensions || output?.result_code))
+      || hasProfileAction
+      || output?.feature === 'profile_confirmation'
+      || output?.feature === 'career_alignment';
   });
 }
 
@@ -307,8 +313,64 @@ function HollandResultCard({ result }) {
   );
 }
 
-function ProfileScanResultCard({ result }) {
-  const grade = result?.grade || 'E';
+function ProfileConfirmationActions({ action, onSendMessage }) {
+  const [submitting, setSubmitting] = useState('');
+  const [completed, setCompleted] = useState(false);
+  const [error, setError] = useState('');
+  const options = Array.isArray(action?.options) ? action.options : [];
+
+  if (!options.length) {
+    return action?.message_vi ? (
+      <div className="profile-action-status"><CheckCircle2 size={16} />{action.message_vi}</div>
+    ) : null;
+  }
+
+  const handleDecision = async (option) => {
+    if (submitting || completed) return;
+    const displayText = option.decision === 'reject'
+      ? 'Không, hãy giữ nguyên hồ sơ cá nhân hiện tại.'
+      : `${option.label_vi} từ CV vừa tải lên.`;
+    const backendText = [
+      displayText,
+      `Call profile_scanner immediately with task="profile_confirm", cv_document_id="${action.cv_document_id}", and decision="${option.decision}".`,
+      'Do not ask for confirmation again and do not change the decision.'
+    ].join('\n');
+    setSubmitting(option.decision);
+    setError('');
+    const ok = await onSendMessage({ displayText, backendText });
+    setSubmitting('');
+    if (ok) setCompleted(true);
+    else setError('Chưa cập nhật được hồ sơ. Vui lòng kiểm tra kết nối và thử lại.');
+  };
+
+  return (
+    <div className="profile-confirmation-panel">
+      <div>
+        <span className="profile-scan-section-title">Xác nhận hồ sơ cá nhân</span>
+        <p>{action.message_vi}</p>
+      </div>
+      <div className="profile-confirmation-actions">
+        {options.map((option, index) => (
+          <button
+            key={option.decision}
+            className={index === 0 ? 'primary' : 'secondary'}
+            disabled={Boolean(submitting) || completed}
+            onClick={() => handleDecision(option)}
+            type="button"
+          >
+            {submitting === option.decision ? 'Đang xử lý...' : option.label_vi}
+          </button>
+        ))}
+      </div>
+      {completed && <div className="profile-action-status"><CheckCircle2 size={16} />Đã gửi lựa chọn.</div>}
+      {error && <div className="holland-form-error">{error}</div>}
+    </div>
+  );
+}
+
+function ProfileScanResultCard({ result, onSendMessage }) {
+  const hasGrade = Boolean(result?.grade) && result?.total_score !== null && result?.total_score !== undefined;
+  const grade = result?.grade || 'N/A';
   const dimensions = Array.isArray(result?.score_dimensions) ? result.score_dimensions : [];
   const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : [];
@@ -317,7 +379,7 @@ function ProfileScanResultCard({ result }) {
   return (
     <div className="profile-scan-card">
       <div className="profile-scan-header">
-        <div className={`profile-rank-mark rank-${grade.toLowerCase()}`}>
+        <div className={`profile-rank-mark rank-${grade.toLowerCase().replace('/', '-')}`}>
           <span>{grade}</span>
         </div>
         <div className="profile-scan-title">
@@ -333,8 +395,8 @@ function ProfileScanResultCard({ result }) {
           </div>
         </div>
         <div className="profile-total-score">
-          <strong>{Math.round(Number(result?.total_score || 0))}</strong>
-          <span>/100</span>
+          <strong>{hasGrade ? Math.round(Number(result.total_score)) : '--'}</strong>
+          <span>{hasGrade ? '/100' : 'chưa chấm'}</span>
         </div>
       </div>
 
@@ -373,6 +435,41 @@ function ProfileScanResultCard({ result }) {
           </ul>
         </div>
       </div>
+      {result?.profile_action && (
+        <ProfileConfirmationActions action={result.profile_action} onSendMessage={onSendMessage} />
+      )}
+    </div>
+  );
+}
+
+function CareerAlignmentCard({ result }) {
+  const stateLabels = {
+    aligned: 'Định hướng phù hợp',
+    interest_conflict: 'Xung đột về hứng thú',
+    readiness_gap: 'Thiếu bằng chứng sẵn sàng',
+    exploration_advised: 'Nên khám phá thêm',
+    mixed_or_uncertain: 'Chưa đủ rõ ràng',
+    insufficient_data: 'Thiếu dữ liệu'
+  };
+  const recommendations = Array.isArray(result?.recommendations_vi) ? result.recommendations_vi : [];
+  return (
+    <div className="career-alignment-card">
+      <div className="career-alignment-header">
+        <div>
+          <span className="profile-scan-eyebrow">Career Alignment · {result?.rule_version}</span>
+          <h3>{stateLabels[result?.alignment_state] || stateLabels.insufficient_data}</h3>
+          <p>{result?.target_role || 'Chưa xác định target role'}</p>
+        </div>
+        {result?.career_alignment_score !== null && result?.career_alignment_score !== undefined && (
+          <div className="profile-total-score"><strong>{Math.round(result.career_alignment_score)}</strong><span>/100</span></div>
+        )}
+      </div>
+      <div className="alignment-metrics">
+        <span>CV readiness <strong>{result?.cv_readiness_score ?? '--'}</strong></span>
+        <span>Holland alignment <strong>{result?.holland_alignment_score ?? '--'}</strong></span>
+        <span>Conflict <strong>{result?.conflict_severity || 'unknown'}</strong></span>
+      </div>
+      {recommendations.length > 0 && <ul className="profile-recommendations">{recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
     </div>
   );
 }
@@ -694,7 +791,7 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage }) {
+function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfileDocuments }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -706,6 +803,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
   const isAssessmentOutput = normalizedOutput?.feature === 'assessment';
   const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
+  const isProfileConfirmationOutput = normalizedOutput?.feature === 'profile_confirmation';
+  const isCareerAlignmentOutput = normalizedOutput?.feature === 'career_alignment';
   const shouldRenderHollandForm = (isHollandOutput || isAssessmentOutput)
     && normalizedOutput?.questions
     && status === 'completed';
@@ -713,10 +812,21 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
     && (normalizedOutput?.top_code || normalizedOutput?.top_dimensions || normalizedOutput?.result_code)
     && status === 'completed';
   const shouldRenderProfileScanResult = isProfileScanOutput
-    && normalizedOutput?.grade
     && status === 'completed';
   const shouldRenderVerifier = toolName === 'academic_architect_input_verifier'
     && status === 'completed';
+  const profileActionResolved = isProfileScanOutput
+    && resolvedProfileDocuments?.has(normalizedOutput?.profile_action?.cv_document_id);
+  const profileScanResult = profileActionResolved
+    ? {
+      ...normalizedOutput,
+      profile_action: {
+        ...normalizedOutput.profile_action,
+        options: [],
+        message_vi: 'Lựa chọn cho CV này đã được xử lý.'
+      }
+    }
+    : normalizedOutput;
   const toolLabel = (isHollandOutput || isAssessmentOutput) && toolName === 'profile_scanner'
     ? `${info.label} · ${normalizedOutput?.title || 'Assessment'}`
     : info.label;
@@ -760,7 +870,11 @@ function ToolCallWidget({ toolName, output, status, onSendMessage }) {
               ) : shouldRenderHollandResult ? (
                 <HollandResultCard result={normalizedOutput} />
               ) : shouldRenderProfileScanResult ? (
-                <ProfileScanResultCard result={normalizedOutput} />
+                <ProfileScanResultCard result={profileScanResult} onSendMessage={onSendMessage} />
+              ) : isCareerAlignmentOutput && status === 'completed' ? (
+                <CareerAlignmentCard result={normalizedOutput} />
+              ) : isProfileConfirmationOutput && status === 'completed' ? (
+                <div className="profile-action-status"><CheckCircle2 size={16} />{normalizedOutput?.message_vi}</div>
               ) : shouldRenderVerifier ? (
                 <AcademicArchitectInputConfirmWidget output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : (
@@ -1007,6 +1121,11 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
 }
 
 function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl }) {
+  const resolvedProfileDocuments = new Set(
+    messages.flatMap((message) => (message.toolCalls || []).map((toolCall) => normalizeToolOutput(toolCall.output)))
+      .filter((output) => output?.feature === 'profile_confirmation' && output?.cv_document_id)
+      .map((output) => output.cv_document_id)
+  );
   return (
     <div className="messages-feed">
       {messages.map((msg) => {
@@ -1028,6 +1147,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                 onSendMessage={onSendMessage}
                 user={user}
                 backendUrl={backendUrl}
+                resolvedProfileDocuments={resolvedProfileDocuments}
               />
             ))}
 
