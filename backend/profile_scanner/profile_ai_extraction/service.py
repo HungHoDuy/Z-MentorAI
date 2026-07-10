@@ -73,6 +73,13 @@ def build_extraction_prompt(parsed_text: str, target_role: str | None, message: 
         "target_role_from_user": target_role or "",
         "user_message": message or "",
         "output_schema": {
+            "full_name": "string",
+            "email": "string",
+            "phone": "string",
+            "location": "string",
+            "linkedin_url": "string",
+            "github_url": "string",
+            "portfolio_url": "string",
             "target_role_hint": "string",
             "headline": "string",
             "summary": "string",

@@ -30,6 +30,13 @@ class StructuredProject(BaseModel):
 
 class StructuredProfile(BaseModel):
     extraction_source: str = "ai"
+    full_name: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    linkedin_url: str = ""
+    github_url: str = ""
+    portfolio_url: str = ""
     target_role_hint: str = ""
     headline: str = ""
     summary: str = ""

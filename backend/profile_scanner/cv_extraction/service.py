@@ -1,6 +1,8 @@
 import datetime
 import io
 import json
+import re
+from dataclasses import dataclass
 from typing import Any
 
 from docx import Document
@@ -16,6 +18,43 @@ from cv_extraction.schemas import CvExtractionResult
 
 
 MIN_EXTRACTED_TEXT_CHARS = 80
+
+
+@dataclass(frozen=True)
+class TextQuality:
+    usable: bool
+    char_count: int
+    word_count: int
+    alphanumeric_ratio: float
+    words_per_page: float
+    reasons: list[str]
+
+
+def assess_pdf_text_quality(text: str, page_count: int | None) -> TextQuality:
+    stripped = (text or "").strip()
+    non_space = re.sub(r"\s", "", stripped)
+    alphanumeric = sum(char.isalnum() for char in non_space)
+    words = re.findall(r"\b\w{2,}\b", stripped, flags=re.UNICODE)
+    pages = max(page_count or 1, 1)
+    ratio = alphanumeric / max(len(non_space), 1)
+    words_per_page = len(words) / pages
+    reasons = []
+    if len(stripped) < MIN_EXTRACTED_TEXT_CHARS:
+        reasons.append("too_few_characters")
+    if len(words) < max(15, pages * 12):
+        reasons.append("too_few_words")
+    if words_per_page < 12:
+        reasons.append("low_words_per_page")
+    if ratio < 0.65:
+        reasons.append("low_alphanumeric_ratio")
+    return TextQuality(
+        usable=not reasons,
+        char_count=len(stripped),
+        word_count=len(words),
+        alphanumeric_ratio=round(ratio, 3),
+        words_per_page=round(words_per_page, 2),
+        reasons=reasons,
+    )
 
 
 def utc_now() -> str:
@@ -130,12 +169,41 @@ async def extract_cv_text(document: dict) -> CvExtractionResult:
 
     page_count = None
     parser_type = "pypdf" if file_kind == "pdf" else "python_docx"
+    extraction_quality = None
     try:
         if file_kind == "pdf":
-            parsed_text, page_count = extract_pdf_text(content)
-            if len(parsed_text) < MIN_EXTRACTED_TEXT_CHARS and get_document_ai_processor_name():
+            try:
+                parsed_text, page_count = extract_pdf_text(content)
+            except Exception as parser_exc:
+                if not get_document_ai_processor_name():
+                    raise
+                logger.warning(
+                    "PyPDF extraction failed; using Document AI OCR",
+                    extra={
+                        "cv_document_id": cv_document_id,
+                        "error_type": type(parser_exc).__name__,
+                    },
+                )
                 parser_type = "document_ai_ocr"
                 parsed_text = extract_pdf_text_with_document_ai(content)
+            else:
+                extraction_quality = assess_pdf_text_quality(parsed_text, page_count)
+                logger.info(
+                    "Evaluated PDF text quality",
+                    extra={
+                        "cv_document_id": cv_document_id,
+                        "usable": extraction_quality.usable,
+                        "char_count": extraction_quality.char_count,
+                        "word_count": extraction_quality.word_count,
+                        "words_per_page": extraction_quality.words_per_page,
+                        "alphanumeric_ratio": extraction_quality.alphanumeric_ratio,
+                        "reasons": extraction_quality.reasons,
+                    },
+                )
+                if not extraction_quality.usable:
+                    if get_document_ai_processor_name():
+                        parser_type = "document_ai_ocr"
+                        parsed_text = extract_pdf_text_with_document_ai(content)
         else:
             parsed_text = extract_docx_text(content)
     except Exception as exc:
@@ -155,7 +223,8 @@ async def extract_cv_text(document: dict) -> CvExtractionResult:
         )
         raise HTTPException(status_code=422, detail="Unable to extract text from this CV.") from exc
 
-    if len(parsed_text) < MIN_EXTRACTED_TEXT_CHARS:
+    final_quality = assess_pdf_text_quality(parsed_text, page_count) if file_kind == "pdf" else None
+    if len(parsed_text) < MIN_EXTRACTED_TEXT_CHARS or (final_quality and not final_quality.usable):
         await update_cv_document(cv_document_id, {
             "extraction_status": "needs_ocr",
             "parser_type": parser_type,
@@ -163,6 +232,7 @@ async def extract_cv_text(document: dict) -> CvExtractionResult:
             "page_count": page_count,
             "extracted_at": utc_now(),
             "extraction_error": "Extracted text is too short and OCR fallback is not configured or returned too little text.",
+            "extraction_quality": final_quality.__dict__ if final_quality else None,
         })
         raise HTTPException(
             status_code=422,
@@ -178,6 +248,7 @@ async def extract_cv_text(document: dict) -> CvExtractionResult:
         "ocr_fallback_used": parser_type == "document_ai_ocr",
         "text_char_count": len(parsed_text),
         "page_count": page_count,
+        "extraction_quality": final_quality.__dict__ if final_quality else None,
         "extracted_at": extracted_at,
     }
 
@@ -211,6 +282,7 @@ async def extract_cv_text(document: dict) -> CvExtractionResult:
         "ocr_fallback_used": parser_type == "document_ai_ocr",
         "text_char_count": len(parsed_text),
         "page_count": page_count,
+        "extraction_quality": final_quality.__dict__ if final_quality else None,
         "parsed_text_gcs_uri": parsed_text_uri,
         "parsed_result_gcs_uri": parsed_result_uri,
         "parsed_text_object": parsed_text_object,

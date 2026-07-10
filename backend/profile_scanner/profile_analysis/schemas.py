@@ -17,11 +17,14 @@ class ProfileAnalysisResult(BaseModel):
     feature: str = "profile_scan"
     scan_status: str = "profile_analysis_completed"
     cv_document_id: str
-    target_role: str
-    benchmark_profile_id: str
+    target_role: str | None = None
+    target_role_source: str = "unresolved"
+    target_role_confidence: float = 0.0
+    benchmark_status: str = "resolved"
+    benchmark_profile_id: str | None = None
     benchmark_version: str
-    grade: str
-    total_score: float
+    grade: str | None = None
+    total_score: float | None = None
     score_dimensions: list[ScoreDimension]
     extracted_skills: list[str] = Field(default_factory=list)
     work_experiences: list[str] = Field(default_factory=list)
@@ -35,6 +38,7 @@ class ProfileAnalysisResult(BaseModel):
     ai_extraction_used: bool = False
     ai_extraction_confidence: float | None = None
     structured_profile: dict[str, Any] | None = None
+    candidate_identity: dict[str, str] = Field(default_factory=dict)
     analysis_artifact_gcs_uri: str | None = None
     analyzed_at: str
     message_vi: str

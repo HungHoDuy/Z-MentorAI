@@ -3,6 +3,7 @@ import datetime
 import json
 import re
 import unicodedata
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
@@ -42,6 +43,22 @@ CERTIFICATION_KEYWORDS = [
     "certificate", "certification", "google career certificate", "aws certified",
     "coursera", "udemy", "edx", "datacamp", "freecodecamp", "chứng chỉ", "khóa học",
 ]
+
+
+@dataclass(frozen=True)
+class RoleResolution:
+    slug: str | None
+    benchmark: dict | None
+    label: str | None
+    source: str
+    confidence: float
+
+
+IDENTITY_HEADINGS = {
+    "curriculum vitae", "resume", "profile", "summary", "objective", "contact",
+    "experience", "education", "skills", "projects", "hồ sơ", "kinh nghiệm",
+    "học vấn", "kỹ năng", "mục tiêu nghề nghiệp",
+}
 
 
 def utc_now() -> str:
@@ -99,24 +116,89 @@ def extract_matching_skills(text: str) -> list[str]:
     return sorted(matches)
 
 
-def detect_target_role(text: str, target_role: str | None = None, message: str | None = None) -> tuple[str, dict]:
-    haystack = normalize_text(" ".join(part for part in [target_role, message, text[:4000]] if part))
-    best_slug = "general_early_career"
-    best_score = 0
-
+def resolve_target_role(
+    text: str,
+    target_role: str | None = None,
+    message: str | None = None,
+    role_hint: str | None = None,
+) -> RoleResolution:
+    contexts = [
+        ("user_target", normalize_text(target_role or ""), 1.0),
+        ("user_message", normalize_text(message or ""), 0.95),
+        ("ai_cv_hint", normalize_text(role_hint or ""), 0.85),
+        ("cv_heading", normalize_text(text[:4000]), 0.75),
+    ]
+    candidates = []
     for slug, benchmark in ROLE_BENCHMARKS.items():
-        score = 0
-        for alias in benchmark["aliases"]:
-            if normalize_text(alias) in haystack:
-                score += 3
-        for skill in benchmark["core_skills"]:
-            if skill in extract_matching_skills(haystack):
-                score += 1
-        if score > best_score:
-            best_slug = slug
-            best_score = score
+        for source, context, confidence in contexts:
+            if not context:
+                continue
+            matched_aliases = [
+                alias for alias in benchmark["aliases"]
+                if contains_any(context, [alias])
+            ]
+            if matched_aliases:
+                longest_alias = max(len(normalize_text(alias)) for alias in matched_aliases)
+                candidates.append((confidence, longest_alias, slug, benchmark, source))
+                break
 
-    return best_slug, ROLE_BENCHMARKS[best_slug]
+    if not candidates:
+        return RoleResolution(None, None, target_role or role_hint or None, "unresolved", 0.0)
+
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    confidence, _, slug, benchmark, source = candidates[0]
+    return RoleResolution(slug, benchmark, benchmark["label"], source, confidence)
+
+
+def detect_target_role(
+    text: str,
+    target_role: str | None = None,
+    message: str | None = None,
+) -> tuple[str | None, dict | None]:
+    resolution = resolve_target_role(text, target_role=target_role, message=message)
+    return resolution.slug, resolution.benchmark
+
+
+def extract_candidate_identity(
+    text: str,
+    structured_profile: StructuredProfile | None,
+) -> dict[str, str]:
+    email_match = re.search(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", text)
+    phone_match = re.search(r"(?:\+?\d[\d .()-]{7,}\d)", text)
+
+    full_name = structured_profile.full_name.strip() if structured_profile else ""
+    if not full_name:
+        for line in split_lines(text)[:10]:
+            normalized = normalize_text(line).strip(":")
+            words = line.split()
+            if (
+                normalized not in IDENTITY_HEADINGS
+                and 2 <= len(words) <= 6
+                and len(line) <= 60
+                and "@" not in line
+                and not any(char.isdigit() for char in line)
+                and all(any(char.isalpha() for char in word) for word in words)
+            ):
+                full_name = line.strip()
+                break
+
+    return {
+        "full_name": full_name,
+        "email": (
+            structured_profile.email.strip().lower()
+            if structured_profile and structured_profile.email.strip()
+            else (email_match.group(0).lower() if email_match else "")
+        ),
+        "phone": (
+            structured_profile.phone.strip()
+            if structured_profile and structured_profile.phone.strip()
+            else (phone_match.group(0).strip() if phone_match else "")
+        ),
+        "location": structured_profile.location.strip() if structured_profile else "",
+        "linkedin_url": structured_profile.linkedin_url.strip() if structured_profile else "",
+        "github_url": structured_profile.github_url.strip() if structured_profile else "",
+        "portfolio_url": structured_profile.portfolio_url.strip() if structured_profile else "",
+    }
 
 
 def extract_relevant_lines(text: str, keywords: list[str], limit: int = 6) -> list[str]:
@@ -168,22 +250,71 @@ def count_quantified_achievements(text: str) -> int:
     return sum(len(re.findall(pattern, text, re.IGNORECASE)) for pattern in patterns)
 
 
-def score_role_skill_fit(skills: list[str], benchmark: dict) -> ScoreDimension:
+def skill_evidence_level(
+    skill: str,
+    skills: list[str],
+    text: str = "",
+    work_lines: list[str] | None = None,
+    project_lines: list[str] | None = None,
+) -> float:
+    if skill not in skills:
+        return 0.0
+    aliases = SKILL_ALIASES.get(skill, [skill])
+    level = 0.25
+    for line in project_lines or []:
+        if contains_any(normalize_text(line), aliases):
+            level = max(level, 0.60)
+            if count_quantified_achievements(line):
+                level = 1.0
+    for line in work_lines or []:
+        if contains_any(normalize_text(line), aliases):
+            level = max(level, 0.80)
+            if count_quantified_achievements(line):
+                level = 1.0
+    if text and contains_any(normalize_text(text), aliases) and level == 0.25:
+        level = 0.35
+    return level
+
+
+def score_role_skill_fit(
+    skills: list[str],
+    benchmark: dict,
+    text: str = "",
+    work_lines: list[str] | None = None,
+    project_lines: list[str] | None = None,
+) -> ScoreDimension:
     core_skills = benchmark["core_skills"]
+    essential_groups = benchmark.get("essential_skill_groups") or [[skill] for skill in core_skills]
     supporting_skills = benchmark["supporting_skills"]
-    matched_core = [skill for skill in core_skills if skill in skills]
-    matched_supporting = [skill for skill in supporting_skills if skill in skills]
-    core_score = len(matched_core) / max(len(core_skills), 1) * 75
-    supporting_score = len(matched_supporting) / max(len(supporting_skills), 1) * 25
+    evidence_levels = {
+        skill: skill_evidence_level(skill, skills, text, work_lines, project_lines)
+        for skill in set(core_skills + supporting_skills)
+    }
+    group_levels = [max(evidence_levels[skill] for skill in group) for group in essential_groups]
+    matched_core = [skill for skill in core_skills if evidence_levels[skill] > 0]
+    matched_supporting = [skill for skill in supporting_skills if evidence_levels[skill] > 0]
+    core_score = sum(group_levels) / max(len(essential_groups), 1) * 75
+    supporting_score = (
+        sum(evidence_levels[skill] for skill in supporting_skills)
+        / max(len(supporting_skills), 1)
+        * 25
+    )
     score = min(100, core_score + supporting_score)
-    missing = [skill for skill in core_skills if skill not in matched_core]
+    missing = [
+        "one of: " + ", ".join(group) if len(group) > 1 else group[0]
+        for group in essential_groups
+        if not any(evidence_levels[skill] > 0 for skill in group)
+    ]
 
     return ScoreDimension(
         key="role_skill_fit",
         label="Role skill fit",
         score=round(score, 2),
         weight=DIMENSION_WEIGHTS["role_skill_fit"],
-        evidence=matched_core + matched_supporting,
+        evidence=[
+            f"{skill}: evidence {evidence_levels[skill]:.2f}"
+            for skill in matched_core + matched_supporting
+        ],
         missing=missing,
     )
 
@@ -423,7 +554,12 @@ def career_readiness_text_from_ai(structured_profile: StructuredProfile | None) 
     return " ".join(structured_profile.career_readiness_signals + structured_profile.achievements)
 
 
-def build_message(grade: str, score: float, benchmark_label: str) -> str:
+def build_message(grade: str | None, score: float | None, benchmark_label: str | None) -> str:
+    if not grade or score is None or not benchmark_label:
+        return (
+            "Profile Scanner đã trích xuất hồ sơ nhưng chưa xác định được target role thuộc bộ benchmark đang hỗ trợ. "
+            "Hãy cho biết vị trí mục tiêu cụ thể để hệ thống chấm điểm mà không ép CV vào một ngành gần nhất."
+        )
     return (
         f"Profile Scanner đã phân tích CV theo benchmark {benchmark_label}. "
         f"Kết quả hiện tại là rank {grade} với {score}/100 điểm. "
@@ -481,15 +617,16 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     structured_profile = await asyncio.to_thread(
         extract_structured_profile_with_ai,
         parsed_text=parsed_text,
-        target_role=document.get("target_role"),
+        target_role=document.get("requested_target_role"),
         message=document.get("message"),
     )
 
     skills = unique_keep_order(extract_matching_skills(parsed_text) + skills_from_ai(structured_profile))
-    target_slug, benchmark = detect_target_role(
+    role_resolution = resolve_target_role(
         parsed_text,
-        target_role=document.get("target_role") or (structured_profile.target_role_hint if structured_profile else None),
+        target_role=document.get("requested_target_role"),
         message=document.get("message"),
+        role_hint=structured_profile.target_role_hint if structured_profile else None,
     )
     ai_work_lines, ai_education_lines, ai_project_lines, ai_achievement_lines = profile_lines_from_ai(structured_profile)
     work_lines = unique_keep_order(ai_work_lines + extract_work_experience_lines(parsed_text), 8)
@@ -501,16 +638,22 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         "\n".join(ai_achievement_lines),
     ])
 
-    dimensions = [
-        score_role_skill_fit(skills, benchmark),
-        score_experience_evidence(scoring_text, work_lines, project_lines),
-        score_education_certification(scoring_text, education_lines, benchmark),
-        score_career_readiness(scoring_text),
-        score_cv_clarity(parsed_text, skills),
-    ]
-    total_score = compute_total_score(dimensions)
-    grade = grade_from_score(total_score)
+    benchmark = role_resolution.benchmark
+    dimensions = []
+    total_score = None
+    grade = None
+    if benchmark:
+        dimensions = [
+            score_role_skill_fit(skills, benchmark, scoring_text, work_lines, project_lines),
+            score_experience_evidence(scoring_text, work_lines, project_lines),
+            score_education_certification(scoring_text, education_lines, benchmark),
+            score_career_readiness(scoring_text),
+            score_cv_clarity(parsed_text, skills),
+        ]
+        total_score = compute_total_score(dimensions)
+        grade = grade_from_score(total_score)
     analyzed_at = utc_now()
+    candidate_identity = extract_candidate_identity(parsed_text, structured_profile)
 
     missing_signals = unique_keep_order(
         [missing for dimension in dimensions for missing in dimension.missing],
@@ -518,8 +661,11 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     )
     result = ProfileAnalysisResult(
         cv_document_id=cv_document_id,
-        target_role=benchmark["label"],
-        benchmark_profile_id=target_slug,
+        target_role=role_resolution.label,
+        target_role_source=role_resolution.source,
+        target_role_confidence=role_resolution.confidence,
+        benchmark_status="resolved" if benchmark else "needs_target_role",
+        benchmark_profile_id=role_resolution.slug,
         benchmark_version=BENCHMARK_VERSION,
         grade=grade,
         total_score=total_score,
@@ -535,13 +681,18 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
             if dimension.score < 65
         ],
         missing_signals=missing_signals,
-        recommendations=build_recommendations(dimensions),
+        recommendations=(
+            build_recommendations(dimensions)
+            if benchmark
+            else ["Cung cấp target role cụ thể để áp dụng đúng benchmark nghề nghiệp."]
+        ),
         benchmark_notes=BENCHMARK_NOTES,
         ai_extraction_used=structured_profile is not None,
         ai_extraction_confidence=structured_profile.confidence if structured_profile else None,
         structured_profile=structured_profile.as_firestore_payload() if structured_profile else None,
+        candidate_identity=candidate_identity,
         analyzed_at=analyzed_at,
-        message_vi=build_message(grade, total_score, benchmark["label"]),
+        message_vi=build_message(grade, total_score, role_resolution.label),
     )
 
     analysis_object = build_artifact_object_name(original_object, "profile_analysis.json")
@@ -557,11 +708,15 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         "grade": grade,
         "total_score": total_score,
         "target_role": result.target_role,
-        "benchmark_profile_id": target_slug,
+        "target_role_source": role_resolution.source,
+        "target_role_confidence": role_resolution.confidence,
+        "benchmark_status": result.benchmark_status,
+        "benchmark_profile_id": role_resolution.slug,
         "benchmark_version": BENCHMARK_VERSION,
         "ai_extraction_used": structured_profile is not None,
         "ai_extraction_confidence": structured_profile.confidence if structured_profile else None,
         "structured_profile": structured_profile.as_firestore_payload() if structured_profile else None,
+        "candidate_identity": candidate_identity,
         "analyzed_at": analyzed_at,
         "next_status": "analysis_completed",
     })
