@@ -18,6 +18,7 @@ from dynamic_benchmark.compiler import (
 )
 from dynamic_benchmark.schemas import DynamicBenchmarkSnapshot
 from profile_ai_extraction.service import extract_structured_profile_with_ai
+from skill_normalization.service import normalize_skills
 from profile_ai_extraction.schemas import StructuredProfile
 from profile_analysis.benchmark import (
     BENCHMARK_NOTES,
@@ -632,11 +633,13 @@ def upload_json_artifact(bucket: Any, object_name: str, payload: dict) -> str:
 
 
 async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
+    skill_normalization_version = "skill-normalization-v1"
     existing = document.get("profile_analysis")
     can_reuse_existing = (
         existing
         and document.get("analysis_status") == "completed"
         and existing.get("benchmark_version") in {BENCHMARK_VERSION, DYNAMIC_BENCHMARK_VERSION}
+        and existing.get("skill_normalization_version") == skill_normalization_version
         and (
             not settings.profile_ai_extraction_enabled
             or existing.get("ai_extraction_used") is True
@@ -666,7 +669,9 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         message=document.get("message"),
     )
 
-    skills = unique_keep_order(extract_matching_skills(parsed_text) + skills_from_ai(structured_profile))
+    raw_skills = unique_keep_order(extract_matching_skills(parsed_text) + skills_from_ai(structured_profile))
+    normalized_skills = normalize_skills(raw_skills, parsed_text)
+    skills = [skill["canonical_name"] for skill in normalized_skills]
     role_resolution = resolve_target_role(
         parsed_text,
         target_role=document.get("requested_target_role"),
@@ -722,11 +727,13 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
             benchmark_type = "static_fallback" if benchmark else "none"
 
     if benchmark and benchmark.get("skill_aliases"):
-        skills = unique_keep_order(
-            skills
+        raw_skills = unique_keep_order(
+            raw_skills
             + extract_matching_skills(parsed_text, benchmark["skill_aliases"])
             + skills_from_ai(structured_profile)
         )
+        normalized_skills = normalize_skills(raw_skills, parsed_text)
+        skills = [skill["canonical_name"] for skill in normalized_skills]
     dimensions = []
     total_score = None
     grade = None
@@ -773,6 +780,9 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         total_score=total_score,
         score_dimensions=dimensions,
         extracted_skills=skills,
+        normalized_skills=normalized_skills,
+        raw_extracted_skills=raw_skills,
+        skill_normalization_version=skill_normalization_version,
         work_experiences=work_lines,
         education_records=education_lines,
         projects=project_lines,

@@ -163,6 +163,8 @@ def build_canonical_payload(
         "headline": (analysis.get("structured_profile") or {}).get("headline", ""),
         "summary": (analysis.get("structured_profile") or {}).get("summary", ""),
         "skills": analysis.get("extracted_skills", []),
+        "normalized_skills": analysis.get("normalized_skills", []),
+        "skill_normalization_version": analysis.get("skill_normalization_version"),
         "work_experiences": analysis.get("work_experiences", []),
         "education_records": analysis.get("education_records", []),
         "projects": analysis.get("projects", []),

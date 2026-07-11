@@ -41,6 +41,8 @@ def build_profile_response(document: dict, analysis, profile_action: dict | None
         total_score=analysis.total_score,
         score_dimensions=[dimension.model_dump(mode="json") for dimension in analysis.score_dimensions],
         extracted_skills=analysis.extracted_skills,
+        normalized_skills=analysis.normalized_skills,
+        skill_normalization_version=analysis.skill_normalization_version,
         work_experiences=analysis.work_experiences,
         education_records=analysis.education_records,
         projects=analysis.projects,
