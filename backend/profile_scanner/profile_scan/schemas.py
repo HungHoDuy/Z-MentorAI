@@ -7,6 +7,7 @@ class ProfileRequest(BaseModel):
     user_id: str
     background_info: str = ""
     cv_document_id: Optional[str] = None
+    target_role: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -14,7 +15,6 @@ class ProfileResponse(BaseModel):
     feature: str = "profile_scan"
     scan_status: str
     cv_document_id: Optional[str] = None
-    target_role: Optional[str] = None
     message_vi: str
     next_status: str = "pending_extraction"
     parser_type: Optional[str] = None
