@@ -30,6 +30,12 @@ class ProfileResponse(BaseModel):
     benchmark_status: Optional[str] = None
     benchmark_profile_id: Optional[str] = None
     benchmark_version: Optional[str] = None
+    benchmark_type: Optional[str] = None
+    benchmark_confidence: Optional[str] = None
+    benchmark_confidence_score: Optional[float] = None
+    benchmark_sample_size: Optional[int] = None
+    benchmark_distinct_companies: Optional[int] = None
+    benchmark_sources: Optional[list[dict]] = None
     grade: Optional[str] = None
     total_score: Optional[float] = None
     score_dimensions: Optional[list[dict]] = None

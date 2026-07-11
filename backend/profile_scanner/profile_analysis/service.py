@@ -9,8 +9,14 @@ from typing import Any
 from fastapi import HTTPException
 from google.cloud import storage
 
-from core.config import settings
+from core.config import logger, settings
 from cv_intake.repository import update_cv_document
+from dynamic_benchmark.compiler import (
+    DYNAMIC_BENCHMARK_NOTES,
+    DYNAMIC_BENCHMARK_VERSION,
+    compile_dynamic_benchmark,
+)
+from dynamic_benchmark.schemas import DynamicBenchmarkSnapshot
 from profile_ai_extraction.service import extract_structured_profile_with_ai
 from profile_ai_extraction.schemas import StructuredProfile
 from profile_analysis.benchmark import (
@@ -107,10 +113,11 @@ def contains_any(normalized_text: str, keywords: list[str]) -> bool:
     return False
 
 
-def extract_matching_skills(text: str) -> list[str]:
+def extract_matching_skills(text: str, aliases_by_skill: dict[str, list[str]] | None = None) -> list[str]:
     normalized = normalize_text(text)
     matches = []
-    for skill, aliases in SKILL_ALIASES.items():
+    catalog = aliases_by_skill or SKILL_ALIASES
+    for skill, aliases in catalog.items():
         if contains_any(normalized, aliases):
             matches.append(skill)
     return sorted(matches)
@@ -256,10 +263,11 @@ def skill_evidence_level(
     text: str = "",
     work_lines: list[str] | None = None,
     project_lines: list[str] | None = None,
+    aliases_by_skill: dict[str, list[str]] | None = None,
 ) -> float:
     if skill not in skills:
         return 0.0
-    aliases = SKILL_ALIASES.get(skill, [skill])
+    aliases = (aliases_by_skill or SKILL_ALIASES).get(skill, [skill])
     level = 0.25
     for line in project_lines or []:
         if contains_any(normalize_text(line), aliases):
@@ -286,10 +294,37 @@ def score_role_skill_fit(
     core_skills = benchmark["core_skills"]
     essential_groups = benchmark.get("essential_skill_groups") or [[skill] for skill in core_skills]
     supporting_skills = benchmark["supporting_skills"]
+    aliases_by_skill = benchmark.get("skill_aliases") or SKILL_ALIASES
     evidence_levels = {
-        skill: skill_evidence_level(skill, skills, text, work_lines, project_lines)
+        skill: skill_evidence_level(
+            skill,
+            skills,
+            text,
+            work_lines,
+            project_lines,
+            aliases_by_skill,
+        )
         for skill in set(core_skills + supporting_skills)
     }
+    dynamic_weights = benchmark.get("skill_weights") or {}
+    if dynamic_weights:
+        score = min(
+            100,
+            sum(evidence_levels.get(skill, 0.0) * float(weight) for skill, weight in dynamic_weights.items()) * 100,
+        )
+        matched = [skill for skill in dynamic_weights if evidence_levels.get(skill, 0.0) > 0]
+        missing = [skill for skill in core_skills if evidence_levels.get(skill, 0.0) == 0]
+        return ScoreDimension(
+            key="role_skill_fit",
+            label="Role skill fit",
+            score=round(score, 2),
+            weight=DIMENSION_WEIGHTS["role_skill_fit"],
+            evidence=[
+                f"{skill}: evidence {evidence_levels[skill]:.2f}, market weight {dynamic_weights[skill]:.3f}"
+                for skill in matched
+            ],
+            missing=missing,
+        )
     group_levels = [max(evidence_levels[skill] for skill in group) for group in essential_groups]
     matched_core = [skill for skill in core_skills if evidence_levels[skill] > 0]
     matched_supporting = [skill for skill in supporting_skills if evidence_levels[skill] > 0]
@@ -554,7 +589,17 @@ def career_readiness_text_from_ai(structured_profile: StructuredProfile | None) 
     return " ".join(structured_profile.career_readiness_signals + structured_profile.achievements)
 
 
-def build_message(grade: str | None, score: float | None, benchmark_label: str | None) -> str:
+def build_message(
+    grade: str | None,
+    score: float | None,
+    benchmark_label: str | None,
+    benchmark_status: str = "resolved",
+) -> str:
+    if benchmark_status in {"insufficient_market_evidence", "benchmark_unavailable"} and benchmark_label:
+        return (
+            f"Profile Scanner đã trích xuất CV cho vị trí {benchmark_label}, nhưng dữ liệu thị trường theo role này "
+            "chưa đạt ngưỡng bằng chứng để xếp hạng. Hệ thống không tự ép CV sang một role khác."
+        )
     if not grade or score is None or not benchmark_label:
         return (
             "Profile Scanner đã trích xuất hồ sơ nhưng chưa xác định được target role thuộc bộ benchmark đang hỗ trợ. "
@@ -591,7 +636,7 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     can_reuse_existing = (
         existing
         and document.get("analysis_status") == "completed"
-        and existing.get("benchmark_version") == BENCHMARK_VERSION
+        and existing.get("benchmark_version") in {BENCHMARK_VERSION, DYNAMIC_BENCHMARK_VERSION}
         and (
             not settings.profile_ai_extraction_enabled
             or existing.get("ai_extraction_used") is True
@@ -639,6 +684,49 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     ])
 
     benchmark = role_resolution.benchmark
+    dynamic_snapshot: DynamicBenchmarkSnapshot | None = None
+    benchmark_status = "resolved" if benchmark else "needs_target_role"
+    benchmark_type = "static" if benchmark else "none"
+    role_query = (document.get("requested_target_role") or role_resolution.label or "").strip()
+    if settings.dynamic_benchmark_enabled and role_query:
+        try:
+            dynamic_snapshot = await asyncio.to_thread(
+                compile_dynamic_benchmark,
+                role_query=role_query,
+                location_id=settings.benchmark_default_location,
+            )
+            if dynamic_snapshot.status == "ready":
+                benchmark = dynamic_snapshot.as_scoring_benchmark()
+                role_resolution = RoleResolution(
+                    dynamic_snapshot.benchmark_id,
+                    benchmark,
+                    dynamic_snapshot.normalized_role,
+                    "market_benchmark",
+                    dynamic_snapshot.confidence_score,
+                )
+                benchmark_status = "market_resolved"
+                benchmark_type = "dynamic_market"
+            elif benchmark:
+                benchmark_status = "fallback_static"
+                benchmark_type = "static_fallback"
+            else:
+                role_resolution = RoleResolution(None, None, role_query, "user_target", 1.0)
+                benchmark_status = "insufficient_market_evidence"
+                benchmark_type = "dynamic_market"
+        except Exception as exc:
+            logger.exception(
+                "Dynamic benchmark compilation failed",
+                extra={"error_type": type(exc).__name__, "target_role": role_query},
+            )
+            benchmark_status = "fallback_static" if benchmark else "benchmark_unavailable"
+            benchmark_type = "static_fallback" if benchmark else "none"
+
+    if benchmark and benchmark.get("skill_aliases"):
+        skills = unique_keep_order(
+            skills
+            + extract_matching_skills(parsed_text, benchmark["skill_aliases"])
+            + skills_from_ai(structured_profile)
+        )
     dimensions = []
     total_score = None
     grade = None
@@ -664,9 +752,23 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         target_role=role_resolution.label,
         target_role_source=role_resolution.source,
         target_role_confidence=role_resolution.confidence,
-        benchmark_status="resolved" if benchmark else "needs_target_role",
-        benchmark_profile_id=role_resolution.slug,
-        benchmark_version=BENCHMARK_VERSION,
+        benchmark_status=benchmark_status,
+        benchmark_profile_id=(
+            dynamic_snapshot.benchmark_id
+            if benchmark_type == "dynamic_market" and dynamic_snapshot
+            else role_resolution.slug
+        ),
+        benchmark_version=(
+            dynamic_snapshot.compiler_version
+            if benchmark_type == "dynamic_market" and dynamic_snapshot
+            else BENCHMARK_VERSION
+        ),
+        benchmark_type=benchmark_type,
+        benchmark_confidence=dynamic_snapshot.confidence if dynamic_snapshot else None,
+        benchmark_confidence_score=dynamic_snapshot.confidence_score if dynamic_snapshot else None,
+        benchmark_sample_size=dynamic_snapshot.cohort_size if dynamic_snapshot else None,
+        benchmark_distinct_companies=dynamic_snapshot.distinct_company_count if dynamic_snapshot else None,
+        benchmark_sources=dynamic_snapshot.evidence_sources if dynamic_snapshot else [],
         grade=grade,
         total_score=total_score,
         score_dimensions=dimensions,
@@ -684,15 +786,25 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         recommendations=(
             build_recommendations(dimensions)
             if benchmark
-            else ["Cung cấp target role cụ thể để áp dụng đúng benchmark nghề nghiệp."]
+            else (
+                ["Benchmark thị trường hiện chưa đủ bằng chứng để xếp hạng CV cho role này."]
+                if role_query
+                else ["Cung cấp target role cụ thể để áp dụng đúng benchmark nghề nghiệp."]
+            )
         ),
-        benchmark_notes=BENCHMARK_NOTES,
+        benchmark_notes=(
+            (DYNAMIC_BENCHMARK_NOTES if benchmark_type == "dynamic_market" else BENCHMARK_NOTES)
+            + ([
+                f"Dynamic market benchmark uses {dynamic_snapshot.cohort_size} role-matched jobs from a {dynamic_snapshot.window_days}-day window."
+            ] if dynamic_snapshot else [])
+            + (dynamic_snapshot.limitations if dynamic_snapshot else [])
+        ),
         ai_extraction_used=structured_profile is not None,
         ai_extraction_confidence=structured_profile.confidence if structured_profile else None,
         structured_profile=structured_profile.as_firestore_payload() if structured_profile else None,
         candidate_identity=candidate_identity,
         analyzed_at=analyzed_at,
-        message_vi=build_message(grade, total_score, role_resolution.label),
+        message_vi=build_message(grade, total_score, role_resolution.label, benchmark_status),
     )
 
     analysis_object = build_artifact_object_name(original_object, "profile_analysis.json")
@@ -711,8 +823,14 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         "target_role_source": role_resolution.source,
         "target_role_confidence": role_resolution.confidence,
         "benchmark_status": result.benchmark_status,
-        "benchmark_profile_id": role_resolution.slug,
-        "benchmark_version": BENCHMARK_VERSION,
+        "benchmark_profile_id": result.benchmark_profile_id,
+        "benchmark_version": result.benchmark_version,
+        "benchmark_type": result.benchmark_type,
+        "benchmark_confidence": result.benchmark_confidence,
+        "benchmark_confidence_score": result.benchmark_confidence_score,
+        "benchmark_sample_size": result.benchmark_sample_size,
+        "benchmark_distinct_companies": result.benchmark_distinct_companies,
+        "benchmark_sources": result.benchmark_sources,
         "ai_extraction_used": structured_profile is not None,
         "ai_extraction_confidence": structured_profile.confidence if structured_profile else None,
         "structured_profile": structured_profile.as_firestore_payload() if structured_profile else None,

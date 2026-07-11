@@ -386,8 +386,16 @@ function ProfileScanResultCard({ result, onSendMessage }) {
           <div className="profile-scan-eyebrow">CV Benchmark</div>
           <h3>{result?.target_role || 'Profile Scanner'}</h3>
           <p>{result?.message_vi || 'Profile Scanner đã hoàn tất phân tích CV.'}</p>
-          <div className="profile-analysis-mode">
-            {result?.ai_extraction_used ? (
+            <div className="profile-analysis-mode">
+              {result?.benchmark_type === 'dynamic_market' && (
+                <span>
+                  Market benchmark · {result?.benchmark_confidence || 'unknown'} confidence · {result?.benchmark_sample_size || 0} JD / {result?.benchmark_distinct_companies || 0} công ty
+                </span>
+              )}
+              {result?.benchmark_type === 'static_fallback' && (
+                <span>Static benchmark fallback · market evidence chưa đạt ngưỡng</span>
+              )}
+              {result?.ai_extraction_used ? (
               <span>Gemini-assisted extraction · confidence {Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%</span>
             ) : (
               <span>Heuristic fallback analysis</span>

@@ -22,3 +22,8 @@ output "profile_scanner_document_ai_processor" {
   value       = google_document_ai_processor.profile_scanner_cv_ocr.id
   description = "The Document AI OCR processor used by Profile Scanner PDF fallback extraction."
 }
+
+output "profile_scanner_benchmark_cache_ttl_field" {
+  value       = google_firestore_field.profile_scanner_benchmark_cache_ttl.name
+  description = "Firestore TTL field used by the Profile Scanner dynamic benchmark cache."
+}

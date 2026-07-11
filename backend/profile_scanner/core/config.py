@@ -34,6 +34,38 @@ class Settings:
     vertex_ai_location: str = os.getenv("VERTEX_AI_LOCATION", "asia-southeast1")
     profile_ai_extraction_enabled: bool = os.getenv("PROFILE_AI_EXTRACTION_ENABLED", "false").lower() == "true"
     profile_ai_model_name: str = os.getenv("PROFILE_AI_MODEL_NAME", "gemini-2.5-flash")
+    dynamic_benchmark_enabled: bool = os.getenv("DYNAMIC_BENCHMARK_ENABLED", "false").lower() == "true"
+    benchmark_snapshots_collection: str = os.getenv(
+        "BENCHMARK_SNAPSHOTS_COLLECTION",
+        "profile_scanner_benchmark_snapshots",
+    )
+    benchmark_cache_collection: str = os.getenv(
+        "BENCHMARK_CACHE_COLLECTION",
+        "profile_scanner_benchmark_cache",
+    )
+    benchmark_job_facts_collection: str = os.getenv(
+        "BENCHMARK_JOB_FACTS_COLLECTION",
+        "trend_job_facts_v2",
+    )
+    benchmark_embedding_collection: str = os.getenv(
+        "BENCHMARK_EMBEDDING_COLLECTION",
+        "job_mapping_embedding",
+    )
+    benchmark_embedding_field: str = os.getenv("BENCHMARK_EMBEDDING_FIELD", "embedding")
+    benchmark_embedding_model: str = os.getenv(
+        "BENCHMARK_EMBEDDING_MODEL",
+        "text-multilingual-embedding-002",
+    )
+    benchmark_embedding_location: str = os.getenv("BENCHMARK_EMBEDDING_LOCATION", "us-central1")
+    benchmark_embedding_dimension: int = int(os.getenv("BENCHMARK_EMBEDDING_DIMENSION", "768"))
+    benchmark_market_window_days: int = int(os.getenv("BENCHMARK_MARKET_WINDOW_DAYS", "365"))
+    benchmark_cache_days: int = int(os.getenv("BENCHMARK_CACHE_DAYS", "7"))
+    benchmark_search_limit: int = int(os.getenv("BENCHMARK_SEARCH_LIMIT", "200"))
+    benchmark_max_vector_distance: float = float(os.getenv("BENCHMARK_MAX_VECTOR_DISTANCE", "0.38"))
+    benchmark_min_skill_share: float = float(os.getenv("BENCHMARK_MIN_SKILL_SHARE", "0.05"))
+    benchmark_essential_skill_share: float = float(os.getenv("BENCHMARK_ESSENTIAL_SKILL_SHARE", "0.30"))
+    benchmark_max_skills: int = int(os.getenv("BENCHMARK_MAX_SKILLS", "24"))
+    benchmark_default_location: str = os.getenv("BENCHMARK_DEFAULT_LOCATION", "vietnam")
     holland_collection_name: str = os.getenv(
         "HOLLAND_COLLECTION_NAME",
         "profile_scanner_holland_assessments",
