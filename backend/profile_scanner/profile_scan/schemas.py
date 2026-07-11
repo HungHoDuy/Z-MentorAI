@@ -14,6 +14,7 @@ class ProfileResponse(BaseModel):
     feature: str = "profile_scan"
     scan_status: str
     cv_document_id: Optional[str] = None
+    target_role: Optional[str] = None
     message_vi: str
     next_status: str = "pending_extraction"
     parser_type: Optional[str] = None
@@ -24,6 +25,9 @@ class ProfileResponse(BaseModel):
     extracted_at: Optional[str] = None
     ocr_fallback_used: Optional[bool] = None
     target_role: Optional[str] = None
+    target_role_source: Optional[str] = None
+    target_role_confidence: Optional[float] = None
+    benchmark_status: Optional[str] = None
     benchmark_profile_id: Optional[str] = None
     benchmark_version: Optional[str] = None
     grade: Optional[str] = None
@@ -41,5 +45,7 @@ class ProfileResponse(BaseModel):
     ai_extraction_used: Optional[bool] = None
     ai_extraction_confidence: Optional[float] = None
     structured_profile: Optional[dict] = None
+    candidate_identity: Optional[dict] = None
+    profile_action: Optional[dict] = None
     analysis_artifact_gcs_uri: Optional[str] = None
     analyzed_at: Optional[str] = None

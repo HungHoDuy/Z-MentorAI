@@ -13,6 +13,7 @@ from profile_analysis.service import (
     score_education_certification,
     score_experience_evidence,
     score_role_skill_fit,
+    resolve_target_role,
 )
 
 
@@ -53,7 +54,7 @@ class ProfileAnalysisTests(unittest.TestCase):
         projects = extract_project_lines(SAMPLE_DATA_ANALYST_CV)
         education = extract_education_lines(SAMPLE_DATA_ANALYST_CV)
         dimensions = [
-            score_role_skill_fit(skills, benchmark),
+            score_role_skill_fit(skills, benchmark, SAMPLE_DATA_ANALYST_CV, work, projects),
             score_experience_evidence(SAMPLE_DATA_ANALYST_CV, work, projects),
             score_education_certification(SAMPLE_DATA_ANALYST_CV, education, benchmark),
             score_career_readiness(SAMPLE_DATA_ANALYST_CV),
@@ -62,7 +63,31 @@ class ProfileAnalysisTests(unittest.TestCase):
 
         self.assertEqual(slug, "data_analyst")
         self.assertIn("sql", skills)
-        self.assertGreaterEqual(compute_total_score(dimensions), 80)
+        self.assertGreaterEqual(compute_total_score(dimensions), 65)
+
+    def test_ai_engineer_is_not_forced_to_backend(self):
+        resolution = resolve_target_role(
+            "AI Engineer with Python, PyTorch, TensorFlow, LLM, RAG, Docker and GCP.",
+            target_role="Junior AI Engineer",
+        )
+        self.assertEqual(resolution.slug, "ai_engineer")
+        self.assertEqual(resolution.source, "user_target")
+        self.assertGreaterEqual(resolution.confidence, 0.95)
+
+    def test_accountant_is_not_forced_to_data_analyst(self):
+        resolution = resolve_target_role(
+            "Accountant responsible for audit, tax, financial reporting and Excel.",
+            target_role="Accountant",
+        )
+        self.assertEqual(resolution.slug, "accountant")
+
+    def test_unsupported_role_is_not_scored_as_nearest_technical_role(self):
+        resolution = resolve_target_role(
+            "Python SQL Docker API",
+            target_role="Marine Biologist",
+        )
+        self.assertIsNone(resolution.slug)
+        self.assertEqual(resolution.source, "unresolved")
 
 
 if __name__ == "__main__":

@@ -171,6 +171,26 @@ resource "google_firestore_index" "profile_scanner_assessments_by_user_type_crea
   depends_on = [google_project_service.apis]
 }
 
+# Latest CV lookup when the user supplies a target role after the upload turn.
+resource "google_firestore_index" "profile_scanner_cv_documents_by_user_uploaded_at" {
+  project     = var.project_id
+  database    = "(default)"
+  collection  = "profile_scanner_cv_documents"
+  query_scope = "COLLECTION"
+
+  fields {
+    field_path = "user_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "uploaded_at"
+    order      = "DESCENDING"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 # 5. Cloud Run Services (V2)
 
 # A. Profile Scanner Agent
@@ -218,6 +238,18 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
       env {
         name  = "CV_DOCUMENTS_COLLECTION"
         value = "profile_scanner_cv_documents"
+      }
+      env {
+        name  = "PROFILE_SCANNER_PROFILES_COLLECTION"
+        value = "profile_scanner_profiles"
+      }
+      env {
+        name  = "PROFILE_SCANNER_PROFILE_VERSIONS_COLLECTION"
+        value = "profile_scanner_profile_versions"
+      }
+      env {
+        name  = "PROFILE_SCANNER_ALIGNMENT_COLLECTION"
+        value = "profile_scanner_alignment_results"
       }
       env {
         name  = "CV_MAX_FILE_SIZE_BYTES"

@@ -25,6 +25,15 @@ def score_holland_answers(request: HollandScoreRequest) -> HollandScoreResponse:
             status_code=400,
             detail=f"Unknown Holland question ids: {', '.join(unknown_ids)}",
         )
+    missing_question_ids = [
+        question.id for question in HOLLAND_QUESTIONS
+        if question.id not in answered_by_id
+    ]
+    if missing_question_ids or len(answered_by_id) != len(request.answers):
+        raise HTTPException(
+            status_code=400,
+            detail="Holland assessment requires exactly one answer for every question.",
+        )
 
     raw_scores = {dimension: 0 for dimension in DIMENSION_LABELS}
     counts = defaultdict(int)
@@ -45,11 +54,6 @@ def score_holland_answers(request: HollandScoreRequest) -> HollandScoreResponse:
     )
     top_code = "-".join(sorted_dimensions[:3])
     top_dimension = sorted_dimensions[0]
-    missing_question_ids = [
-        question.id for question in HOLLAND_QUESTIONS
-        if question.id not in answered_by_id
-    ]
-
     return HollandScoreResponse(
         status="success",
         assessment_id=str(uuid.uuid4()),

@@ -36,6 +36,15 @@ def score_assessment_answers(
             status_code=400,
             detail=f"Unknown assessment question ids: {', '.join(unknown_ids)}",
         )
+    missing_question_ids = [
+        question.id for question in definition.questions
+        if question.id not in answered_by_id
+    ]
+    if missing_question_ids or len(answered_by_id) != len(request.answers):
+        raise HTTPException(
+            status_code=400,
+            detail="Assessment requires exactly one answer for every question.",
+        )
 
     raw_scores = {dimension: 0 for dimension in definition.dimension_labels}
     counts = defaultdict(int)
@@ -56,10 +65,6 @@ def score_assessment_answers(
     )
     top_dimensions = sorted_dimensions[:3]
     top_dimension = top_dimensions[0]
-    missing_question_ids = [
-        question.id for question in definition.questions
-        if question.id not in answered_by_id
-    ]
     recommendations = []
     for dimension in top_dimensions:
         recommendations.extend(definition.recommendations_by_dimension.get(dimension, []))

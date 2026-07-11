@@ -44,6 +44,16 @@ class AssessmentTests(unittest.TestCase):
                 ),
             )
 
+    def test_partial_assessment_is_rejected(self):
+        with self.assertRaises(HTTPException):
+            score_assessment_answers(
+                "multiple_intelligences",
+                AssessmentScoreRequest(
+                    user_id="test-user",
+                    answers=[AssessmentAnswer(question_id="L1", score=3)],
+                ),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
