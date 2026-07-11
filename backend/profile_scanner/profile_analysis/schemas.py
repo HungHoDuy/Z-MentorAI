@@ -33,6 +33,9 @@ class ProfileAnalysisResult(BaseModel):
     total_score: float | None = None
     score_dimensions: list[ScoreDimension]
     extracted_skills: list[str] = Field(default_factory=list)
+    normalized_skills: list[dict[str, Any]] = Field(default_factory=list)
+    raw_extracted_skills: list[str] = Field(default_factory=list)
+    skill_normalization_version: str = "skill-normalization-v1"
     work_experiences: list[str] = Field(default_factory=list)
     education_records: list[str] = Field(default_factory=list)
     projects: list[str] = Field(default_factory=list)

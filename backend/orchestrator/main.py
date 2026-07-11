@@ -193,6 +193,86 @@ class UploadAvatarRequest(BaseModel):
     avatar_base64: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    target_role: Optional[str] = None
+
+
+class SettingsUpdateRequest(BaseModel):
+    language: Optional[str] = None
+    theme: Optional[str] = None
+
+
+PROFILE_EDITABLE_FIELDS = {
+    "name", "phone", "location", "linkedin_url", "github_url",
+    "portfolio_url", "target_role",
+}
+
+
+def require_known_user(user_id: str) -> dict:
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Missing user identity")
+    if USE_FIRESTORE:
+        snapshot = firestore_client.collection("user").document(user_id).get()
+        if not snapshot.exists:
+            raise HTTPException(status_code=401, detail="Unknown user")
+        return snapshot.to_dict()
+    user = read_users_db().get("users", {}).get(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unknown user")
+    return user
+
+
+def get_profile_workspace(user_id: str) -> dict:
+    user = require_known_user(user_id)
+    preferences = user.get("preferences") or {"language": "vi", "theme": "light"}
+    canonical = None
+    active_document = None
+    if USE_FIRESTORE:
+        profile_snapshot = firestore_client.collection(
+            os.getenv("PROFILE_SCANNER_PROFILES_COLLECTION", "profile_scanner_profiles")
+        ).document(user_id).get()
+        canonical = profile_snapshot.to_dict() if profile_snapshot.exists else None
+        active_document_id = (canonical or {}).get("active_cv_document_id")
+        if active_document_id:
+            document_snapshot = firestore_client.collection(
+                os.getenv("CV_DOCUMENTS_COLLECTION", "profile_scanner_cv_documents")
+            ).document(active_document_id).get()
+            active_document = document_snapshot.to_dict() if document_snapshot.exists else None
+
+    identity = (canonical or {}).get("identity") or {}
+    return {
+        "user_id": user_id,
+        "email": user.get("email", ""),
+        "name": user.get("name") or identity.get("full_name") or "",
+        "picture": user.get("picture", ""),
+        "custom_avatar": user.get("custom_avatar"),
+        "phone": user.get("phone") or identity.get("phone") or "",
+        "location": user.get("location") or identity.get("location") or "",
+        "linkedin_url": user.get("linkedin_url") or identity.get("linkedin_url") or "",
+        "github_url": user.get("github_url") or identity.get("github_url") or "",
+        "portfolio_url": user.get("portfolio_url") or identity.get("portfolio_url") or "",
+        "target_role": user.get("target_role") or (canonical or {}).get("target_role") or "",
+        "preferences": preferences,
+        "current_cv": None if not canonical else {
+            "cv_document_id": canonical.get("active_cv_document_id"),
+            "original_filename": (active_document or {}).get("original_filename"),
+            "uploaded_at": (active_document or {}).get("uploaded_at"),
+            "grade": canonical.get("grade"),
+            "total_score": canonical.get("total_score"),
+            "headline": canonical.get("headline"),
+            "summary": canonical.get("summary"),
+            "skills": canonical.get("normalized_skills") or canonical.get("skills") or [],
+            "profile_version": canonical.get("profile_version"),
+        },
+    }
+
+
 if USE_VERTEX_AI:
     from langchain_google_vertexai import ChatVertexAI
     llm = ChatVertexAI(
@@ -509,6 +589,43 @@ async def auth_upload_avatar(request: UploadAvatarRequest):
     user["custom_avatar"] = request.avatar_base64
     await save_user(request.google_id, user)
     return user
+
+
+@app.get("/me/profile")
+async def get_my_profile(x_user_id: str = Header(...)):
+    return get_profile_workspace(x_user_id)
+
+
+@app.patch("/me/profile")
+async def update_my_profile(request: ProfileUpdateRequest, x_user_id: str = Header(...)):
+    user = require_known_user(x_user_id)
+    updates = request.model_dump(exclude_none=True)
+    for key in list(updates):
+        if key not in PROFILE_EDITABLE_FIELDS:
+            updates.pop(key)
+            continue
+        if isinstance(updates[key], str):
+            updates[key] = updates[key].strip()
+    user.update(updates)
+    user["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await save_user(x_user_id, user)
+    return get_profile_workspace(x_user_id)
+
+
+@app.patch("/me/settings")
+async def update_my_settings(request: SettingsUpdateRequest, x_user_id: str = Header(...)):
+    user = require_known_user(x_user_id)
+    updates = request.model_dump(exclude_none=True)
+    language = updates.get("language", (user.get("preferences") or {}).get("language", "vi"))
+    theme = updates.get("theme", (user.get("preferences") or {}).get("theme", "light"))
+    if language not in {"vi", "en"}:
+        raise HTTPException(status_code=422, detail="language must be vi or en")
+    if theme not in {"light", "dark"}:
+        raise HTTPException(status_code=422, detail="theme must be light or dark")
+    user["preferences"] = {"language": language, "theme": theme}
+    user["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await save_user(x_user_id, user)
+    return user["preferences"]
 
 
 @app.post("/profile-scanner/cv/upload")

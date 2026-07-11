@@ -40,6 +40,8 @@ class ProfileResponse(BaseModel):
     total_score: Optional[float] = None
     score_dimensions: Optional[list[dict]] = None
     extracted_skills: Optional[list[str]] = None
+    normalized_skills: Optional[list[dict]] = None
+    skill_normalization_version: Optional[str] = None
     work_experiences: Optional[list[str]] = None
     education_records: Optional[list[str]] = None
     projects: Optional[list[str]] = None

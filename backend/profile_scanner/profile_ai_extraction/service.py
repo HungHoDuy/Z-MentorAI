@@ -66,6 +66,9 @@ def build_extraction_prompt(parsed_text: str, target_role: str | None, message: 
         "You are Profile Scanner's CV structure extractor. "
         "Extract only facts directly supported by the CV text. "
         "Do not invent employers, degrees, dates, skills, scores, or career advice. "
+        "For skills, return concise canonical technology or competency names, merge aliases, "
+        "preserve standard acronyms, and exclude sentence fragments or generic terms such as API, cloud, software, and web. "
+        "Only return a soft skill when the CV explicitly states or demonstrates it. "
         "Return one valid JSON object only, without markdown."
     )
     user_prompt = {
