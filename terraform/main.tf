@@ -145,6 +145,32 @@ resource "google_firestore_index" "holland_assessments_by_user_created_at" {
   depends_on = [google_project_service.apis]
 }
 
+# Firestore composite index required by:
+# profile_scanner_assessments.where(user_id == X).where(assessment_type == Y).order_by(created_at desc).limit(1)
+resource "google_firestore_index" "profile_scanner_assessments_by_user_type_created_at" {
+  project     = var.project_id
+  database    = "(default)"
+  collection  = "profile_scanner_assessments"
+  query_scope = "COLLECTION"
+
+  fields {
+    field_path = "user_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "assessment_type"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 # 5. Cloud Run Services (V2)
 
 # A. Profile Scanner Agent
@@ -180,6 +206,10 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
       env {
         name  = "HOLLAND_COLLECTION_NAME"
         value = "profile_scanner_holland_assessments"
+      }
+      env {
+        name  = "ASSESSMENTS_COLLECTION_NAME"
+        value = "profile_scanner_assessments"
       }
       env {
         name  = "CV_STORAGE_BUCKET"

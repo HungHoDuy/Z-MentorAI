@@ -127,21 +127,43 @@ def profile_scanner(
     background_info: str = "",
     task: str = "scan_profile",
     answers_json: str = "",
-    cv_document_id: str = ""
+    cv_document_id: str = "",
+    assessment_type: str = ""
 ) -> dict:
-    """Use this Profile Scanner agent tool for CV/profile scanning and Holland/RIASEC career-interest assessment.
+    """Use this Profile Scanner agent tool for CV/profile scanning and career/profile assessments.
 
     Supported task values:
     - scan_profile: scan a previously uploaded CV document when cv_document_id is provided.
     - holland_start: start the Holland/RIASEC test and return the question bank.
     - holland_score: score and save completed Holland/RIASEC answers.
+    - assessment_start: start a supported assessment, for example assessment_type="multiple_intelligences".
+    - assessment_score: score and save a supported assessment.
 
-    For holland_score, answers_json must be a JSON array like:
+    For scoring tasks, answers_json must be a JSON array like:
     [{"question_id":"R1","score":5},{"question_id":"I1","score":4}]
     Scores are integers from 1 to 5.
     """
     normalized_task = task.strip().lower()
-    sub_agent = "holland_test" if normalized_task in {"holland", "holland_start", "riasec", "riasec_start", "holland_score", "riasec_score"} or answers_json.strip() else "scan_cv"
+    normalized_assessment_type = (assessment_type or "").strip().lower()
+    is_assessment_task = normalized_task in {
+        "mi",
+        "mi_start",
+        "multiple_intelligences",
+        "multiple_intelligences_start",
+        "assessment_start",
+        "mi_score",
+        "multiple_intelligences_score",
+        "assessment_score",
+    }
+    is_holland_task = normalized_task in {
+        "holland",
+        "holland_start",
+        "riasec",
+        "riasec_start",
+        "holland_score",
+        "riasec_score",
+    }
+    sub_agent = "assessment" if is_assessment_task else "holland_test" if is_holland_task or answers_json.strip() else "scan_cv"
     _log_event(
         "mcp_tool_call",
         agent="profile_scanner",
@@ -149,8 +171,51 @@ def profile_scanner(
         user_id=user_id,
         user_query=_short_text(background_info),
         task=normalized_task,
+        assessment_type=normalized_assessment_type,
         has_cv_document=bool(cv_document_id),
     )
+
+    if normalized_task in {
+        "mi",
+        "mi_start",
+        "multiple_intelligences",
+        "multiple_intelligences_start",
+        "assessment_start",
+    }:
+        target_assessment = normalized_assessment_type or "multiple_intelligences"
+        return get_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/start/{user_id}")
+
+    if normalized_task in {
+        "mi_score",
+        "multiple_intelligences_score",
+        "assessment_score",
+    }:
+        target_assessment = normalized_assessment_type or "multiple_intelligences"
+        if not answers_json.strip():
+            return {
+                "status": "error",
+                "feature": "assessment",
+                "assessment_type": target_assessment,
+                "error": "answers_json is required when task is assessment_score.",
+                "expected_format": [{"question_id": "M1", "score": 5}]
+            }
+
+        try:
+            answers = json.loads(answers_json)
+        except json.JSONDecodeError as exc:
+            return {
+                "status": "error",
+                "feature": "assessment",
+                "assessment_type": target_assessment,
+                "error": f"answers_json must be valid JSON: {exc}",
+                "expected_format": [{"question_id": "M1", "score": 5}]
+            }
+
+        return fetch_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/score", {
+            "user_id": user_id,
+            "answers": answers,
+            "source": "orchestrator_chat"
+        })
 
     if normalized_task in {"holland", "holland_start", "riasec", "riasec_start"}:
         return get_data_sync(PROFILE_SCANNER_URL, f"/holland/start/{user_id}")
