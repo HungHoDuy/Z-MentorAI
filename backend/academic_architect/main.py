@@ -289,18 +289,13 @@ async def create_plan(request: ArchitectRequest):
         if USE_FIRESTORE:
             try:
                 db = get_firestore_client()
-                cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", request.user_id).stream()
-                cv_docs = list(cv_docs_query)
-                if cv_docs:
-                    cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
-                    latest_doc = cv_docs[0].to_dict()
-                    profile_analysis = latest_doc.get("profile_analysis", {})
-                    user_skills = profile_analysis.get("extracted_skills", []) or latest_doc.get("extracted_skills", [])
-                    if not user_skills:
-                        user_skills = profile_analysis.get("structured_profile", {}).get("skills", [])
-                    logger.info(f"Retrieved user skills from Firestore for user {request.user_id}: {user_skills}")
+                profile_doc = db.collection("profile_scanner_profiles").document(request.user_id).get()
+                if profile_doc.exists:
+                    profile_data = profile_doc.to_dict() or {}
+                    user_skills = profile_data.get("skills", []) or profile_data.get("extracted_skills", [])
+                    logger.info(f"Retrieved user skills from Firestore profile_scanner_profiles for user {request.user_id}: {user_skills}")
             except Exception as ex:
-                logger.error(f"Failed to query user CV documents from Firestore: {ex}")
+                logger.error(f"Failed to query user profile from Firestore: {ex}")
         
         # Fallback to local DB if no skills found in Firestore or Firestore disabled
         if not user_skills:
@@ -533,15 +528,11 @@ async def get_user_skills(user_id: str):
     if USE_FIRESTORE:
         try:
             db = get_firestore_client()
-            cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", user_id).stream()
-            cv_docs = list(cv_docs_query)
-            if cv_docs:
-                cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
-                latest_doc = cv_docs[0].to_dict()
-                profile_analysis = latest_doc.get("profile_analysis", {})
-                user_skills = profile_analysis.get("extracted_skills", []) or latest_doc.get("extracted_skills", [])
-                if not user_skills:
-                    user_skills = profile_analysis.get("structured_profile", {}).get("skills", [])
+            profile_doc = db.collection("profile_scanner_profiles").document(user_id).get()
+            if profile_doc.exists:
+                profile_data = profile_doc.to_dict() or {}
+                user_skills = profile_data.get("skills", []) or profile_data.get("extracted_skills", [])
+                logger.info(f"Retrieved user skills from Firestore profile_scanner_profiles for user {user_id}: {user_skills}")
         except Exception as e:
             logger.error(f"Failed to get user skills from Firestore: {e}")
             
@@ -559,33 +550,15 @@ async def update_user_skills(user_id: str, request: SkillsUpdateRequest):
     if USE_FIRESTORE:
         try:
             db = get_firestore_client()
-            cv_docs_query = db.collection("profile_scanner_cv_documents").where("user_id", "==", user_id).stream()
-            cv_docs = list(cv_docs_query)
-            
-            if cv_docs:
-                cv_docs.sort(key=lambda d: d.to_dict().get("analyzed_at", d.to_dict().get("extracted_at", "")), reverse=True)
-                latest_doc_ref = cv_docs[0].reference
-                latest_doc = cv_docs[0].to_dict()
-                
-                # Update standard locations
-                updates = {
-                    "extracted_skills": request.skills,
-                    "analyzed_at": datetime.datetime.utcnow().isoformat() + "Z"
-                }
-                
-                # Also nested locations
-                if "profile_analysis" in latest_doc:
-                    profile_analysis = latest_doc["profile_analysis"] or {}
-                    profile_analysis["extracted_skills"] = request.skills
-                    if "structured_profile" in profile_analysis:
-                        structured_profile = profile_analysis["structured_profile"] or {}
-                        structured_profile["skills"] = request.skills
-                        profile_analysis["structured_profile"] = structured_profile
-                    updates["profile_analysis"] = profile_analysis
-                    
-                latest_doc_ref.update(updates)
-                logger.info(f"Updated user skills in Firestore for user {user_id} in doc {latest_doc_ref.id}")
-                updated_firestore = True
+            doc_ref = db.collection("profile_scanner_profiles").document(user_id)
+            updates = {
+                "skills": request.skills,
+                "extracted_skills": request.skills,
+                "updated_at": datetime.datetime.utcnow().isoformat() + "Z"
+            }
+            doc_ref.set(updates, merge=True)
+            logger.info(f"Updated user skills in Firestore profile_scanner_profiles for user {user_id}")
+            updated_firestore = True
         except Exception as e:
             logger.error(f"Failed to update user skills in Firestore: {e}")
             raise HTTPException(status_code=500, detail=str(e))
