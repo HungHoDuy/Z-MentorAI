@@ -871,23 +871,6 @@ async def append_to_calendar(
             except Exception as list_err:
                 logger.warning(f"Failed to add calendar to calendarList: {list_err}")
 
-            # 2. Share calendar with user email via ACL (especially useful if running as Service Account)
-            user_data = await get_user_by_id(x_user_id)
-            if user_data and user_data.get("email"):
-                user_email = user_data["email"]
-                try:
-                    rule = {
-                        'scope': {
-                            'type': 'user',
-                            'value': user_email,
-                        },
-                        'role': 'editor'
-                    }
-                    service.acl().insert(calendarId=calendar_id, body=rule).execute()
-                    logger.info(f"Shared calendar {calendar_id} via ACL with user {user_email}")
-                except Exception as acl_err:
-                    logger.warning(f"Failed to share calendar via ACL: {acl_err}")
-
         except Exception as cal_err:
             logger.warning(f"Failed to create secondary calendar: {cal_err}. Falling back to primary calendar.")
             calendar_id = 'primary'
