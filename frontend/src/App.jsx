@@ -785,25 +785,13 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   const lackingSkills = output.lacking_skills || [];
   const careerGoal = output.career_goal || 'Lộ trình học tập';
 
-  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'generating' | 'preview' | 'loading' | 'success' | 'error'
+  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'generating' | 'preview' | 'success' | 'error'
   const [calendarMessage, setCalendarMessage] = useState('');
   const [proposedEvents, setProposedEvents] = useState([]);
-  const [clientId, setClientId] = useState('');
-
-  useEffect(() => {
-    fetch(`${backendUrl}/auth/config`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.google_client_id) setClientId(data.google_client_id);
-      })
-      .catch((err) => console.error('Không thể tải Google Client ID', err));
-  }, [backendUrl]);
 
   const handleGenerateSchedule = async () => {
-    if (!user || calendarStatus === 'generating' || calendarStatus === 'loading') return;
+    if (!user || calendarStatus === 'generating') return;
     if (courses.length === 0) return;
-    
-    const courseToSchedule = courses[0];
 
     setCalendarStatus('generating');
     setCalendarMessage('');
@@ -836,75 +824,159 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
     }
   };
 
-  const handleAddToCalendar = async () => {
-    if (!user || calendarStatus === 'loading') return;
-    if (proposedEvents.length === 0) return;
-    if (!clientId) {
-      setCalendarStatus('error');
-      setCalendarMessage('Google Client ID chưa được tải. Vui lòng thử lại sau.');
-      return;
+  const expandRecurrentEvents = (events) => {
+    const expanded = [];
+    
+    for (const event of events) {
+      const startDt = new Date(event.start.dateTime);
+      const endDt = new Date(event.end.dateTime);
+      const durationMs = endDt.getTime() - startDt.getTime();
+      
+      let recurrenceRule = null;
+      if (event.recurrence && event.recurrence[0]) {
+        recurrenceRule = event.recurrence[0];
+      }
+      
+      if (!recurrenceRule) {
+        expanded.push({
+          summary: event.summary,
+          description: event.description,
+          startDate: startDt,
+          endDate: endDt
+        });
+        continue;
+      }
+      
+      const parts = recurrenceRule.replace("RRULE:", "").split(";");
+      const ruleObj = {};
+      for (const part of parts) {
+        const [key, val] = part.split("=");
+        if (key && val) {
+          ruleObj[key] = val;
+        }
+      }
+      
+      const freq = ruleObj.FREQ;
+      const count = parseInt(ruleObj.COUNT) || 1;
+      
+      if (freq === 'DAILY') {
+        let currentDate = new Date(startDt);
+        for (let i = 0; i < count; i++) {
+          const occurrenceStart = new Date(currentDate);
+          const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+          expanded.push({
+            summary: event.summary,
+            description: event.description,
+            startDate: occurrenceStart,
+            endDate: occurrenceEnd
+          });
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      } else if (freq === 'WEEKLY') {
+        const byDay = ruleObj.BYDAY ? ruleObj.BYDAY.split(",") : [];
+        const dayMap = { 'SU': 0, 'MO': 1, 'TU': 2, 'WE': 3, 'TH': 4, 'FR': 5, 'SA': 6 };
+        const targetDays = byDay.map(d => dayMap[d]);
+        
+        let currentDate = new Date(startDt);
+        let occurrencesGenerated = 0;
+        const maxAttempts = 1000;
+        let attempts = 0;
+        
+        while (occurrencesGenerated < count && attempts < maxAttempts) {
+          attempts++;
+          const currentDayOfWeek = currentDate.getDay();
+          if (targetDays.length === 0 || targetDays.includes(currentDayOfWeek)) {
+            const occurrenceStart = new Date(currentDate);
+            const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+            expanded.push({
+              summary: event.summary,
+              description: event.description,
+              startDate: occurrenceStart,
+              endDate: occurrenceEnd
+            });
+            occurrencesGenerated++;
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      } else {
+        expanded.push({
+          summary: event.summary,
+          description: event.description,
+          startDate: startDt,
+          endDate: endDt
+        });
+      }
     }
+    
+    return expanded;
+  };
+
+  const handleExportToCSV = () => {
+    if (proposedEvents.length === 0) return;
 
     try {
-      if (!window.google?.accounts?.oauth2?.initTokenClient) {
-        throw new Error('Google OAuth library chưa sẵn sàng. Vui lòng thử lại.');
-      }
-
-      setCalendarStatus('loading');
-
-      const tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/calendar',
-        callback: async (tokenResponse) => {
-          if (tokenResponse.error) {
-            setCalendarStatus('error');
-            setCalendarMessage('Quyền truy cập lịch bị từ chối.');
-            return;
-          }
-
-          const accessToken = tokenResponse.access_token;
-          if (!accessToken) {
-            setCalendarStatus('error');
-            setCalendarMessage('Không nhận được access token.');
-            return;
-          }
-
-          try {
-            const res = await fetch(`${backendUrl}/calendar/append`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-User-Id': user.google_id,
-                'Authorization': `Bearer ${accessToken}`,
-                'X-Google-Access-Token': accessToken
-              },
-              body: JSON.stringify({
-                career_goal: careerGoal,
-                lacking_skills: lackingSkills,
-                events: proposedEvents
-              })
-            });
-            if (!res.ok) {
-              const errorData = await res.json().catch(() => ({}));
-              throw new Error(errorData.detail || 'Không thể đồng bộ lịch học');
-            }
-            const data = await res.json();
-            setCalendarStatus('success');
-            setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
-          } catch (err) {
-            console.error(err);
-            setCalendarStatus('error');
-            setCalendarMessage(err.message || 'Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
-          }
-        }
+      const expandedEvents = expandRecurrentEvents(proposedEvents);
+      
+      const headers = ['Subject', 'Start Date', 'Start Time', 'End Date', 'End Time', 'All Day Event', 'Description'];
+      
+      const rows = expandedEvents.map(event => {
+        const sDate = event.startDate;
+        const eDate = event.endDate;
+        
+        const pad = (num) => String(num).padStart(2, '0');
+        const formatDate = (d) => `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`;
+        
+        const formatTime = (d) => {
+          let hours = d.getHours();
+          const minutes = pad(d.getMinutes());
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12;
+          hours = hours ? hours : 12;
+          return `${pad(hours)}:${minutes} ${ampm}`;
+        };
+        
+        const subject = event.summary;
+        const startDate = formatDate(sDate);
+        const startTime = formatTime(sDate);
+        const endDate = formatDate(eDate);
+        const endTime = formatTime(eDate);
+        const allDayEvent = 'False';
+        const description = event.description || '';
+        
+        const escapeCsv = (str) => {
+          const clean = str.replace(/"/g, '""');
+          return `"${clean}"`;
+        };
+        
+        return [
+          escapeCsv(subject),
+          escapeCsv(startDate),
+          escapeCsv(startTime),
+          escapeCsv(endDate),
+          escapeCsv(endTime),
+          escapeCsv(allDayEvent),
+          escapeCsv(description)
+        ].join(',');
       });
-
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-
+      
+      const csvContent = "\ufeff" + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      const filename = `Lịch_Học_Tập_${careerGoal.replace(/\s+/g, '_')}.csv`;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setCalendarStatus('success');
+      setCalendarMessage('Đã tải xuống file CSV lịch thành công! Bạn có thể nhập file này vào Google Calendar (Cài đặt -> Nhập & xuất -> Chọn file từ máy tính) để thêm toàn bộ lộ trình học.');
     } catch (err) {
       console.error(err);
       setCalendarStatus('error');
-      setCalendarMessage(err.message || 'Khởi tạo Google Sign-in thất bại.');
+      setCalendarMessage('Không thể tạo và tải xuống file CSV. Vui lòng thử lại sau.');
     }
   };
 
@@ -967,17 +1039,17 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
     <div className="calendar-sync-card">
       <div className="calendar-card-header">
         <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
-        <h4>Lập kế hoạch học tập trên Google Calendar</h4>
+        <h4>Lập kế hoạch học tập</h4>
       </div>
       
       {calendarStatus === 'idle' && (
         <>
           <p className="calendar-card-desc">
-            Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
+            Tạo và tải xuống file CSV để dễ dàng nhập lộ trình học này vào Google Calendar, Outlook hoặc Apple Calendar của bạn.
           </p>
           <div className="calendar-card-actions">
             <button className="calendar-sync-btn" onClick={handleGenerateSchedule} disabled={courses.length === 0}>
-              Đồng bộ khóa học vào Google Calendar
+              Tạo lịch học tập
             </button>
           </div>
         </>
@@ -1074,29 +1146,22 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
             <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
               Hủy
             </button>
-            <button className="calendar-sync-btn confirm-sync-btn" onClick={handleAddToCalendar}>
-              Xác nhận & Đồng bộ vào Lịch thực
+            <button className="calendar-sync-btn confirm-sync-btn" onClick={handleExportToCSV}>
+              Tải xuống file CSV
             </button>
           </div>
         </div>
-      )}
-
-      {calendarStatus === 'loading' && (
-        <>
-          <p className="calendar-card-desc">Đang tiến hành đồng bộ các sự kiện vào Google Calendar thực của bạn...</p>
-          <div className="calendar-card-actions">
-            <button className="calendar-sync-btn loading" disabled>
-              <span className="btn-spinner" />
-              Đang đồng bộ thực...
-            </button>
-          </div>
-        </>
       )}
 
       {calendarStatus === 'success' && (
         <div className="calendar-sync-success-msg">
           <span className="success-check">✓</span>
           <span>{calendarMessage}</span>
+          <div style={{ marginTop: '10px' }}>
+            <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+              Đóng
+            </button>
+          </div>
         </div>
       )}
 
@@ -1108,7 +1173,7 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
             <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
               Quay lại
             </button>
-            <button className="calendar-retry-btn" onClick={proposedEvents.length > 0 ? handleAddToCalendar : handleGenerateSchedule}>
+            <button className="calendar-retry-btn" onClick={proposedEvents.length > 0 ? handleExportToCSV : handleGenerateSchedule}>
               Thử lại
             </button>
           </div>
