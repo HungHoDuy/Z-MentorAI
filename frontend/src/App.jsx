@@ -570,12 +570,12 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
         body: JSON.stringify({
           career_goal: careerGoal,
           lacking_skills: lackingSkills,
-          courses: [{ 
-            name: courseToSchedule.name, 
-            url: courseToSchedule.url,
-            duration: courseToSchedule.duration || '15 giờ',
-            workload: courseToSchedule.workload || ''
-          }]
+          courses: courses.map(c => ({ 
+            name: c.name, 
+            url: c.url,
+            duration: c.duration || '15 giờ',
+            workload: c.workload || ''
+          }))
         })
       });
       if (!res.ok) throw new Error('Không thể tạo lịch học dự kiến');

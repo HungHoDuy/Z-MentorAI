@@ -449,60 +449,66 @@ Example response:
 
         # 4. Perform vector search for each identified query in parallel
         import asyncio
-        retrieved_courses = []
+        selected_courses = []
+        alternative_courses = []
         seen_course_ids = set()
 
-        async def run_search(task):
+        async def process_task(task):
             s_text = task.get("search_text")
             s_mode = task.get("search_mode", "description")
             s_domain = task.get("domain")
+            subject = task.get("subject", "general")
             if not s_text:
-                return []
+                return None, []
             try:
                 # perform_vector_search is synchronous, run it in a thread pool
                 results, domain_used = await asyncio.to_thread(
                     perform_vector_search, s_text, s_mode, s_domain, 3
                 )
-                return results
-            except Exception as ex:
-                logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
-                return []
-
-        search_tasks = [run_search(task) for task in query_tasks]
-        results_list = await asyncio.gather(*search_tasks)
-
-        for results in results_list:
-            for c in results:
-                if c["course_id"] not in seen_course_ids:
-                    seen_course_ids.add(c["course_id"])
-                    retrieved_courses.append(c)
-
-        # 5. Let LLM select the single best course from the retrieved courses
-        best_course = retrieved_courses[0] if retrieved_courses else None
-        if len(retrieved_courses) > 1:
-            courses_list_text = "\n".join([f"Index {idx}: {c['name']} (Mô tả: {c['description'][:200]})" for idx, c in enumerate(retrieved_courses)])
-            prompt_select_best = f"""
-Dựa trên mục tiêu nghề nghiệp: "{request.career_goal}" và các kỹ năng còn thiếu: {json.dumps(lacking_skills)}.
-Hãy chọn ra đúng 1 khóa học phù hợp nhất, thiết thực nhất từ danh sách các khóa học Coursera dưới đây để người học bắt đầu ngay lập tức.
+                if not results:
+                    return None, []
+                
+                # Let LLM select the best course from the retrieved courses for this subject
+                best_course = results[0]
+                if len(results) > 1:
+                    courses_list_text = "\n".join([f"Index {idx}: {c['name']} (Mô tả: {c['description'][:200]})" for idx, c in enumerate(results)])
+                    prompt_select_best = f"""
+Dựa trên mục tiêu nghề nghiệp: "{request.career_goal}" và kỹ năng còn thiếu: "{subject}".
+Hãy chọn ra đúng 1 khóa học phù hợp nhất, thiết thực nhất từ danh sách các khóa học Coursera dưới đây để người học bắt đầu học kỹ năng này.
 Trả về duy nhất chỉ số Index của khóa học được chọn (ví dụ: 0 hoặc 1 hoặc 2), không trả thêm bất kỳ từ ngữ nào khác.
 
 Danh sách khóa học:
 {courses_list_text}
 """
-            try:
-                res_best = await llm.ainvoke(prompt_select_best)
-                best_idx_str = res_best.content.strip()
-                match = re.search(r'\d+', best_idx_str)
-                if match:
-                    best_idx = int(match.group(0))
-                    if 0 <= best_idx < len(retrieved_courses):
-                        best_course = retrieved_courses[best_idx]
-                        logger.info(f"LLM selected best course before plan: index {best_idx} ({best_course['name']})")
-            except Exception as e:
-                logger.error(f"Failed to let LLM select best course: {e}")
+                    try:
+                        res_best = await llm.ainvoke(prompt_select_best)
+                        best_idx_str = res_best.content.strip()
+                        match = re.search(r'\d+', best_idx_str)
+                        if match:
+                            best_idx = int(match.group(0))
+                            if 0 <= best_idx < len(results):
+                                best_course = results[best_idx]
+                                logger.info(f"LLM selected best course for subject '{subject}': index {best_idx} ({best_course['name']})")
+                    except Exception as e:
+                        logger.error(f"Failed to let LLM select best course for subject '{subject}': {e}")
+                
+                alts = [c for c in results if c["course_id"] != best_course["course_id"]]
+                return best_course, alts
+            except Exception as ex:
+                logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
+                return None, []
 
-        selected_courses = [best_course] if best_course else []
-        alternative_courses = [c for c in retrieved_courses if c["course_id"] != (best_course["course_id"] if best_course else "")]
+        task_futures = [process_task(task) for task in query_tasks]
+        task_results = await asyncio.gather(*task_futures)
+
+        for best, alts in task_results:
+            if best and best["course_id"] not in seen_course_ids:
+                seen_course_ids.add(best["course_id"])
+                selected_courses.append(best)
+            for alt in alts:
+                if alt["course_id"] not in seen_course_ids:
+                    seen_course_ids.add(alt["course_id"])
+                    alternative_courses.append(alt)
         
         # We delegate academic_plan generation to the orchestrator for streaming token-by-token.
         academic_plan_summary = f"Lộ trình học tập đề xuất cho mục tiêu {request.career_goal}."
