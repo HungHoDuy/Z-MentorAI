@@ -865,6 +865,30 @@ async def append_to_calendar(
             created_calendar = service.calendars().insert(body=calendar_body).execute()
             calendar_id = created_calendar['id']
             calendar_name = created_calendar['summary']
+            
+            # 1. Explicitly add to calendarList to show in sidebar
+            try:
+                service.calendarList().insert(body={'id': calendar_id}).execute()
+                logger.info(f"Explicitly added calendar {calendar_id} to calendarList")
+            except Exception as list_err:
+                logger.warning(f"Failed to add calendar to calendarList: {list_err}")
+
+            # 2. Add ACL rule to share calendar with the user's personal email
+            try:
+                user_data = await get_user_by_id(x_user_id)
+                if user_data and user_data.get("email"):
+                    user_email = user_data["email"]
+                    rule = {
+                        'scope': {
+                            'type': 'user',
+                            'value': user_email,
+                        },
+                        'role': 'editor'
+                    }
+                    service.acl().insert(calendarId=calendar_id, body=rule).execute()
+                    logger.info(f"Shared calendar {calendar_id} via ACL with user {user_email}")
+            except Exception as acl_err:
+                logger.warning(f"Failed to share calendar via ACL: {acl_err}")
         except Exception as cal_err:
             logger.warning(f"Failed to create secondary calendar: {cal_err}. Falling back to primary calendar.")
             calendar_id = 'primary'
