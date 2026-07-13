@@ -840,18 +840,16 @@ async def append_to_calendar(
     try:
         from googleapiclient.discovery import build
         
-        # Use user credentials if access token is provided, otherwise fall back to default
-        if x_google_access_token:
-            from google.oauth2.credentials import Credentials
-            credentials = Credentials(token=x_google_access_token)
-            logger.info("Using user OAuth access token for Google Calendar API")
-        else:
-            import google.auth
-            # Load default credentials with calendar scope
-            credentials, project = google.auth.default(
-                scopes=['https://www.googleapis.com/auth/calendar']
+        # Use user credentials if access token is provided
+        if not x_google_access_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing Google OAuth Access Token in request headers."
             )
-            logger.info("Using Application Default Credentials (ADC) for Google Calendar API")
+            
+        from google.oauth2.credentials import Credentials
+        credentials = Credentials(token=x_google_access_token)
+        logger.info("Using user OAuth access token for Google Calendar API")
             
         service = build('calendar', 'v3', credentials=credentials)
         
