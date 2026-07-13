@@ -823,7 +823,8 @@ async def generate_schedule(request: CalendarAppendRequest, x_user_id: str = Hea
 async def append_to_calendar(
     request: CalendarSyncRequest, 
     x_user_id: str = Header(...),
-    x_google_access_token: Optional[str] = Header(None)
+    x_google_access_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None)
 ):
     logger.info(f"Calendar: Appending {len(request.events)} customized events for user {x_user_id} towards target '{request.career_goal}'")
     
@@ -840,15 +841,22 @@ async def append_to_calendar(
     try:
         from googleapiclient.discovery import build
         
+        # Extract token from Authorization header or custom header
+        token = None
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization[7:].strip()
+        elif x_google_access_token:
+            token = x_google_access_token
+            
         # Use user credentials if access token is provided
-        if not x_google_access_token:
+        if not token:
             raise HTTPException(
                 status_code=401,
                 detail="Missing Google OAuth Access Token in request headers."
             )
             
         from google.oauth2.credentials import Credentials
-        credentials = Credentials(token=x_google_access_token)
+        credentials = Credentials(token=token)
         logger.info("Using user OAuth access token for Google Calendar API")
             
         service = build('calendar', 'v3', credentials=credentials)
