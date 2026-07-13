@@ -791,40 +791,86 @@ class CalendarAppendRequest(BaseModel):
     lacking_skills: list[str]
     courses: list[dict]
 
-@app.post("/calendar/append")
-async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = Header(...)):
-    logger.info(f"Calendar: Appending {len(request.courses)} courses for user {x_user_id} towards target '{request.career_goal}'")
+class CalendarEventModel(BaseModel):
+    summary: str
+    description: str
+    start: dict
+    end: dict
+    recurrence: list[str]
+    reminders: dict
+
+class CalendarSyncRequest(BaseModel):
+    career_goal: str
+    lacking_skills: list[str]
+    events: list[CalendarEventModel]
+
+async def save_calendar_schedule(google_id: str, schedule_data: dict) -> str:
+    """Saves calendar schedule to Firestore (or local JSON file) and returns document ID."""
+    import uuid
+    import datetime
+    doc_id = str(uuid.uuid4())
+    schedule_data["id"] = doc_id
+    schedule_data["user_id"] = google_id
+    schedule_data["created_at"] = datetime.datetime.utcnow().isoformat() + "Z"
     
-    try:
-        import google.auth
-        from googleapiclient.discovery import build
-        
-        # Load default credentials with calendar scope
-        credentials, project = google.auth.default(
-            scopes=['https://www.googleapis.com/auth/calendar']
-        )
-        service = build('calendar', 'v3', credentials=credentials)
-        
-        # 1. Create a dedicated secondary calendar for the study roadmap
-        calendar_body = {
-            'summary': f"Z-Mentor AI: {request.career_goal}",
-            'timeZone': 'Asia/Ho_Chi_Minh'
-        }
-        
+    if USE_FIRESTORE and firestore_client:
         try:
-            created_calendar = service.calendars().insert(body=calendar_body).execute()
-            calendar_id = created_calendar['id']
-            calendar_name = created_calendar['summary']
-        except Exception as cal_err:
-            logger.warning(f"Failed to create secondary calendar: {cal_err}. Falling back to primary calendar.")
-            calendar_id = 'primary'
-            calendar_name = "Primary Calendar"
+            firestore_client.collection("user_calendar_schedules").document(doc_id).set(schedule_data)
+            logger.info(f"Saved schedule {doc_id} to Firestore collection user_calendar_schedules")
+        except Exception as e:
+            logger.error(f"Failed to save schedule to Firestore: {e}")
+    else:
+        # Local JSON fallback
+        db_path = os.path.join(os.path.dirname(__file__), "calendar_schedules_db.json")
+        db = {}
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, "r", encoding="utf-8") as f:
+                    db = json.load(f)
+            except Exception:
+                db = {}
+        db[doc_id] = schedule_data
+        try:
+            with open(db_path, "w", encoding="utf-8") as f:
+                json.dump(db, f, indent=2, ensure_ascii=False)
+            logger.info(f"Saved schedule {doc_id} to local JSON DB calendar_schedules_db.json")
+        except Exception as e:
+            logger.error(f"Failed to save schedule to local JSON DB: {e}")
             
-        # 2. Add each course as an event/task sequence on Google Calendar
+    return doc_id
+
+async def update_calendar_schedule_status(doc_id: str, updates: dict):
+    """Updates fields of an existing calendar schedule."""
+    if USE_FIRESTORE and firestore_client:
+        try:
+            firestore_client.collection("user_calendar_schedules").document(doc_id).update(updates)
+            logger.info(f"Updated schedule {doc_id} in Firestore collection user_calendar_schedules: {updates}")
+        except Exception as e:
+            logger.error(f"Failed to update schedule in Firestore: {e}")
+    else:
+        # Local JSON fallback
+        db_path = os.path.join(os.path.dirname(__file__), "calendar_schedules_db.json")
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, "r", encoding="utf-8") as f:
+                    db = json.load(f)
+                if doc_id in db:
+                    db[doc_id].update(updates)
+                    with open(db_path, "w", encoding="utf-8") as f:
+                        json.dump(db, f, indent=2, ensure_ascii=False)
+                    logger.info(f"Updated schedule {doc_id} in local JSON DB: {updates}")
+            except Exception as e:
+                logger.error(f"Failed to update schedule in local JSON DB: {e}")
+
+@app.post("/calendar/generate-schedule")
+async def generate_schedule(request: CalendarAppendRequest, x_user_id: str = Header(...)):
+    logger.info(f"Calendar: Generating schedule for user {x_user_id} towards target '{request.career_goal}'")
+    try:
         import datetime
         today = datetime.date.today()
         current_day_offset = 1  # start tomorrow
         
+        events = []
         for i, course in enumerate(request.courses):
             workload_str = course.get('workload')
             duration_str = course.get('duration') or '15 giờ'
@@ -865,7 +911,7 @@ async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = He
                         ],
                     },
                 }
-                service.events().insert(calendarId=calendar_id, body=event_body).execute()
+                events.append(event_body)
                 current_day_offset += weeks * 7
             else:
                 days = parse_duration_to_days(duration_str)
@@ -897,38 +943,107 @@ async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = He
                         ],
                     },
                 }
-                service.events().insert(calendarId=calendar_id, body=event_body).execute()
+                events.append(event_body)
                 current_day_offset += days
+                
+        return {
+            "career_goal": request.career_goal,
+            "lacking_skills": request.lacking_skills,
+            "events": events
+        }
+    except Exception as e:
+        logger.exception("Failed to generate schedule")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate schedule: {str(e)}"
+        )
+
+@app.post("/calendar/append")
+async def append_to_calendar(request: CalendarSyncRequest, x_user_id: str = Header(...)):
+    logger.info(f"Calendar: Appending {len(request.events)} customized events for user {x_user_id} towards target '{request.career_goal}'")
+    
+    # 1. Store payload to Firestore/local DB with "pending" status before API call
+    schedule_payload = {
+        "career_goal": request.career_goal,
+        "lacking_skills": request.lacking_skills,
+        "events": [event.dict() for event in request.events],
+        "status": "pending",
+        "google_event_ids": []
+    }
+    doc_id = await save_calendar_schedule(x_user_id, schedule_payload)
+    
+    try:
+        import google.auth
+        from googleapiclient.discovery import build
+        
+        # Load default credentials with calendar scope
+        credentials, project = google.auth.default(
+            scopes=['https://www.googleapis.com/auth/calendar']
+        )
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        # 1. Create a dedicated secondary calendar for the study roadmap
+        calendar_body = {
+            'summary': f"Z-Mentor AI: {request.career_goal}",
+            'timeZone': 'Asia/Ho_Chi_Minh'
+        }
+        
+        try:
+            created_calendar = service.calendars().insert(body=calendar_body).execute()
+            calendar_id = created_calendar['id']
+            calendar_name = created_calendar['summary']
+        except Exception as cal_err:
+            logger.warning(f"Failed to create secondary calendar: {cal_err}. Falling back to primary calendar.")
+            calendar_id = 'primary'
+            calendar_name = "Primary Calendar"
             
+        # Update calendar details in DB
+        await update_calendar_schedule_status(doc_id, {
+            "calendar_id": calendar_id,
+            "calendar_name": calendar_name
+        })
+
+        # 2. Add each customized event sequence on Google Calendar
+        created_event_ids = []
+        for event in request.events:
+            event_body = {
+                'summary': event.summary,
+                'description': event.description,
+                'start': event.start,
+                'end': event.end,
+                'recurrence': event.recurrence,
+                'reminders': event.reminders
+            }
+            res = service.events().insert(calendarId=calendar_id, body=event_body).execute()
+            created_event_ids.append(res.get('id'))
+            
+        # 3. Update status in database to completed with event IDs
+        await update_calendar_schedule_status(doc_id, {
+            "google_event_ids": created_event_ids,
+            "status": "completed"
+        })
+        
         return {
             "status": "success",
-            "message": f"Đã lập lịch thành công {len(request.courses)} khóa học trên Google Calendar thực của bạn (Lịch: {calendar_name})!",
-            "scheduled_events_count": len(request.courses),
+            "message": f"Đã lập lịch thành công {len(request.events)} khóa học trên Google Calendar thực của bạn (Lịch: {calendar_name})!",
+            "scheduled_events_count": len(request.events),
             "calendar_name": calendar_name,
-            "is_mock": False
+            "is_mock": False,
+            "schedule_id": doc_id
         }
         
     except Exception as e:
-        logger.warning(f"Google Calendar API failed or unauthorized: {e}. Falling back to mock calendar sync.")
-        
-        scheduled_details = []
-        for course in request.courses:
-            workload_str = course.get('workload')
-            if workload_str:
-                weeks, hours_per_session = parse_workload_to_weeks_and_hours(workload_str)
-                scheduled_details.append(f"{course.get('name')} ({weeks} tuần, {hours_per_session}h/buổi)")
-            else:
-                days = parse_duration_to_days(course.get('duration') or '15 giờ')
-                scheduled_details.append(f"{course.get('name')} ({days} ngày)")
-            
-        return {
-            "status": "success",
-            "message": f"Đồng bộ thành công (Chế độ mô phỏng)! Đã lập lịch {len(request.courses)} khóa học cho mục tiêu {request.career_goal} trên Google Calendar mô phỏng ({', '.join(scheduled_details)}).",
-            "scheduled_events_count": len(request.courses),
-            "calendar_name": f"Lộ trình học {request.career_goal}",
-            "is_mock": True,
-            "debug_error": str(e)
-        }
+        logger.exception("Google Calendar API call failed")
+        # Update database with failed status
+        await update_calendar_schedule_status(doc_id, {
+            "status": "failed",
+            "error": str(e)
+        })
+        # Do NOT fallback, raise the exception!
+        raise HTTPException(
+            status_code=500,
+            detail=f"Google Calendar API failed: {str(e)}"
+        )
 
 # System prompt
 def get_system_message(user_id: str) -> SystemMessage:
