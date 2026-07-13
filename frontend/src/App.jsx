@@ -875,6 +875,7 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
               headers: {
                 'Content-Type': 'application/json',
                 'X-User-Id': user.google_id,
+                'Authorization': `Bearer ${accessToken}`,
                 'X-Google-Access-Token': accessToken
               },
               body: JSON.stringify({
