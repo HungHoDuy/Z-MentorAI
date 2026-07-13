@@ -820,7 +820,11 @@ async def generate_schedule(request: CalendarAppendRequest, x_user_id: str = Hea
         )
 
 @app.post("/calendar/append")
-async def append_to_calendar(request: CalendarSyncRequest, x_user_id: str = Header(...)):
+async def append_to_calendar(
+    request: CalendarSyncRequest, 
+    x_user_id: str = Header(...),
+    x_google_access_token: Optional[str] = Header(None)
+):
     logger.info(f"Calendar: Appending {len(request.events)} customized events for user {x_user_id} towards target '{request.career_goal}'")
     
     # 1. Store payload to Firestore/local DB with "pending" status before API call
@@ -834,13 +838,21 @@ async def append_to_calendar(request: CalendarSyncRequest, x_user_id: str = Head
     doc_id = await save_calendar_schedule(x_user_id, schedule_payload)
     
     try:
-        import google.auth
         from googleapiclient.discovery import build
         
-        # Load default credentials with calendar scope
-        credentials, project = google.auth.default(
-            scopes=['https://www.googleapis.com/auth/calendar']
-        )
+        # Use user credentials if access token is provided, otherwise fall back to default
+        if x_google_access_token:
+            from google.oauth2.credentials import Credentials
+            credentials = Credentials(token=x_google_access_token)
+            logger.info("Using user OAuth access token for Google Calendar API")
+        else:
+            import google.auth
+            # Load default credentials with calendar scope
+            credentials, project = google.auth.default(
+                scopes=['https://www.googleapis.com/auth/calendar']
+            )
+            logger.info("Using Application Default Credentials (ADC) for Google Calendar API")
+            
         service = build('calendar', 'v3', credentials=credentials)
         
         # 1. Create a dedicated secondary calendar for the study roadmap

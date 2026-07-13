@@ -551,6 +551,16 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'generating' | 'preview' | 'loading' | 'success' | 'error'
   const [calendarMessage, setCalendarMessage] = useState('');
   const [proposedEvents, setProposedEvents] = useState([]);
+  const [clientId, setClientId] = useState('');
+
+  useEffect(() => {
+    fetch(`${backendUrl}/auth/config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.google_client_id) setClientId(data.google_client_id);
+      })
+      .catch((err) => console.error('Không thể tải Google Client ID', err));
+  }, [backendUrl]);
 
   const handleGenerateSchedule = async () => {
     if (!user || calendarStatus === 'generating' || calendarStatus === 'loading') return;
@@ -592,32 +602,71 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   const handleAddToCalendar = async () => {
     if (!user || calendarStatus === 'loading') return;
     if (proposedEvents.length === 0) return;
+    if (!clientId) {
+      setCalendarStatus('error');
+      setCalendarMessage('Google Client ID chưa được tải. Vui lòng thử lại sau.');
+      return;
+    }
 
-    setCalendarStatus('loading');
     try {
-      const res = await fetch(`${backendUrl}/calendar/append`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': user.google_id
-        },
-        body: JSON.stringify({
-          career_goal: careerGoal,
-          lacking_skills: lackingSkills,
-          events: proposedEvents
-        })
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Không thể đồng bộ lịch học');
+      if (!window.google?.accounts?.oauth2?.initTokenClient) {
+        throw new Error('Google OAuth library chưa sẵn sàng. Vui lòng thử lại.');
       }
-      const data = await res.json();
-      setCalendarStatus('success');
-      setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
+
+      setCalendarStatus('loading');
+
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/calendar',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) {
+            setCalendarStatus('error');
+            setCalendarMessage('Quyền truy cập lịch bị từ chối.');
+            return;
+          }
+
+          const accessToken = tokenResponse.access_token;
+          if (!accessToken) {
+            setCalendarStatus('error');
+            setCalendarMessage('Không nhận được access token.');
+            return;
+          }
+
+          try {
+            const res = await fetch(`${backendUrl}/calendar/append`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-User-Id': user.google_id,
+                'X-Google-Access-Token': accessToken
+              },
+              body: JSON.stringify({
+                career_goal: careerGoal,
+                lacking_skills: lackingSkills,
+                events: proposedEvents
+              })
+            });
+            if (!res.ok) {
+              const errorData = await res.json().catch(() => ({}));
+              throw new Error(errorData.detail || 'Không thể đồng bộ lịch học');
+            }
+            const data = await res.json();
+            setCalendarStatus('success');
+            setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
+          } catch (err) {
+            console.error(err);
+            setCalendarStatus('error');
+            setCalendarMessage(err.message || 'Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
+          }
+        }
+      });
+
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+
     } catch (err) {
       console.error(err);
       setCalendarStatus('error');
-      setCalendarMessage(err.message || 'Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
+      setCalendarMessage(err.message || 'Khởi tạo Google Sign-in thất bại.');
     }
   };
 
