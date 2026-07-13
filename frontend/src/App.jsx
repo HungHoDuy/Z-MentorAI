@@ -548,18 +548,20 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   const lackingSkills = output.lacking_skills || [];
   const careerGoal = output.career_goal || 'Lộ trình học tập';
 
-  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
+  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'generating' | 'preview' | 'loading' | 'success' | 'error'
   const [calendarMessage, setCalendarMessage] = useState('');
+  const [proposedEvents, setProposedEvents] = useState([]);
 
-  const handleAddToCalendar = async () => {
-    if (!user || calendarStatus === 'loading') return;
+  const handleGenerateSchedule = async () => {
+    if (!user || calendarStatus === 'generating' || calendarStatus === 'loading') return;
     if (courses.length === 0) return;
     
     const courseToSchedule = courses[0];
 
-    setCalendarStatus('loading');
+    setCalendarStatus('generating');
+    setCalendarMessage('');
     try {
-      const res = await fetch(`${backendUrl}/calendar/append`, {
+      const res = await fetch(`${backendUrl}/calendar/generate-schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -576,15 +578,102 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
           }]
         })
       });
-      if (!res.ok) throw new Error('Không thể đồng bộ lịch học');
+      if (!res.ok) throw new Error('Không thể tạo lịch học dự kiến');
+      const data = await res.json();
+      setProposedEvents(data.events || []);
+      setCalendarStatus('preview');
+    } catch (err) {
+      console.error(err);
+      setCalendarStatus('error');
+      setCalendarMessage('Không thể tạo lịch học dự kiến. Vui lòng thử lại sau.');
+    }
+  };
+
+  const handleAddToCalendar = async () => {
+    if (!user || calendarStatus === 'loading') return;
+    if (proposedEvents.length === 0) return;
+
+    setCalendarStatus('loading');
+    try {
+      const res = await fetch(`${backendUrl}/calendar/append`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': user.google_id
+        },
+        body: JSON.stringify({
+          career_goal: careerGoal,
+          lacking_skills: lackingSkills,
+          events: proposedEvents
+        })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Không thể đồng bộ lịch học');
+      }
       const data = await res.json();
       setCalendarStatus('success');
       setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
     } catch (err) {
       console.error(err);
       setCalendarStatus('error');
-      setCalendarMessage('Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
+      setCalendarMessage(err.message || 'Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
     }
+  };
+
+  const handleCancelPreview = () => {
+    setCalendarStatus('idle');
+    setProposedEvents([]);
+    setCalendarMessage('');
+  };
+
+  const handleEventChange = (index, field, value) => {
+    const updated = [...proposedEvents];
+    const ev = { ...updated[index] };
+
+    if (field === 'summary') {
+      ev.summary = value;
+    } else if (field === 'description') {
+      ev.description = value;
+    } else if (field === 'startDate') {
+      const startRest = ev.start.dateTime.substring(10);
+      const endRest = ev.end.dateTime.substring(10);
+      ev.start = { ...ev.start, dateTime: value + startRest };
+      ev.end = { ...ev.end, dateTime: value + endRest };
+    } else if (field === 'pattern') {
+      let count = 1;
+      if (ev.recurrence && ev.recurrence[0]) {
+        const match = ev.recurrence[0].match(/COUNT=(\d+)/);
+        if (match) {
+          count = parseInt(match[1]);
+        }
+      }
+      if (value === 'weekly') {
+        ev.recurrence = [`RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=${count}`];
+      } else if (value === 'daily') {
+        ev.recurrence = [`RRULE:FREQ=DAILY;COUNT=${count}`];
+      } else {
+        ev.recurrence = [];
+      }
+    } else if (field === 'count') {
+      const countVal = parseInt(value) || 1;
+      if (ev.recurrence && ev.recurrence[0]) {
+        const parts = ev.recurrence[0].split(';');
+        const newParts = parts.map(p => {
+          if (p.startsWith('COUNT=')) {
+            return `COUNT=${countVal}`;
+          }
+          return p;
+        });
+        if (!newParts.some(p => p.startsWith('COUNT='))) {
+          newParts.push(`COUNT=${countVal}`);
+        }
+        ev.recurrence = [newParts.join(';')];
+      }
+    }
+    
+    updated[index] = ev;
+    setProposedEvents(updated);
   };
 
   return (
@@ -593,37 +682,151 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
         <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
         <h4>Lập kế hoạch học tập trên Google Calendar</h4>
       </div>
-      <p className="calendar-card-desc">
-        Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
-      </p>
-      <div className="calendar-card-actions">
-        {calendarStatus === 'idle' && (
-          <button className="calendar-sync-btn" onClick={handleAddToCalendar} disabled={courses.length === 0}>
-            Đồng bộ khóa học vào Google Calendar
-          </button>
-        )}
-        {calendarStatus === 'loading' && (
-          <button className="calendar-sync-btn loading" disabled>
-            <span className="btn-spinner" />
-            Đang đồng bộ...
-          </button>
-        )}
-        {calendarStatus === 'success' && (
-          <div className="calendar-sync-success-msg">
-            <span className="success-check">✓</span>
-            <span>{calendarMessage}</span>
+      
+      {calendarStatus === 'idle' && (
+        <>
+          <p className="calendar-card-desc">
+            Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
+          </p>
+          <div className="calendar-card-actions">
+            <button className="calendar-sync-btn" onClick={handleGenerateSchedule} disabled={courses.length === 0}>
+              Đồng bộ khóa học vào Google Calendar
+            </button>
           </div>
-        )}
-        {calendarStatus === 'error' && (
-          <div className="calendar-sync-error-msg">
-            <span className="error-cross">✕</span>
-            <span>{calendarMessage}</span>
-            <button className="calendar-retry-btn" onClick={handleAddToCalendar}>
+        </>
+      )}
+
+      {calendarStatus === 'generating' && (
+        <>
+          <p className="calendar-card-desc">Đang tạo lịch học đề xuất...</p>
+          <div className="calendar-card-actions">
+            <button className="calendar-sync-btn loading" disabled>
+              <span className="btn-spinner" />
+              Đang tạo lịch...
+            </button>
+          </div>
+        </>
+      )}
+
+      {calendarStatus === 'preview' && (
+        <div className="calendar-preview-container">
+          <p className="calendar-preview-heading">Xem trước & Tùy chỉnh lịch học của bạn:</p>
+          {proposedEvents.map((event, idx) => {
+            const startDate = event.start.dateTime.substring(0, 10);
+            
+            let pattern = 'none';
+            let count = 1;
+            if (event.recurrence && event.recurrence[0]) {
+              if (event.recurrence[0].includes('FREQ=WEEKLY')) pattern = 'weekly';
+              else if (event.recurrence[0].includes('FREQ=DAILY')) pattern = 'daily';
+              else pattern = 'custom';
+              
+              const match = event.recurrence[0].match(/COUNT=(\d+)/);
+              if (match) count = parseInt(match[1]);
+            }
+
+            return (
+              <div key={idx} className="calendar-event-edit-card">
+                <div className="form-group">
+                  <label>Tên sự kiện</label>
+                  <input 
+                    type="text" 
+                    value={event.summary} 
+                    onChange={(e) => handleEventChange(idx, 'summary', e.target.value)} 
+                  />
+                </div>
+                
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Ngày bắt đầu</label>
+                    <input 
+                      type="date" 
+                      value={startDate} 
+                      onChange={(e) => handleEventChange(idx, 'startDate', e.target.value)} 
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>Tần suất học</label>
+                    <select 
+                      value={pattern} 
+                      onChange={(e) => handleEventChange(idx, 'pattern', e.target.value)}
+                    >
+                      <option value="weekly">Hàng tuần (Thứ 2, 4, 6)</option>
+                      <option value="daily">Hàng ngày</option>
+                      <option value="none">Không lặp lại</option>
+                    </select>
+                  </div>
+
+                  {pattern !== 'none' && (
+                    <div className="form-group">
+                      <label>{pattern === 'weekly' ? 'Số buổi học' : 'Số ngày học'}</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={count} 
+                        onChange={(e) => handleEventChange(idx, 'count', e.target.value)} 
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label>Mô tả chi tiết</label>
+                  <textarea 
+                    rows="3" 
+                    value={event.description} 
+                    onChange={(e) => handleEventChange(idx, 'description', e.target.value)} 
+                  />
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="calendar-card-actions preview-actions">
+            <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+              Hủy
+            </button>
+            <button className="calendar-sync-btn confirm-sync-btn" onClick={handleAddToCalendar}>
+              Xác nhận & Đồng bộ vào Lịch thực
+            </button>
+          </div>
+        </div>
+      )}
+
+      {calendarStatus === 'loading' && (
+        <>
+          <p className="calendar-card-desc">Đang tiến hành đồng bộ các sự kiện vào Google Calendar thực của bạn...</p>
+          <div className="calendar-card-actions">
+            <button className="calendar-sync-btn loading" disabled>
+              <span className="btn-spinner" />
+              Đang đồng bộ thực...
+            </button>
+          </div>
+        </>
+      )}
+
+      {calendarStatus === 'success' && (
+        <div className="calendar-sync-success-msg">
+          <span className="success-check">✓</span>
+          <span>{calendarMessage}</span>
+        </div>
+      )}
+
+      {calendarStatus === 'error' && (
+        <div className="calendar-sync-error-msg">
+          <span className="error-cross">✕</span>
+          <span>{calendarMessage}</span>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+              Quay lại
+            </button>
+            <button className="calendar-retry-btn" onClick={proposedEvents.length > 0 ? handleAddToCalendar : handleGenerateSchedule}>
               Thử lại
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

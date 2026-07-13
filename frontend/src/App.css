@@ -2159,6 +2159,102 @@
   background: #fee2e2;
 }
 
+/* Calendar Preview Styling */
+.calendar-preview-container {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.calendar-preview-heading {
+  font-size: 0.85rem;
+  font-weight: 780;
+  color: var(--text-primary);
+  margin-bottom: 0.8rem;
+}
+
+.calendar-event-edit-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.calendar-event-edit-card .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.calendar-event-edit-card .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.calendar-event-edit-card label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.calendar-event-edit-card input[type="text"],
+.calendar-event-edit-card input[type="date"],
+.calendar-event-edit-card input[type="number"],
+.calendar-event-edit-card select,
+.calendar-event-edit-card textarea {
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.calendar-event-edit-card input:focus,
+.calendar-event-edit-card select:focus,
+.calendar-event-edit-card textarea:focus {
+  border-color: #f8c96b;
+  box-shadow: 0 0 0 2px rgba(248, 201, 107, 0.2);
+}
+
+.calendar-event-edit-card .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.calendar-cancel-btn {
+  padding: 0.58rem 1.2rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-cancel-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+
 /* Input Verifier Widget Styles */
 .academic-confirm-widget {
   padding: 1.25rem;
