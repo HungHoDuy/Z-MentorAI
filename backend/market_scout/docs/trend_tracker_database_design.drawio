@@ -1,0 +1,274 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Trend Tracker DB Design">
+    <mxGraphModel dx="1900" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1280" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Trend Tracker Database Flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=28;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="28" width="650" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Current Firestore collections and read/write paths used by Market Scout Trend Tracker" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="42" y="66" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cbd5e1;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="28" width="560" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_blue" value="" style="rounded=0;html=1;fillColor=#2563eb;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="46" width="46" height="4" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_blue_t" value="Runtime read flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1348" y="37" width="135" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_dash" value="" style="rounded=0;html=1;fillColor=#64748b;strokeColor=#64748b;dashed=1;dashPattern=3 5;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="46" width="46" height="4" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_dash_t" value="Offline batch / manual ingest" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1548" y="37" width="205" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="gcp_boundary" value="Z-MentorAI / Firestore" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#60a5fa;strokeWidth=2;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="105" width="1810" height="800" as="geometry" />
+        </mxCell>
+        <mxCell id="data_boundary" value="Trend Tracker Data Boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#22c55e;strokeWidth=2;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="145" width="1750" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="source_data" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffdf2;strokeColor=#d97706;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="100" y="205" width="300" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="source_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="122" y="226" width="36" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" value="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d97706;strokeColor=#d97706;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="218" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="source_title" value="data_for_vectorize" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="172" y="224" width="180" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="source_sub" value="Cleaned crawled job postings" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="172" y="252" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="source_fields" value="&lt;b&gt;Source fields&lt;/b&gt;&lt;br&gt;job_id, job_url&lt;br&gt;job_title, company&lt;br&gt;location / locations&lt;br&gt;Ngay cap nhat&lt;br&gt;Het han nop&lt;br&gt;Nganh nghe&lt;br&gt;Mo ta cong viec&lt;br&gt;Yeu cau cong viec" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="124" y="292" width="235" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="normalize" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="470" y="205" width="330" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" value="2" style="ellipse;whiteSpace=wrap;html=1;fillColor=#64748b;strokeColor=#64748b;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="218" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="norm_title" value="Normalize Job Facts" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="230" width="250" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="norm_sub" value="NormalizeJobCategoryTrendJobFactsPipeline" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="500" y="258" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="norm_body" value="Map raw category labels with JobCategoryTaxonomy&lt;br&gt;Normalize company/location/date/active status&lt;br&gt;Keep JD text for role and skill analysis" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="500" y="308" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="facts" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="870" y="185" width="410" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="facts_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="895" y="210" width="36" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" value="3" style="ellipse;whiteSpace=wrap;html=1;fillColor=#6366f1;strokeColor=#6366f1;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="200" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="facts_title" value="trend_job_facts_v2" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="948" y="204" width="230" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="facts_sub" value="20,731 normalized job records | 1 fact = 1 job posting" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="940" y="232" width="310" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="facts_left" value="&lt;b&gt;Job-level fields&lt;/b&gt;&lt;br&gt;job_key&lt;br&gt;job_title&lt;br&gt;company_key&lt;br&gt;location_ids&lt;br&gt;is_active&lt;br&gt;updated/expires dates" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="900" y="286" width="150" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="facts_right" value="&lt;b&gt;Taxonomy fields&lt;/b&gt;&lt;br&gt;raw_job_category_labels&lt;br&gt;job_category_ids = detailed categories&lt;br&gt;job_family_ids = broad job groups&lt;br&gt;requirements_text&lt;br&gt;description_text" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="286" width="190" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#0891b2;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="185" width="410" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="210" width="36" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="4" style="ellipse;whiteSpace=wrap;html=1;fillColor=#0891b2;strokeColor=#0891b2;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1730" y="200" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot_title" value="trend_snapshots_v2" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1438" y="204" width="240" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot_sub" value="631 aggregate records | 1 snapshot = family + location + week" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1430" y="232" width="315" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot_fields" value="&lt;b&gt;Group key&lt;/b&gt;&lt;br&gt;period&lt;br&gt;job_family_id&lt;br&gt;location_id&lt;br&gt;&lt;br&gt;&lt;b&gt;Demand counts&lt;/b&gt;&lt;br&gt;observed_job_count&lt;br&gt;active_job_count&lt;br&gt;updated_job_count&lt;br&gt;distinct_company_count&lt;br&gt;source_job_counts" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="286" width="330" height="182" as="geometry" />
+        </mxCell>
+        <mxCell id="embedding" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="100" y="530" width="410" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="embedding_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="125" y="555" width="36" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="b5" value="5" style="ellipse;whiteSpace=wrap;html=1;fillColor=#0284c7;strokeColor=#0284c7;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="545" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="embedding_title" value="job_mapping_embedding" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="178" y="548" width="240" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="embedding_sub" value="Vector search collection for natural role mapping" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="178" y="576" width="280" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="embedding_fields" value="&lt;b&gt;Stored fields&lt;/b&gt;&lt;br&gt;job_key&lt;br&gt;source_document_id&lt;br&gt;job_url&lt;br&gt;job_title&lt;br&gt;company&lt;br&gt;location_ids&lt;br&gt;job_category_ids&lt;br&gt;job_family_ids&lt;br&gt;embedding_text&lt;br&gt;embedding_model&lt;br&gt;embedding" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="128" y="625" width="315" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_index" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#0891b2;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="570" y="590" width="340" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="b6" value="6" style="ellipse;whiteSpace=wrap;html=1;fillColor=#0891b2;strokeColor=#0891b2;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="605" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="index_title" value="Firestore Vector Index" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=16;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="615" width="220" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="index_body" value="Collection: job_mapping_embedding&lt;br&gt;Vector field: embedding&lt;br&gt;Distance: COSINE&lt;br&gt;Used for role semantic search" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="600" y="650" width="230" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="risk" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#f97316;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="980" y="545" width="340" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="risk_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="1004" y="570" width="34" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b7" value="7" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f97316;strokeColor=#f97316;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="558" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="risk_title" value="automation_risk_lookup" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=16;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="564" width="220" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="risk_sub" value="Curated lookup by job_category_id" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="592" width="220" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="risk_fields" value="&lt;b&gt;Lookup fields&lt;/b&gt;&lt;br&gt;job_category_id&lt;br&gt;exposure_level&lt;br&gt;risk_reason&lt;br&gt;protected_tasks&lt;br&gt;at_risk_tasks&lt;br&gt;source_title / source_url&lt;br&gt;published_at&lt;br&gt;caveat" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="635" width="250" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#ef4444;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="530" width="350" height="245" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="1434" y="555" width="34" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="b8" value="8" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ef4444;strokeColor=#ef4444;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1720" y="545" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence_title" value="trend_sources + trend_evidence" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=16;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="542" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence_sub" value="Manual external outlook evidence with citations" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="586" width="230" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence_fields" value="&lt;b&gt;Source/evidence fields&lt;/b&gt;&lt;br&gt;source_id, publisher, url&lt;br&gt;published_at, reliability_score&lt;br&gt;scope_location_ids&lt;br&gt;evidence_id&lt;br&gt;job_family_ids&lt;br&gt;job_category_ids&lt;br&gt;direction&lt;br&gt;exact_claim&lt;br&gt;citation&lt;br&gt;confidence" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1440" y="622" width="250" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime_boundary" value="Runtime Read Path - one API response, no per-query Trend Tracker result collection is written" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;strokeWidth=2;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="940" width="1750" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="user_query" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="105" y="1015" width="210" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="b9" value="9" style="ellipse;whiteSpace=wrap;html=1;fillColor=#2563eb;strokeColor=#2563eb;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="1025" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="user_title" value="Trend user query" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="1030" width="140" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="user_sub" value="current demand / skills / automation" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="130" y="1056" width="145" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="understand" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="365" y="1015" width="235" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="understand_title" value="Query understanding" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="390" y="1030" width="170" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="understand_sub" value="intent, role_mention, category/family, location" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="390" y="1056" width="170" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="role_map" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="650" y="1015" width="235" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="role_title" value="Role/category mapping" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="675" y="1030" width="175" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="role_sub" value="taxonomy map or reads job_mapping_embedding vector index" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="675" y="1056" width="175" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="snapshot_read" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#0891b2;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="935" y="1015" width="220" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="snap_read_title" value="Read demand snapshot" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="1030" width="160" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="snap_read_sub" value="reads trend_snapshots_v2 latest family + location period" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="960" y="1056" width="160" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="signals" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1205" y="1015" width="250" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="signals_title" value="Build hybrid signals" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="1030" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="signals_sub" value="reads facts, automation risk, external evidence, then composes signal" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="1056" width="205" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="answer" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#f97316;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="1005" width="250" height="102" as="geometry" />
+        </mxCell>
+        <mxCell id="answer_title" value="TrendTracker response" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1535" y="1025" width="175" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="answer_sub" value="Computed at runtime and sent to summary layer. Not persisted as a result collection." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1535" y="1052" width="180" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="read cleaned jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.45;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="source_data" target="normalize">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="write normalized facts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.45;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="normalize" target="facts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.38;exitDx=0;exitDy=0;entryX=0;entryY=0.38;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="facts" target="snapshot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="embed facts for role mapping" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=0.15;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="facts" target="embedding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="930" y="510" />
+              <mxPoint x="400" y="510" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="indexed by embedding" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0891b2;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="embedding" target="vector_index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="user_query" target="understand">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="understand" target="role_map">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="resolved family/location" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="role_map" target="snapshot_read">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="snapshot counts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="snapshot_read" target="signals">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="signals" target="answer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="Note: Trend Tracker persists normalized facts, weekly snapshots, role-mapping embeddings, automation lookup, and external evidence. Per-user answers are composed at runtime and are not written to a result collection." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="86" y="1210" width="1450" height="28" as="geometry" />
+        </mxCell>
+      <mxCell id="facts_taxonomy_note" value="Category = detailed job category; Family = broader job group used for snapshots" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#06b6d4;strokeWidth=1.2;arcSize=6;fontSize=11;fontColor=#155e75;spacing=8;" vertex="1" parent="1"><mxGeometry x="895" y="448" width="360" height="32" as="geometry" /></mxCell></root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

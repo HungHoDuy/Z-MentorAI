@@ -68,6 +68,7 @@ class TrendQueryNormalizer:
             job_family_id=resolved_family_id,
             location_id=location_id,
             job_category_id=category_id,
+            role_mention=_optional_text(query_input.role_mention),
             job_sources=list(query_input.job_sources),
         )
 
@@ -134,3 +135,10 @@ def _text_key(value: str | None) -> str:
 def _slugify(value: str | None) -> str | None:
     key = _text_key(value)
     return key.replace(" ", "-") or None
+
+
+def _optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None

@@ -142,6 +142,7 @@ def role_fact_match_from_mapping_document(
         job_category_ids=job_category_ids,
         job_family_ids=job_family_ids,
         location_ids=location_ids,
+        is_active=_to_bool(data.get("is_active")),
         score=score,
         match_method="semantic",
     )
@@ -181,3 +182,15 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+def _to_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip().casefold()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return None

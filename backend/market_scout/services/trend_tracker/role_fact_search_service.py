@@ -13,6 +13,8 @@ from backend.market_scout.schemas.trend_tracker.role_resolution import RoleResol
 
 
 DEFAULT_TOP_K = 5
+DEFAULT_DEMAND_TOP_K = 100
+DEFAULT_DEMAND_FETCH_K = 200
 DEFAULT_MAX_SCAN = 2000
 MIN_ROLE_MATCH_SCORE = 0.25
 MIN_ACCEPT_TOP_SCORE = 0.65
@@ -32,6 +34,7 @@ class SemanticRoleFactSearcher(Protocol):
         role_query: str,
         location_id: str | None = None,
         top_k: int = DEFAULT_TOP_K,
+        fetch_k: int | None = None,
     ) -> Sequence[RoleFactMatch]:
         ...
 
@@ -81,8 +84,35 @@ class RoleFactSearchService:
         location_id: str | None = None,
         top_k: int = DEFAULT_TOP_K,
     ) -> list[RoleFactMatch]:
+        return self._search(role_query=role_query, location_id=location_id, top_k=top_k)
+
+    def search_for_demand(
+        self,
+        *,
+        role_query: str,
+        location_id: str | None = None,
+        top_k: int = DEFAULT_DEMAND_TOP_K,
+        fetch_k: int = DEFAULT_DEMAND_FETCH_K,
+    ) -> list[RoleFactMatch]:
+        return self._search(
+            role_query=role_query,
+            location_id=location_id,
+            top_k=top_k,
+            semantic_fetch_k=fetch_k,
+        )
+
+    def _search(
+        self,
+        *,
+        role_query: str,
+        location_id: str | None,
+        top_k: int,
+        semantic_fetch_k: int | None = None,
+    ) -> list[RoleFactMatch]:
         if top_k <= 0:
             raise ValueError("top_k must be positive.")
+        if semantic_fetch_k is not None and semantic_fetch_k <= 0:
+            raise ValueError("semantic_fetch_k must be positive when provided.")
 
         role_tokens = _tokens(role_query)
         if not role_tokens:
@@ -94,30 +124,60 @@ class RoleFactSearchService:
             if match and match.score >= self.min_score:
                 matches_by_key[match.job_key] = match
 
-        if self.semantic_searcher is not None:
-            for semantic_match in self.semantic_searcher.search(
+        for semantic_match in self._semantic_matches(
+            role_query=role_query,
+            location_id=location_id,
+            top_k=top_k,
+            fetch_k=semantic_fetch_k,
+        ):
+            current = matches_by_key.get(semantic_match.job_key)
+            if current is None:
+                matches_by_key[semantic_match.job_key] = semantic_match
+            else:
+                preferred = semantic_match if semantic_match.score > current.score else current
+                matches_by_key[semantic_match.job_key] = RoleFactMatch(
+                    job_key=preferred.job_key,
+                    job_title=preferred.job_title,
+                    company=preferred.company,
+                    job_url=preferred.job_url,
+                    job_category_ids=preferred.job_category_ids,
+                    job_family_ids=preferred.job_family_ids,
+                    location_ids=preferred.location_ids,
+                    score=max(current.score, semantic_match.score),
+                    match_method="hybrid",
+                )
+
+        return sorted(matches_by_key.values(), key=lambda item: (-item.score, item.job_title, item.job_key))[:top_k]
+
+    def _semantic_matches(
+        self,
+        *,
+        role_query: str,
+        location_id: str | None,
+        top_k: int,
+        fetch_k: int | None,
+    ) -> Sequence[RoleFactMatch]:
+        if self.semantic_searcher is None:
+            return []
+        if fetch_k is None:
+            return self.semantic_searcher.search(
                 role_query=role_query,
                 location_id=location_id,
                 top_k=top_k,
-            ):
-                current = matches_by_key.get(semantic_match.job_key)
-                if current is None:
-                    matches_by_key[semantic_match.job_key] = semantic_match
-                else:
-                    preferred = semantic_match if semantic_match.score > current.score else current
-                    matches_by_key[semantic_match.job_key] = RoleFactMatch(
-                        job_key=preferred.job_key,
-                        job_title=preferred.job_title,
-                        company=preferred.company,
-                        job_url=preferred.job_url,
-                        job_category_ids=preferred.job_category_ids,
-                        job_family_ids=preferred.job_family_ids,
-                        location_ids=preferred.location_ids,
-                        score=max(current.score, semantic_match.score),
-                        match_method="hybrid",
-                    )
-
-        return sorted(matches_by_key.values(), key=lambda item: (-item.score, item.job_title, item.job_key))[:top_k]
+            )
+        try:
+            return self.semantic_searcher.search(
+                role_query=role_query,
+                location_id=location_id,
+                top_k=top_k,
+                fetch_k=fetch_k,
+            )
+        except TypeError:
+            return self.semantic_searcher.search(
+                role_query=role_query,
+                location_id=location_id,
+                top_k=top_k,
+            )
 
     def resolve_role(
         self,
@@ -243,6 +303,7 @@ class RoleFactSearchService:
             job_category_ids=list(fact.job_category_ids),
             job_family_ids=list(fact.job_family_ids),
             location_ids=list(fact.location_ids),
+            is_active=fact.is_active,
             score=min(score, 1.0),
             match_method="keyword",
         )

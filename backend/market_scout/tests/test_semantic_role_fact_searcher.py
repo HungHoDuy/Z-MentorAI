@@ -62,3 +62,18 @@ def test_semantic_role_fact_searcher_embeds_query_and_calls_repository() -> None
             "filter_location": True,
         }
     ]
+
+
+def test_semantic_role_fact_searcher_allows_fetch_k_override() -> None:
+    embedding_service = FakeEmbeddingService()
+    repository = FakeRepository()
+    searcher = SemanticRoleFactSearcher(
+        embedding_service=embedding_service,
+        repository=repository,
+        fetch_k=20,
+    )
+
+    searcher.search(role_query="backend engineer", location_id="ha-noi", top_k=100, fetch_k=200)
+
+    assert repository.calls[0]["top_k"] == 100
+    assert repository.calls[0]["fetch_k"] == 200

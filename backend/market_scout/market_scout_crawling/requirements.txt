@@ -1,0 +1,9 @@
+selenium
+webdriver-manager
+tqdm
+google-cloud-firestore
+numpy
+pandas
+seaborn
+matplotlib
+google-cloud-firestore
