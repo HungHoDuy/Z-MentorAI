@@ -46,7 +46,7 @@ class SalaryJobRecord:
         return cls(
             job_id=_clean_text(_first_value(data, ("job_id", "jobId", "id"))),
             job_url=_clean_text(_first_value(data, ("job_url", "jobUrl", "url", "link"))),
-            company=_clean_text(_first_value(data, ("company", "company_name", "Tên công ty"))),
+            company=_clean_text(_first_value(data, ("company", "company_name", "Công ty", "Tên công ty"))),
             job_title=job_title,
             locations=_normalize_locations(_first_value(data, ("location", "locations", "Địa điểm làm việc"))),
             salary_min_vnd=_salary_to_vnd(min_salary),

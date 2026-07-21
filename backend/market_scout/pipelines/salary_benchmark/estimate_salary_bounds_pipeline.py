@@ -18,6 +18,7 @@ class EstimateSalaryBoundsResult:
     salary_factor: float
     max_salary_sentinel: float | None
     dry_run: bool
+    source_collection_filter: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,6 +30,7 @@ class EstimateSalaryBoundsResult:
             "salary_factor": self.salary_factor,
             "max_salary_sentinel": self.max_salary_sentinel,
             "dry_run": self.dry_run,
+            "source_collection_filter": self.source_collection_filter,
         }
 
 
@@ -44,6 +46,7 @@ class EstimateSalaryBoundsPipeline:
         page_size: int = 500,
         stream_timeout: int = 60,
         batch_size: int = 400,
+        source_collection_filter: str | None = None,
     ) -> None:
         load_env_file()
         self.firestore_client = firestore_client or build_firestore_client()
@@ -55,6 +58,7 @@ class EstimateSalaryBoundsPipeline:
         self.page_size = page_size
         self.stream_timeout = stream_timeout
         self.batch_size = batch_size
+        self.source_collection_filter = source_collection_filter
 
     def run(self, *, limit: int | None = None, dry_run: bool = False) -> EstimateSalaryBoundsResult:
         documents = list(self._iter_documents(limit=limit))
@@ -117,10 +121,15 @@ class EstimateSalaryBoundsPipeline:
                 else None
             ),
             dry_run=dry_run,
+            source_collection_filter=self.source_collection_filter,
         )
 
     def _iter_documents(self, *, limit: int | None = None):
         collection_ref = self.firestore_client.collection(self.collection_name)
+        base_query = collection_ref
+        if self.source_collection_filter:
+            base_query = base_query.where("source_collection", "==", self.source_collection_filter)
+
         last_snapshot = None
         yielded = 0
 
@@ -132,7 +141,7 @@ class EstimateSalaryBoundsPipeline:
                     break
                 current_page_size = min(current_page_size, remaining)
 
-            query = collection_ref.order_by("__name__").limit(current_page_size)
+            query = base_query.order_by("__name__").limit(current_page_size)
             if last_snapshot is not None:
                 query = query.start_after(last_snapshot)
 
