@@ -162,6 +162,70 @@ class StaticSemanticSearcher:
         return self.matches[:top_k]
 
 
+
+class RecordingSemanticSearcher:
+    def __init__(self, matches: list[RoleFactMatch]) -> None:
+        self.matches = matches
+        self.calls: list[dict[str, object]] = []
+
+    def search(
+        self,
+        *,
+        role_query: str,
+        location_id: str | None = None,
+        top_k: int = 5,
+        fetch_k: int | None = None,
+    ):
+        self.calls.append(
+            {
+                "role_query": role_query,
+                "location_id": location_id,
+                "top_k": top_k,
+                "fetch_k": fetch_k,
+            }
+        )
+        return self.matches[:top_k]
+
+
+def test_search_for_demand_uses_wider_defaults_without_changing_mapping_search() -> None:
+    semantic_searcher = RecordingSemanticSearcher(
+        [
+            _match(
+                f"backend-{index}",
+                f"Backend Developer {index}",
+                "software_it",
+                "digital_telecom",
+                ["ha-noi"],
+                0.9 - (index * 0.001),
+            )
+            for index in range(120)
+        ]
+    )
+    service = RoleFactSearchService(
+        fact_repository=FakeFactRepository([]),
+        semantic_searcher=semantic_searcher,
+    )
+
+    mapping_matches = service.search(role_query="backend engineer", location_id="ha-noi")
+    demand_matches = service.search_for_demand(role_query="backend engineer", location_id="ha-noi")
+
+    assert len(mapping_matches) == 5
+    assert len(demand_matches) == 100
+    assert semantic_searcher.calls == [
+        {
+            "role_query": "backend engineer",
+            "location_id": "ha-noi",
+            "top_k": 5,
+            "fetch_k": None,
+        },
+        {
+            "role_query": "backend engineer",
+            "location_id": "ha-noi",
+            "top_k": 100,
+            "fetch_k": 200,
+        },
+    ]
+
 def test_resolve_role_accepts_clear_multi_match_category() -> None:
     service = RoleFactSearchService(
         fact_repository=FakeFactRepository([]),

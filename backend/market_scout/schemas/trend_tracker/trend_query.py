@@ -21,6 +21,7 @@ class TrendQueryInput:
     job_category: str | None = None
     location_id: str | None = None
     location: str | None = None
+    role_mention: str | None = None
     job_sources: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -32,4 +33,5 @@ class TrendQuery:
     job_family_id: str
     location_id: str
     job_category_id: str | None = None
+    role_mention: str | None = None
     job_sources: list[dict[str, Any]] = field(default_factory=list)

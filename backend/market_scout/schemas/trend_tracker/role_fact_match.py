@@ -15,6 +15,7 @@ class RoleFactMatch:
     job_category_ids: list[str] = None
     job_family_ids: list[str] = None
     location_ids: list[str] = None
+    is_active: bool | None = None
     score: float = 0.0
     match_method: str = "unknown"
 
@@ -27,6 +28,7 @@ class RoleFactMatch:
             "job_category_ids": list(self.job_category_ids or []),
             "job_family_ids": list(self.job_family_ids or []),
             "location_ids": list(self.location_ids or []),
+            "is_active": self.is_active,
             "score": round(self.score, 4),
             "match_method": self.match_method,
         }

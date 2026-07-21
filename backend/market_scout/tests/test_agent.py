@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from backend.market_scout.agent import MarketScoutAgent
+from backend.market_scout.agent import MarketScoutAgent, _classify_intent, _trend_intent_from_query
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlowResult
 from backend.market_scout.schemas import MarketScoutIntent
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryIntent
 from backend.market_scout.services.salary_benchmark.salary_benchmark_service import (
     SalaryBenchmarkResult,
     SalaryBenchmarkSource,
@@ -54,7 +55,7 @@ def test_market_scout_agent_routes_salary_query_to_salary_flow() -> None:
     ]
 
 
-def test_market_scout_agent_asks_for_trend_entities_when_query_is_ambiguous() -> None:
+def test_market_scout_agent_routes_trend_query_to_trend_tracker() -> None:
     salary_flow = FakeSalaryFlow(_make_flow_result())
     agent = MarketScoutAgent(salary_flow=salary_flow)
 
@@ -62,8 +63,14 @@ def test_market_scout_agent_asks_for_trend_entities_when_query_is_ambiguous() ->
 
     assert response.intent == MarketScoutIntent.TREND_TRACKER
     assert response.confidence == "low"
-    assert "Vui long cung cap job category" in response.answer
     assert salary_flow.calls == []
+
+
+def test_market_scout_agent_classifies_skill_questions_as_trend_tracker() -> None:
+    query = "Ngành kinh doanh bán hàng tại Hồ Chí Minh đang cần kỹ năng gì?"
+
+    assert _classify_intent(query) is MarketScoutIntent.TREND_TRACKER
+    assert _trend_intent_from_query(query) == TrendQueryIntent.CURRENT_SKILL_DEMAND.value
 
 
 def _make_flow_result() -> SalaryBenchmarkFlowResult:

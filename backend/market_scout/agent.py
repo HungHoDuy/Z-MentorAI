@@ -5,6 +5,7 @@ import json
 import logging
 from time import perf_counter
 from typing import Any
+import unicodedata
 
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow, SalaryBenchmarkFlowResult
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlow, TrendTrackerFlowResult
@@ -219,12 +220,16 @@ class MarketScoutAgent:
     ) -> TrendQueryInput:
         entities = await self._trend_entities(request)
         return TrendQueryInput(
-            intent=_trend_intent_or_default(entities.get("trend_intent"), market_intent),
+            intent=_trend_intent_or_default(
+                entities.get("trend_intent") or _trend_intent_from_query(request.user_query),
+                market_intent,
+            ),
             job_family_id=_text_or_none(entities.get("job_family_id") or entities.get("resolved_job_family_id")),
             job_category_id=_text_or_none(entities.get("job_category_id") or entities.get("resolved_job_category_id")),
             job_category=_text_or_none(entities.get("job_category")),
             location_id=_text_or_none(entities.get("location_id")),
             location=_text_or_none(entities.get("location")),
+            role_mention=_text_or_none(entities.get("role_mention") or entities.get("target_role")),
             job_sources=_job_sources_or_empty(entities.get("job_sources")),
         )
 
@@ -313,7 +318,7 @@ async def _maybe_await(value: Any) -> Any:
 
 
 def _classify_intent(query: str) -> MarketScoutIntent:
-    normalized = query.casefold()
+    normalized = _query_key(query)
     has_salary_signal = any(keyword in normalized for keyword in _SALARY_KEYWORDS)
 
     if has_salary_signal:
@@ -335,6 +340,20 @@ def _trend_intent_or_default(value: Any, market_intent: MarketScoutIntent) -> Tr
     if market_intent is MarketScoutIntent.JOB_DEMAND_FORECAST:
         return TrendQueryIntent.EXTERNAL_OUTLOOK
     return TrendQueryIntent.CURRENT_DEMAND
+
+
+def _trend_intent_from_query(query: str) -> str | None:
+    normalized = _query_key(query)
+    if any(keyword in normalized for keyword in ("skill", "ky nang", "yeu cau")):
+        return TrendQueryIntent.CURRENT_SKILL_DEMAND.value
+    return None
+
+
+def _query_key(value: Any) -> str:
+    text = str(value).replace(chr(273), "d").replace(chr(272), "D")
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(character for character in text if unicodedata.category(character) != "Mn")
+    return text.casefold()
 
 
 def _job_sources_or_empty(value: Any) -> list[dict[str, Any]]:
@@ -399,6 +418,9 @@ _TREND_KEYWORDS = (
     "forecast",
     "decline",
     "automation",
+    "skill",
+    "ky nang",
+    "yeu cau",
     "xu huong",
     "xu hướng",
     "nhu cau",

@@ -38,9 +38,12 @@ class SemanticRoleFactSearcher:
         role_query: str,
         location_id: str | None = None,
         top_k: int = DEFAULT_TOP_K,
+        fetch_k: int | None = None,
     ) -> Sequence[RoleFactMatch]:
         if top_k <= 0:
             raise ValueError("top_k must be positive.")
+        if fetch_k is not None and fetch_k <= 0:
+            raise ValueError("fetch_k must be positive when provided.")
         query_text = _build_role_query_text(role_query)
         if not query_text:
             return []
@@ -50,7 +53,7 @@ class SemanticRoleFactSearcher:
             query_embedding=query_embedding,
             location_id=location_id,
             top_k=top_k,
-            fetch_k=max(top_k, self.fetch_k),
+            fetch_k=max(top_k, fetch_k or self.fetch_k),
             distance_threshold=self.distance_threshold,
             filter_location=self.filter_location,
         )
