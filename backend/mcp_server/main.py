@@ -188,12 +188,15 @@ def profile_scanner(
 
 @mcp.tool()
 def market_scout(
-    industry: str,
+    user_query: str,
+    industry: str = "",
     target_role: str = "",
-    user_query: str = "",
     intent_hint: str = "",
 ) -> dict:
     """Use this tool for job market trends, hiring demand, automation exposure, and general market outlook.
+    Always pass the user's original question in user_query.
+    For role-level hiring demand questions, user_query is enough; do not ask the user for job category or job family.
+    Optional industry and target_role are only hints when they are already known.
     For salary or compensation questions, prefer the salary_benchmark tool.
     If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
     sub_agent = intent_hint.strip() or ("salary_benchmark" if _looks_like_salary_query(user_query) else "trend_tracker")
