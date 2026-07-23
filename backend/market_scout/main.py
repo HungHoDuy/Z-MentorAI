@@ -38,6 +38,7 @@ class TrendTrackerRequest(BaseModel):
     job_category: str | None = None
     location_id: str | None = None
     location: str | None = None
+    role_mention: str | None = None
     user_query: str | None = None
 
 
@@ -113,6 +114,7 @@ async def trend_tracker(
         "job_category": body.job_category,
         "location_id": body.location_id,
         "location": body.location,
+        "role_mention": body.role_mention,
     }
     return await _run_agent(
         agent,
