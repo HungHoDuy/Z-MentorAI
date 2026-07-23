@@ -313,7 +313,10 @@ class MarketScoutAgent:
         return MarketScoutResponse(
             agent="market_scout",
             intent=intent,
-            answer="Vui long cung cap job category hoac job family va dia diem de truy van Trend Tracker.",
+            answer=(
+                "Minh can ten vi tri/cong viec va khu vuc ban muon xem nhu cau tuyen dung. "
+                "Vi du: AI Engineer tai Ha Noi co dang tuyen nhieu khong?"
+            ),
             confidence="low",
             data={},
             sources=[],
