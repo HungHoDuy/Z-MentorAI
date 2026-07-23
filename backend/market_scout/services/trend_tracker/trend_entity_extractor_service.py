@@ -79,7 +79,10 @@ class TrendEntityExtractorService:
             if location_id:
                 extracted["location_id"] = location_id
 
-        if not _has_any(existing_entities, extracted, ("job_category_id", "job_category", "job_family_id")):
+        if (
+            not (self.role_search_service is None and _is_role_current_demand(existing_entities))
+            and not _has_any(existing_entities, extracted, ("job_category_id", "job_category", "job_family_id"))
+        ):
             self._apply_role_fact_search(existing_entities, extracted)
 
         return extracted
@@ -242,6 +245,13 @@ def _job_source_from_match(match: Any) -> dict[str, Any]:
         "job_category_ids": list(getattr(match, "job_category_ids", None) or []),
         "job_family_ids": list(getattr(match, "job_family_ids", None) or []),
     }
+
+
+def _is_role_current_demand(existing_entities: Mapping[str, Any]) -> bool:
+    if not _optional_text(existing_entities.get("role_mention") or existing_entities.get("target_role")):
+        return False
+    trend_intent = _optional_text(existing_entities.get("trend_intent"))
+    return trend_intent in {None, "current_demand"}
 
 def _optional_text(value: Any) -> str | None:
     if value is None:

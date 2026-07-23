@@ -5,8 +5,15 @@ from typing import Any
 
 from backend.market_scout.agent import MarketScoutAgent, _classify_intent, _trend_intent_from_query
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlowResult
+from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent
-from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryIntent
+from backend.market_scout.schemas.market_scout_query_understanding import (
+    MarketScoutQueryUnderstanding,
+    TrendQueryUnderstanding,
+)
+from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
+from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryIntent
+from backend.market_scout.schemas.trend_tracker.trend_summary import TrendSummaryResult
 from backend.market_scout.services.salary_benchmark.salary_benchmark_service import (
     SalaryBenchmarkResult,
     SalaryBenchmarkSource,
@@ -24,6 +31,68 @@ class FakeSalaryFlow:
         self.calls.append((query, kwargs))
         return self.result
 
+
+
+
+class FakeTrendSummaryComposer:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def summarize(self, result: TrendTrackerFlowResult) -> TrendSummaryResult:
+        self.calls.append(result)
+        return TrendSummaryResult(
+            answer="Trend response.",
+            confidence=result.signal.confidence,
+            sources=result.signal.sources,
+            limitations=result.signal.limitations,
+            composer_version="fake",
+        )
+
+class FakeTrendFlow:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def run(self, query_input):
+        self.calls.append(query_input)
+        query = TrendQuery(
+            intent=query_input.intent,
+            job_family_id=query_input.job_family_id or "digital_telecom",
+            job_category_id=query_input.job_category_id,
+            location_id=query_input.location_id or "ha-noi",
+            role_mention=query_input.role_mention,
+        )
+        return TrendTrackerFlowResult(
+            query=query,
+            signal=HybridSignalResult(
+                intent=query.intent.value,
+                signal="current_role_demand_limited",
+                job_family_id=query.job_family_id,
+                job_category_id=query.job_category_id,
+                location_id=query.location_id,
+                snapshot_id=None,
+                period=None,
+                confidence="low",
+                directional_trend=False,
+                data={"active_job_count": 3, "distinct_company_count": 2},
+                sources=[],
+                limitations=[],
+            ),
+        )
+
+
+class FakeQueryUnderstandingService:
+    def __init__(self, trend_query: TrendQueryUnderstanding | None = None) -> None:
+        self.trend_query = trend_query
+        self.calls: list[str] = []
+
+    def understand(self, user_query: str) -> MarketScoutQueryUnderstanding:
+        self.calls.append(user_query)
+        return MarketScoutQueryUnderstanding(
+            intent=MarketScoutIntent.TREND_TRACKER,
+            trend_query=self.trend_query,
+            confidence="high" if self.trend_query else "low",
+            source="fake",
+        )
 
 def test_market_scout_agent_routes_salary_query_to_salary_flow() -> None:
     flow_result = _make_flow_result()
@@ -57,13 +126,45 @@ def test_market_scout_agent_routes_salary_query_to_salary_flow() -> None:
 
 def test_market_scout_agent_routes_trend_query_to_trend_tracker() -> None:
     salary_flow = FakeSalaryFlow(_make_flow_result())
-    agent = MarketScoutAgent(salary_flow=salary_flow)
+    trend_flow = FakeTrendFlow()
+    agent = MarketScoutAgent(
+        salary_flow=salary_flow,
+        trend_flow=trend_flow,
+        response_composer=FakeTrendSummaryComposer(),
+        query_understanding_service=FakeQueryUnderstandingService(),
+    )
 
     response = asyncio.run(agent.run("Xu huong AI Data tai Vietnam 2026"))
 
     assert response.intent == MarketScoutIntent.TREND_TRACKER
     assert response.confidence == "low"
     assert salary_flow.calls == []
+    assert len(trend_flow.calls) == 1
+
+
+def test_market_scout_agent_extracts_role_mention_from_query_understanding_for_ui_query() -> None:
+    trend_flow = FakeTrendFlow()
+    query_understanding = FakeQueryUnderstandingService(
+        TrendQueryUnderstanding(
+            intent=TrendQueryIntent.CURRENT_DEMAND,
+            role_mention="business analyst",
+            location_text="Ha Noi",
+            confidence="high",
+        )
+    )
+    agent = MarketScoutAgent(
+        salary_flow=FakeSalaryFlow(_make_flow_result()),
+        trend_flow=trend_flow,
+        response_composer=FakeTrendSummaryComposer(),
+        query_understanding_service=query_understanding,
+    )
+
+    response = asyncio.run(agent.run("business analyst tai Ha Noi co dang tuyen nhieu khong?"))
+
+    assert response.intent == MarketScoutIntent.TREND_TRACKER
+    assert query_understanding.calls == ["business analyst tai Ha Noi co dang tuyen nhieu khong?"]
+    assert trend_flow.calls[0].role_mention == "business analyst"
+    assert trend_flow.calls[0].location_id == "ha-noi"
 
 
 def test_market_scout_agent_classifies_skill_questions_as_trend_tracker() -> None:

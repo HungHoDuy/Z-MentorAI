@@ -11,6 +11,7 @@ from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlow, TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest, MarketScoutResponse
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryInput, TrendQueryIntent
+from backend.market_scout.services.market_scout_query_understanding_service import MarketScoutQueryUnderstandingService
 from backend.market_scout.services.trend_tracker.trend_entity_extractor_service import TrendEntityExtractorService
 from backend.market_scout.services.trend_tracker.trend_llm_summary_service import TrendLlmSummaryService
 
@@ -42,6 +43,7 @@ class MarketScoutAgent:
         hybrid_flow: Any | None = None,
         response_composer: Any | None = None,
         trend_entity_extractor: TrendEntityExtractorService | None = None,
+        query_understanding_service: Any | None = None,
         default_top_k: int = 30,
         default_fetch_k: int | None = 80,
     ) -> None:
@@ -53,6 +55,7 @@ class MarketScoutAgent:
         self.hybrid_flow = hybrid_flow
         self.response_composer = response_composer or TrendLlmSummaryService()
         self.trend_entity_extractor = trend_entity_extractor or TrendEntityExtractorService()
+        self.query_understanding_service = query_understanding_service or MarketScoutQueryUnderstandingService()
         self.default_top_k = default_top_k
         self.default_fetch_k = default_fetch_k
 
@@ -244,6 +247,7 @@ class MarketScoutAgent:
             entities.update(context_trend)
         if request.entities_hint:
             entities.update(request.entities_hint)
+        entities.update(self._trend_entities_from_query_understanding(request.user_query, entities))
         entities.update(self.trend_entity_extractor.extract(request.user_query, entities))
         if self.entity_extractor is not None:
             try:
@@ -254,6 +258,39 @@ class MarketScoutAgent:
             if isinstance(extracted, dict):
                 entities.update({key: value for key, value in extracted.items() if value is not None})
         return entities
+
+    def _trend_entities_from_query_understanding(
+        self,
+        user_query: str,
+        existing_entities: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.query_understanding_service is None:
+            return {}
+        try:
+            understanding = self.query_understanding_service.understand(user_query)
+        except Exception as exc:
+            _log_event(
+                "market_scout_query_understanding_failed",
+                agent="market_scout",
+                user_query=_short_query(user_query),
+                error=str(exc),
+            )
+            return {}
+        trend_query = getattr(understanding, "trend_query", None)
+        if trend_query is None:
+            return {}
+        extracted = {
+            "trend_intent": getattr(getattr(trend_query, "intent", None), "value", None),
+            "role_mention": getattr(trend_query, "role_mention", None),
+            "location_text": getattr(trend_query, "location_text", None),
+            "job_category_hint": getattr(trend_query, "job_category_hint", None),
+            "job_family_hint": getattr(trend_query, "job_family_hint", None),
+        }
+        return {
+            key: value
+            for key, value in extracted.items()
+            if value is not None and not existing_entities.get(key)
+        }
 
     @staticmethod
     def _compose_trend_response(
