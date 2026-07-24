@@ -16,6 +16,7 @@ from backend.market_scout.schemas.market_scout_query_understanding import (
 )
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryIntent
 from backend.market_scout.services.salary_benchmark.salary_query_normalizer import SalaryQueryNormalizer
+from backend.market_scout.services.salary_benchmark.salary_query_understanding_service import SalaryQueryUnderstandingService
 
 
 DEFAULT_LLM_MODEL = "gemini-2.5-flash"
@@ -37,6 +38,7 @@ class MarketScoutQueryUnderstandingService:
         *,
         llm: ChatModel | None = None,
         salary_query_normalizer: SalaryQueryNormalizer | None = None,
+        salary_query_understanding_service: SalaryQueryUnderstandingService | None = None,
         model_name: str | None = None,
         project: str | None = None,
         location: str | None = None,
@@ -47,6 +49,9 @@ class MarketScoutQueryUnderstandingService:
         _load_env_file()
         self._llm = llm
         self.salary_query_normalizer = salary_query_normalizer or SalaryQueryNormalizer()
+        self.salary_query_understanding_service = salary_query_understanding_service or SalaryQueryUnderstandingService(
+            normalizer=self.salary_query_normalizer
+        )
         self.model_name = model_name or os.getenv("MARKET_SCOUT_QUERY_UNDERSTANDING_MODEL", DEFAULT_LLM_MODEL)
         self.project = project or os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = location or os.getenv("MARKET_SCOUT_VERTEX_LOCATION", DEFAULT_VERTEX_LOCATION)
@@ -60,7 +65,7 @@ class MarketScoutQueryUnderstandingService:
         if heuristic_intent is MarketScoutIntent.SALARY_BENCHMARK:
             return MarketScoutQueryUnderstanding(
                 intent=heuristic_intent,
-                salary_query=self.salary_query_normalizer.extract(user_query),
+                salary_query=self.salary_query_understanding_service.extract(user_query),
                 confidence="medium",
                 source="salary_query_normalizer",
             )
@@ -80,7 +85,7 @@ class MarketScoutQueryUnderstandingService:
             if llm_intent is MarketScoutIntent.SALARY_BENCHMARK:
                 return MarketScoutQueryUnderstanding(
                     intent=llm_intent,
-                    salary_query=self.salary_query_normalizer.extract(user_query),
+                    salary_query=self.salary_query_understanding_service.extract(user_query),
                     confidence=_confidence(parsed.get("confidence")),
                     source="llm",
                 )

@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from backend.market_scout.repositories.salary_benchmark.salary_vector_repository import SalaryVectorRepository, SalaryVectorSearchResult
 from backend.market_scout.services.salary_benchmark.salary_benchmark_service import SalaryBenchmarkResult, SalaryBenchmarkService
 from backend.market_scout.services.salary_benchmark.salary_summary_service import SalarySummaryResult, SalarySummaryService
+from backend.market_scout.services.salary_benchmark.salary_query_understanding_service import SalaryQueryUnderstandingService
 
 logger = logging.getLogger("market_scout")
 
@@ -75,10 +76,14 @@ class SalaryBenchmarkFlow:
         vector_repository: SalaryVectorSearchPort | None = None,
         benchmark_service: SalaryBenchmarkService | None = None,
         summary_service: SalarySummaryService | None = None,
+        query_understanding_service: SalaryQueryUnderstandingService | None = None,
     ) -> None:
         self.vector_repository = vector_repository or SalaryVectorRepository()
         self.benchmark_service = benchmark_service or SalaryBenchmarkService()
         self.summary_service = summary_service or SalarySummaryService()
+        self.query_understanding_service = query_understanding_service or SalaryQueryUnderstandingService(
+            normalizer=self.benchmark_service.normalizer
+        )
 
     def run(
         self,
@@ -90,9 +95,36 @@ class SalaryBenchmarkFlow:
         filter_location: bool = True,
         filter_experience: bool = True,
     ) -> SalaryBenchmarkFlowResult:
+        search_query = self.query_understanding_service.extract(query)
+        if not search_query.job_title_normalized:
+            benchmark = SalaryBenchmarkResult(
+                job_title=None,
+                location=search_query.location,
+                experience_years=search_query.experience_years,
+                salary_range=None,
+                sample_size=0,
+                confidence="low",
+                sources=[],
+                average_distance=None,
+                discarded_outliers=0,
+                matched_records=0,
+            )
+            return SalaryBenchmarkFlowResult(
+                query=query,
+                retrieved_records=0,
+                benchmark=benchmark,
+                summary=SalarySummaryResult(
+                    answer=(
+                        "Minh can ban cho biet vi tri cong viec cu the de tra cuu muc luong. "
+                        "Ban co the hoi kieu: luong Business Analyst tai Ha Noi voi 3 nam kinh nghiem la bao nhieu?"
+                    ),
+                    model_name="salary-rule-based-clarification",
+                ),
+            )
+
         search_start = perf_counter()
         search_results = self.vector_repository.search(
-            query,
+            search_query,
             top_k=top_k,
             fetch_k=fetch_k,
             require_salary=True,
@@ -103,7 +135,7 @@ class SalaryBenchmarkFlow:
         _log_step("salary_vector_search", query, search_start, retrieved_records=len(search_results))
 
         aggregate_start = perf_counter()
-        benchmark = self.benchmark_service.aggregate(query, search_results)
+        benchmark = self.benchmark_service.aggregate(search_query, search_results)
         _log_step(
             "salary_aggregate",
             query,

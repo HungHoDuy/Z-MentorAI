@@ -167,6 +167,12 @@ def test_market_scout_agent_extracts_role_mention_from_query_understanding_for_u
     assert trend_flow.calls[0].location_id == "ha-noi"
 
 
+def test_market_scout_agent_classifies_hiring_volume_question_as_trend_tracker() -> None:
+    query = "vi tri DevOps tai Ho Chi Minh co tuyen dung nhieu khong?"
+
+    assert _classify_intent(query) is MarketScoutIntent.TREND_TRACKER
+
+
 def test_market_scout_agent_classifies_skill_questions_as_trend_tracker() -> None:
     query = "Ngành kinh doanh bán hàng tại Hồ Chí Minh đang cần kỹ năng gì?"
 

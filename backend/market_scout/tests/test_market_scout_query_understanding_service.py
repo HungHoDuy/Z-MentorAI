@@ -1,10 +1,27 @@
 ﻿import json
 
 from backend.market_scout.schemas import MarketScoutIntent
+from backend.market_scout.schemas.salary_benchmark.salary import SalarySearchQuery
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryIntent
 from backend.market_scout.services.market_scout_query_understanding_service import (
     MarketScoutQueryUnderstandingService,
 )
+
+
+class FakeSalaryQueryUnderstandingService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def extract(self, user_query: str) -> SalarySearchQuery:
+        self.calls.append(user_query)
+        return SalarySearchQuery(
+            raw_query=user_query,
+            job_title="backend engineer",
+            job_title_normalized="backend engineer",
+            location="Ha Noi",
+            location_normalized="ha noi",
+            experience_years=3,
+        )
 
 
 class FakeLlm:
@@ -18,14 +35,16 @@ class FakeLlm:
 
 
 def test_understand_salary_uses_existing_salary_normalizer() -> None:
-    service = MarketScoutQueryUnderstandingService()
+    salary_understanding = FakeSalaryQueryUnderstandingService()
+    service = MarketScoutQueryUnderstandingService(salary_query_understanding_service=salary_understanding)
 
     result = service.understand("muc luong backend engineer tai Ha Noi voi 3 nam kinh nghiem")
 
     assert result.intent == MarketScoutIntent.SALARY_BENCHMARK
     assert result.salary_query is not None
     assert result.salary_query.experience_years == 3
-    assert result.salary_query.job_title is not None
+    assert result.salary_query.job_title == "backend engineer"
+    assert salary_understanding.calls == ["muc luong backend engineer tai Ha Noi voi 3 nam kinh nghiem"]
     assert result.trend_query is None
 
 
@@ -78,7 +97,20 @@ def test_understand_unclear_can_use_llm_for_intent_when_enabled() -> None:
 
 
 def test_understand_ai_replacement_question_as_automation_exposure() -> None:
-    service = MarketScoutQueryUnderstandingService()
+    service = MarketScoutQueryUnderstandingService(
+        llm=FakeLlm(
+            {
+                "intent": "trend_tracker",
+                "trend_intent": "automation_exposure",
+                "role_mention": "ke toan",
+                "location_text": None,
+                "job_category_hint": None,
+                "job_family_hint": None,
+                "requested_signal": "automation_exposure",
+                "confidence": "high",
+            }
+        )
+    )
 
     result = service.understand("Lieu cong viec ke toan co bi thay the boi AI khong?")
 
