@@ -1162,25 +1162,6 @@
   line-height: 1.48;
 }
 
-.profile-analysis-mode {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
-}
-
-.profile-analysis-mode span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 0.5rem;
-  border: 1px solid rgba(15, 118, 110, 0.16);
-  border-radius: 999px;
-  background: #ecfeff;
-  color: #0f766e;
-  font-size: 0.68rem;
-  font-weight: 760;
-}
 .legacy-analysis-mode { display: none; }
 
 .holland-score-meta {

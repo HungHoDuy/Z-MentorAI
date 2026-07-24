@@ -65,6 +65,32 @@ const scoreDimensionLabels = {
   en: { role_skill_fit: 'Role skill fit', experience_evidence: 'Experience and evidence', education_certification: 'Education and certification', career_readiness: 'Career-readiness signals', cv_clarity: 'CV clarity and ATS completeness' }
 };
 
+function getCvScoreCopy(grade, locale) {
+  const normalizedGrade = String(grade || '').toUpperCase();
+  const copy = {
+    vi: {
+      strong: 'Hồ sơ thể hiện mức độ sẵn sàng cao cho vị trí này. Hãy xem từng tiêu chí và duy trì các điểm mạnh nổi bật.',
+      good: 'Hồ sơ có nền tảng phù hợp. Bạn có thể cải thiện thêm bằng cách làm rõ bằng chứng kỹ năng và tác động công việc.',
+      developing: 'Hồ sơ đã có nền tảng ban đầu nhưng còn thiếu một số bằng chứng quan trọng cho vị trí này.',
+      early: 'Hồ sơ chưa thể hiện đủ bằng chứng phù hợp. Hãy ưu tiên kỹ năng cốt lõi, dự án thực tế và kết quả đo lường được.',
+      pending: 'Hệ thống đã đọc CV nhưng chưa có đủ dữ liệu để chấm điểm.'
+    },
+    en: {
+      strong: 'Your CV shows strong readiness for this role. Review each category and continue building on the strongest evidence.',
+      good: 'Your CV has a relevant foundation. Make your skill evidence and work impact more explicit to improve it further.',
+      developing: 'Your CV has an initial foundation but still lacks important evidence for this role.',
+      early: 'Your CV does not yet show enough relevant evidence. Prioritize core skills, practical projects, and measurable outcomes.',
+      pending: 'The CV was processed, but there is not enough information to calculate a score.'
+    }
+  };
+  const localeCopy = copy[locale] || copy.vi;
+  if (['S', 'A'].includes(normalizedGrade)) return localeCopy.strong;
+  if (normalizedGrade === 'B') return localeCopy.good;
+  if (normalizedGrade === 'C') return localeCopy.developing;
+  if (['D', 'E'].includes(normalizedGrade)) return localeCopy.early;
+  return localeCopy.pending;
+}
+
 function localizeRecommendation(text, locale) {
   if (locale === 'en' || !text) return text;
   const dimensionEntries = Object.entries(scoreDimensionLabels.en);
@@ -435,6 +461,7 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
   const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations.map((item) => localizeRecommendation(item, locale)) : [];
   const strengths = Array.isArray(result?.strengths) ? result.strengths : [];
+  const resultSummary = getCvScoreCopy(grade, locale);
 
   return (
     <div className="profile-scan-card">
@@ -443,30 +470,9 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
           <span>{grade}</span>
         </div>
         <div className="profile-scan-title">
-          <div className="profile-scan-eyebrow">{locale === 'vi' ? 'Đánh giá CV' : 'CV benchmark'}</div>
+          <div className="profile-scan-eyebrow">{locale === 'vi' ? 'Kết quả đánh giá CV' : 'CV assessment result'}</div>
           <h3>{result?.target_role || 'Profile Scanner'}</h3>
-          <p>{result?.message_vi || 'Profile Scanner đã hoàn tất phân tích CV.'}</p>
-            <div className="profile-analysis-mode">
-              <span>{result?.benchmark_type === 'dynamic_market'
-                ? (locale === 'vi' ? `Benchmark thị trường · độ tin cậy ${result?.benchmark_confidence || 'chưa xác định'} · ${result?.benchmark_sample_size || 0} tin tuyển dụng / ${result?.benchmark_distinct_companies || 0} công ty` : `Market benchmark · ${result?.benchmark_confidence || 'unknown'} confidence · ${result?.benchmark_sample_size || 0} jobs / ${result?.benchmark_distinct_companies || 0} companies`)
-                : (locale === 'vi' ? 'Benchmark dự phòng · dữ liệu thị trường chưa đủ ngưỡng' : 'Fallback benchmark · insufficient market evidence')}</span>
-              <span>{result?.ai_extraction_used ? (locale === 'vi' ? `Gemini hỗ trợ trích xuất · độ tin cậy ${Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%` : `Gemini-assisted extraction · ${Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}% confidence`) : (locale === 'vi' ? 'Phân tích theo quy tắc dự phòng' : 'Rule-based fallback analysis')}</span>
-            </div>
-            <div className="profile-analysis-mode legacy-analysis-mode">
-              {result?.benchmark_type === 'dynamic_market' && (
-                <span>
-                  Market benchmark · {result?.benchmark_confidence || 'unknown'} confidence · {result?.benchmark_sample_size || 0} JD / {result?.benchmark_distinct_companies || 0} công ty
-                </span>
-              )}
-              {result?.benchmark_type === 'static_fallback' && (
-                <span>Static benchmark fallback · market evidence chưa đạt ngưỡng</span>
-              )}
-              {result?.ai_extraction_used ? (
-              <span>Gemini-assisted extraction · confidence {Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%</span>
-            ) : (
-              <span>Heuristic fallback analysis</span>
-            )}
-          </div>
+          <p>{resultSummary}</p>
         </div>
         <div className="profile-total-score">
           <strong>{hasGrade ? Math.round(Number(result.total_score)) : '--'}</strong>
@@ -482,7 +488,7 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
               <div className="profile-dimension-row" key={dimension.key || dimension.label}>
                 <div className="profile-dimension-meta">
                   <strong>{scoreDimensionLabels[locale][dimension.key] || dimension.label}</strong>
-                  <span>{score}/100 · {Math.round(Number(dimension.weight || 0) * 100)}%</span>
+                  <span>{score}/100</span>
                 </div>
                 <div className="profile-dimension-track">
                   <div className="profile-dimension-fill" style={{ width: `${score}%` }} />
@@ -495,14 +501,14 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
 
       <div className="profile-scan-grid">
         <div>
-          <span className="profile-scan-section-title">Kỹ năng phát hiện</span>
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Kỹ năng nổi bật' : 'Highlighted skills'}</span>
           <div className="profile-skill-cloud">
             {skills.slice(0, 12).map((skill) => <span key={skill}>{skill}</span>)}
             {!skills.length && <em>Chưa phát hiện kỹ năng rõ ràng.</em>}
           </div>
         </div>
         <div>
-          <span className="profile-scan-section-title">Gợi ý cải thiện</span>
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Ưu tiên cải thiện' : 'Improvement priorities'}</span>
           <ul className="profile-recommendations">
             {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
             {!recommendations.length && strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
@@ -600,6 +606,7 @@ function HollandTestForm({ output, onSendMessage }) {
   const assessmentTitle = output?.title || 'Holland Test';
   const assessmentEyebrow = output?.eyebrow_vi || 'Bài đánh giá RIASEC';
   const assessmentDescription = output?.description_vi || 'Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.';
+  const attemptId = output?.attempt_id || '';
   const answeredCount = Object.keys(answers).length;
   const isComplete = answeredCount === questions.length;
 
@@ -616,13 +623,13 @@ function HollandTestForm({ output, onSendMessage }) {
       : `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
     const backendText = isGenericAssessment
       ? [
-        `Mình đã hoàn thành ${assessmentTitle}. Hãy chấm điểm bằng profile_scanner tool với task="assessment_score", assessment_type="${assessmentType}" và answers_json sau:`,
+        `Mình đã hoàn thành ${assessmentTitle}. Hãy chấm điểm bằng profile_scanner tool với task="assessment_score", assessment_type="${assessmentType}", attempt_id="${attemptId}" và answers_json sau:`,
         '```json',
         JSON.stringify(payload, null, 2),
         '```'
       ].join('\n')
       : [
-        'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
+        `Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score", attempt_id="${attemptId}" và answers_json sau:`,
         '```json',
         JSON.stringify(payload, null, 2),
         '```'
@@ -2342,8 +2349,14 @@ export default function App() {
             const data = JSON.parse(dataStr);
 
             if (data.type === 'tool_start') {
-              streamedToolCalls.set(data.tool, {
-                id: `${data.tool}-${Date.now()}`,
+              const existingLegacyCall = !data.tool_call_id
+                ? Array.from(streamedToolCalls.entries()).find(([, call]) => (
+                  call.name === data.tool && call.status === 'running'
+                ))
+                : null;
+              const toolCallKey = data.tool_call_id || existingLegacyCall?.[0] || `${data.tool}-${Date.now()}`;
+              streamedToolCalls.set(toolCallKey, {
+                id: toolCallKey,
                 name: data.tool,
                 input: data.input,
                 status: 'running'
@@ -2351,12 +2364,12 @@ export default function App() {
               setActiveAgents((prev) => [...new Set([...prev, data.tool])]);
               setMessages((prev) => prev.map((msg) => {
                 if (msg.id !== assistantMessageId) return msg;
-                const exists = msg.toolCalls.some((toolCall) => toolCall.name === data.tool);
+                const exists = msg.toolCalls.some((toolCall) => toolCall.id === toolCallKey);
                 if (exists) return msg;
                 return {
                   ...msg,
                   toolCalls: [...msg.toolCalls, {
-                    id: `${data.tool}-${Date.now()}`,
+                    id: toolCallKey,
                     name: data.tool,
                     input: data.input,
                     status: 'running'
@@ -2364,9 +2377,15 @@ export default function App() {
                 };
               }));
             } else if (data.type === 'tool_end') {
-              const previousToolCall = streamedToolCalls.get(data.tool);
-              streamedToolCalls.set(data.tool, {
-                id: previousToolCall?.id || `${data.tool}-${Date.now()}`,
+              const existingLegacyCall = !data.tool_call_id
+                ? Array.from(streamedToolCalls.entries()).find(([, call]) => (
+                  call.name === data.tool && call.status === 'running'
+                ))
+                : null;
+              const toolCallKey = data.tool_call_id || existingLegacyCall?.[0] || `${data.tool}-${Date.now()}`;
+              const previousToolCall = streamedToolCalls.get(toolCallKey);
+              streamedToolCalls.set(toolCallKey, {
+                id: previousToolCall?.id || toolCallKey,
                 name: data.tool,
                 input: previousToolCall?.input || data.input,
                 output: data.output,
@@ -2375,12 +2394,12 @@ export default function App() {
               setActiveAgents((prev) => prev.filter((tool) => tool !== data.tool));
               setMessages((prev) => prev.map((msg) => {
                 if (msg.id !== assistantMessageId) return msg;
-                const existingToolCall = msg.toolCalls.find((toolCall) => toolCall.name === data.tool);
+                const existingToolCall = msg.toolCalls.find((toolCall) => toolCall.id === toolCallKey);
                 if (!existingToolCall) {
                   return {
                     ...msg,
                     toolCalls: [...msg.toolCalls, {
-                      id: `${data.tool}-${Date.now()}`,
+                      id: toolCallKey,
                       name: data.tool,
                       input: data.input,
                       output: data.output,
@@ -2391,7 +2410,7 @@ export default function App() {
                 return {
                   ...msg,
                   toolCalls: msg.toolCalls.map((toolCall) => (
-                    toolCall.name === data.tool
+                    toolCall.id === toolCallKey
                       ? { ...toolCall, output: data.output, status: 'completed' }
                       : toolCall
                   ))
@@ -2422,18 +2441,22 @@ export default function App() {
         if (!trimmed.startsWith('data: ')) return;
         try {
           const data = JSON.parse(trimmed.slice(6));
-          if (data.type === 'tool_start' && !streamedToolCalls.has(data.tool)) {
-            streamedToolCalls.set(data.tool, {
-              id: `${data.tool}-${Date.now()}`,
+          const existingReplayCall = !data.tool_call_id
+            ? Array.from(streamedToolCalls.entries()).find(([, call]) => call.name === data.tool)
+            : null;
+          const toolCallKey = data.tool_call_id || existingReplayCall?.[0] || `legacy-${data.tool}`;
+          if (data.type === 'tool_start' && !streamedToolCalls.has(toolCallKey)) {
+            streamedToolCalls.set(toolCallKey, {
+              id: toolCallKey,
               name: data.tool,
               input: data.input,
               status: 'running'
             });
           }
           if (data.type === 'tool_end') {
-            const previousToolCall = streamedToolCalls.get(data.tool);
-            streamedToolCalls.set(data.tool, {
-              id: previousToolCall?.id || `${data.tool}-${Date.now()}`,
+            const previousToolCall = streamedToolCalls.get(toolCallKey);
+            streamedToolCalls.set(toolCallKey, {
+              id: previousToolCall?.id || toolCallKey,
               name: data.tool,
               input: previousToolCall?.input || data.input,
               output: data.output,
@@ -2451,7 +2474,7 @@ export default function App() {
           if (msg.id !== assistantMessageId) return msg;
           const mergedToolCalls = [...msg.toolCalls];
           finalToolCalls.forEach((toolCall) => {
-            const existingIndex = mergedToolCalls.findIndex((item) => item.name === toolCall.name);
+            const existingIndex = mergedToolCalls.findIndex((item) => item.id === toolCall.id);
             if (existingIndex >= 0) {
               mergedToolCalls[existingIndex] = { ...mergedToolCalls[existingIndex], ...toolCall };
             } else {
