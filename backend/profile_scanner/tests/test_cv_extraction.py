@@ -1,8 +1,14 @@
 import unittest
 import io
 import zipfile
+from unittest.mock import AsyncMock, patch
 
-from cv_extraction.service import assess_pdf_text_quality, extract_docx_images
+from cv_extraction.service import (
+    EXTRACTION_VERSION,
+    assess_pdf_text_quality,
+    extract_cv_text,
+    extract_docx_images,
+)
 
 
 class CvExtractionQualityTests(unittest.TestCase):
@@ -52,6 +58,55 @@ class CvExtractionQualityTests(unittest.TestCase):
         images = extract_docx_images(buffer.getvalue())
 
         self.assertEqual(images, [(b"fake-image", "image/png")])
+
+
+class CvExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
+    @patch("cv_extraction.service.update_cv_document", new_callable=AsyncMock)
+    @patch(
+        "cv_extraction.service.upload_text_artifact",
+        side_effect=[
+            "gs://cv-bucket/users/user-1/cv_documents/cv-1/parsed_text.txt",
+            "gs://cv-bucket/users/user-1/cv_documents/cv-1/parsed_result.json",
+        ],
+    )
+    @patch("cv_extraction.service.extract_pdf_text")
+    @patch("cv_extraction.service.storage.Client")
+    async def test_successful_pdf_response_includes_extraction_version(
+        self,
+        storage_client,
+        extract_pdf_text_mock,
+        _upload_text_artifact,
+        update_cv_document_mock,
+    ):
+        parsed_text = " ".join(
+            [
+                "Software engineer with Python API cloud project experience education skills",
+                "Built production services with measurable results and team collaboration",
+            ]
+            * 20
+        )
+        extract_pdf_text_mock.return_value = (
+            parsed_text,
+            2,
+            [len(parsed_text) // 2, len(parsed_text) // 2],
+        )
+        bucket = storage_client.return_value.bucket.return_value
+        bucket.blob.return_value.download_as_bytes.return_value = b"%PDF-test"
+
+        result = await extract_cv_text(
+            {
+                "cv_document_id": "cv-1",
+                "file_kind": "pdf",
+                "file_size_bytes": 9,
+                "storage_bucket": "cv-bucket",
+                "storage_object": "users/user-1/cv_documents/cv-1/original.pdf",
+            }
+        )
+
+        self.assertEqual(result.extraction_version, EXTRACTION_VERSION)
+        self.assertEqual(result.parser_type, "pypdf")
+        self.assertEqual(result.text_char_count, len(parsed_text))
+        update_cv_document_mock.assert_awaited_once()
 
 
 if __name__ == "__main__":
