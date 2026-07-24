@@ -441,6 +441,7 @@ async def extract_cv_text(document: dict) -> CvExtractionResult:
 
     return CvExtractionResult(
         cv_document_id=cv_document_id,
+        extraction_version=EXTRACTION_VERSION,
         parser_type=parser_type,
         ocr_fallback_used="document_ai_ocr" in parser_type,
         text_char_count=len(parsed_text),
