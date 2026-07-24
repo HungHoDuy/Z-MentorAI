@@ -253,8 +253,12 @@ def normalize_tool_output(output: Any) -> dict:
 def summarize_tool_calls(tool_calls: list[dict]) -> str:
     for tool_call in tool_calls:
         name = tool_call.get("name")
-        if name == "academic_architect":
-            return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
+        if name in {"academic_architect", "academic_architect_create_gantt"}:
+            return "Đã xây dựng lộ trình học tập Gantt Chart và gợi ý các khóa học phù hợp."
+        elif name == "academic_architect_skill_gap":
+            return "Đã phân tích khoảng cách kỹ năng từ dữ liệu tuyển dụng thực tế."
+        elif name == "academic_architect_swap_course":
+            return "Đã cập nhật khóa học thay thế vào lộ trình Gantt Chart."
         elif name == "academic_architect_input_verifier":
             return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
         elif name == "market_scout":

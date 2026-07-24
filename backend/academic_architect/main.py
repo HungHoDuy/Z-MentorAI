@@ -5,13 +5,21 @@ import json
 import logging
 import uuid
 import datetime
+import re
+import asyncio
 from typing import Any, Optional, List
 from pathlib import Path
+from io import BytesIO
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, Request
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from sse_starlette.sse import EventSourceResponse
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # Load environment variables
 env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -31,6 +39,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("academic_architect")
 
 COLLECTION_NAME = "learning_material"
+JOBS_VECTOR_COLLECTION = "data_vector_embeddings"
+GANTT_COLLECTION_NAME = "academic_gantt_charts"
 
 # Initialize LLM
 llm = None
@@ -64,6 +74,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global in-memory SSE event queues for task progress streaming
+progress_queues: dict[str, asyncio.Queue] = {}
+
+async def emit_progress(task_id: Optional[str], step: str, status: str, duration_ms: float, message: str):
+    """Emit a structured SSE progress event with duration timing."""
+    if not task_id:
+        return
+    if task_id not in progress_queues:
+        progress_queues[task_id] = asyncio.Queue()
+        
+    event_payload = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "step": step,
+        "status": status,
+        "duration_ms": round(duration_ms, 2),
+        "message": message
+    }
+    await progress_queues[task_id].put(event_payload)
+    logger.info(f"Progress [{task_id}] ({step} - {duration_ms:.1f}ms): {message}")
+
+# --- Pydantic Data Schemas ---
 class SearchRequest(BaseModel):
     search_text: str
     search_mode: str  # "name" or "description"
@@ -78,24 +109,72 @@ class SearchResponse(BaseModel):
     query_time_ms: float
     courses: list[dict]
 
-import re
-
 class SkillsUpdateRequest(BaseModel):
     skills: List[str]
 
 class ArchitectRequest(BaseModel):
     career_goal: str
-    current_skills: str
+    current_skills: Optional[str] = None
     user_id: Optional[str] = None
+    task_id: Optional[str] = None
+
+class SkillGapRequest(BaseModel):
+    career_goal: str
+    current_skills: Optional[str] = None
+    user_id: Optional[str] = None
+    task_id: Optional[str] = None
+
+class SkillGapResponse(BaseModel):
+    status: str
+    career_goal: str
+    user_skills: List[str]
+    lacking_skills: List[str]
+    matched_jobs: List[dict]
+    search_queries: Optional[List[dict]] = None
+
+class CreateGanttRequest(BaseModel):
+    career_goal: str
+    lacking_skills: List[str]
+    user_id: Optional[str] = None
+    matched_jobs: Optional[List[dict]] = None
+    task_id: Optional[str] = None
+
+class GanttTaskItem(BaseModel):
+    task_id: str
+    phase_name: str
+    skill_name: str
+    course_id: str
+    course_name: str
+    course_url: str
+    duration_weeks: int
+    start_date: str
+    end_date: str
+    status: str = "NOT_STARTED"
+    is_alternative: bool = False
+
+class GanttChartData(BaseModel):
+    tasks: List[GanttTaskItem]
 
 class ArchitectResponse(BaseModel):
     status: str
+    chart_id: Optional[str] = None
     academic_plan: str
     courses: Optional[List[dict]] = None
     alternative_courses: Optional[List[dict]] = None
     lacking_skills: Optional[List[str]] = None
     matched_jobs: Optional[List[dict]] = None
     career_goal: Optional[str] = None
+    gantt_chart: Optional[dict] = None
+
+class GetAlternativesRequest(BaseModel):
+    chart_id: str
+    task_id: str
+    skill_name: Optional[str] = None
+
+class SwapCourseRequest(BaseModel):
+    chart_id: str
+    task_id: str
+    selected_course_id: str
 
 def get_firestore_client():
     db_name = os.getenv("FIRESTORE_DATABASE")
@@ -133,16 +212,43 @@ def load_jobs() -> List[dict]:
         logger.error(f"Error loading jobs file: {e}")
         return []
 
+# Deterministic User Skill Fetching (Fixes HITL non-deterministic bug)
+def fetch_user_skills_deterministic(user_id: Optional[str], current_skills: Optional[str] = None) -> List[str]:
+    """Programmatically fetch user skills directly from Firestore without relying on LLM decisions."""
+    user_skills = []
+    if user_id:
+        if USE_FIRESTORE:
+            try:
+                db = get_firestore_client()
+                profile_doc = db.collection("profile_scanner_profiles").document(user_id).get()
+                if profile_doc.exists:
+                    profile_data = profile_doc.to_dict() or {}
+                    user_skills = profile_data.get("skills", []) or profile_data.get("extracted_skills", [])
+                    logger.info(f"Deterministic skill fetch from Firestore profile_scanner_profiles for user {user_id}: {user_skills}")
+            except Exception as ex:
+                logger.error(f"Failed to fetch user profile from Firestore: {ex}")
+
+        if not user_skills:
+            local_db = read_local_skills_db()
+            user_skills = local_db.get(user_id, [])
+            if user_skills:
+                logger.info(f"Deterministic skill fetch from local DB for user {user_id}: {user_skills}")
+
+    if not user_skills and current_skills:
+        user_skills = [s.strip() for s in current_skills.split(",") if s.strip()]
+
+    return user_skills
+
 # Cache for embeddings instances
 _embeddings_cache = {}
 
-def get_embeddings(dimensions: Optional[int] = None):
+def get_embeddings(model_name: str = "text-embedding-004", dimensions: Optional[int] = None):
     project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID")
     location = os.getenv("VERTEX_AI_LOCATION", "asia-southeast1")
-    cache_key = (dimensions, project, location)
+    cache_key = (model_name, dimensions, project, location)
     if cache_key not in _embeddings_cache:
         kwargs = {
-            "model_name": "text-embedding-004",
+            "model_name": model_name,
         }
         if dimensions is not None:
             kwargs["dimensions"] = dimensions
@@ -154,29 +260,97 @@ def get_embeddings(dimensions: Optional[int] = None):
         _embeddings_cache[cache_key] = VertexAIEmbeddings(**kwargs)
     return _embeddings_cache[cache_key]
 
+# Data-Driven Job Vector Search on Firestore data_vector_embeddings (text-multilingual-embedding-002)
+def perform_data_driven_job_search(career_goal: str, k: int = 30) -> tuple[List[dict], float]:
+    """Retrieve top 30 candidate jobs from data_vector_embeddings and pick top 5 newest."""
+    t_start = time.perf_counter()
+    try:
+        embeddings = get_embeddings(model_name="text-multilingual-embedding-002")
+        query_vector = embeddings.embed_query(career_goal)
+
+        db = get_firestore_client()
+        col_ref = db.collection(JOBS_VECTOR_COLLECTION)
+
+        query = col_ref.find_nearest(
+            vector_field="embedding",
+            query_vector=Vector(query_vector),
+            distance_measure=DistanceMeasure.COSINE,
+            limit=k,
+            distance_result_field="vector_distance"
+        )
+
+        docs = list(query.stream())
+        logger.info(f"Retrieved {len(docs)} docs from Firestore collection '{JOBS_VECTOR_COLLECTION}'")
+        
+        results = []
+        for doc in docs:
+            d = doc.to_dict() or {}
+            d["document_id"] = doc.id
+            results.append(d)
+
+        if results:
+            # Sort in-memory by embedding_updated_at descending to select top 5 newest
+            def parse_update_time(doc_dict):
+                ts = doc_dict.get("embedding_updated_at") or doc_dict.get("created_at") or ""
+                return str(ts)
+
+            results.sort(key=parse_update_time, reverse=True)
+            top_5_newest = results[:5]
+            elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            return top_5_newest, elapsed_ms
+    except Exception as ex:
+        logger.warning(f"Vector search on '{JOBS_VECTOR_COLLECTION}' encountered exception/empty result: {ex}. Falling back to load_jobs().")
+
+    # Fallback to local first_page_jobs.json if data_vector_embeddings search yields nothing
+    all_jobs = load_jobs()
+    goal_lower = career_goal.lower()
+    goal_keywords = [w for w in re.split(r'\W+', goal_lower) if len(w) > 2]
+    
+    candidate_jobs = []
+    for job in all_jobs:
+        title = (job.get("job_title") or "").lower()
+        url = (job.get("job_url") or "").lower()
+        description = (job.get("Mô tả Công việc") or "").lower()
+        requirements = (job.get("Yêu Cầu Công Việc") or "").lower()
+        industry = (job.get("Ngành nghề") or "").lower()
+        
+        score = 0
+        if goal_lower in title:
+            score += 10
+        for kw in goal_keywords:
+            if kw in title:
+                score += 4
+            if kw in requirements:
+                score += 1
+        if score > 0:
+            candidate_jobs.append((score, job))
+
+    candidate_jobs.sort(key=lambda x: x[0], reverse=True)
+    top_candidates = [item[1] for item in candidate_jobs[:5]]
+    if not top_candidates:
+        top_candidates = all_jobs[:5]
+
+    elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+    return top_candidates, elapsed_ms
+
 def perform_vector_search(search_text: str, search_mode: str, domain: Optional[str] = None, k: int = 3) -> tuple[List[dict], str]:
-    """Helper to perform native Firestore vector search using find_nearest with domain pre-filtering."""
+    """Helper to perform native Firestore vector search on Coursera catalog using find_nearest with domain pre-filtering."""
     normalized_mode = search_mode.strip().lower()
     if normalized_mode not in ("name", "description"):
         raise ValueError("search_mode must be 'name' or 'description'")
         
-    # 1. Embed query
     if normalized_mode == "name":
-        # 128 dimensions for name embedding
-        embeddings = get_embeddings(dimensions=128)
+        embeddings = get_embeddings(model_name="text-embedding-004", dimensions=128)
         vector_field = "name_embedding"
     else:
-        # Default 768 dimensions for description embedding
-        embeddings = get_embeddings(dimensions=None)
+        embeddings = get_embeddings(model_name="text-embedding-004", dimensions=None)
         vector_field = "description_embedding"
         
     query_vector = embeddings.embed_query(search_text)
     
-    # 2. Connect to Firestore
     db = get_firestore_client()
     col_ref = db.collection(COLLECTION_NAME)
     
-    # Validate and fallback domain if needed
     valid_domains = {
         "business", "computer-science", "information-technology", "data-science", 
         "life-sciences", "physical-science-and-engineering", "personal-development", 
@@ -185,10 +359,8 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
     
     norm_domain = domain.strip().lower() if domain else ""
     if norm_domain not in valid_domains:
-        logger.warning(f"Invalid or missing domain '{domain}'. Defaulting to 'computer-science'.")
         norm_domain = "computer-science"
         
-    # 3. Build Vector query (always filtering by domain)
     query = col_ref.where("domainIDs", "array_contains", norm_domain).find_nearest(
         vector_field=vector_field,
         query_vector=Vector(query_vector),
@@ -197,28 +369,24 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
         distance_result_field="vector_distance"
     )
     
-    # 4. Stream and map results
     t_firestore_start = time.perf_counter()
     docs = list(query.stream())
     t_firestore_elapsed = (time.perf_counter() - t_firestore_start) * 1000
-    logger.info(f"Firestore find_nearest query took {t_firestore_elapsed:.2f} ms")
+    logger.info(f"Firestore find_nearest Coursera query took {t_firestore_elapsed:.2f} ms")
+    
     results = []
     for doc in docs:
         doc_data = doc.to_dict()
-        
-        # similarity = 1.0 - cosine_distance
         dist = doc_data.get("vector_distance")
         score = 1.0 - float(dist) if dist is not None else 0.0
         
-        # Extract or default duration
         duration_val = doc_data.get("duration")
         if not duration_val:
             desc_lower = (doc_data.get("description") or "").lower()
             name_lower = (doc_data.get("name") or "").lower()
             text_to_search = name_lower + " " + desc_lower
             
-            # Simple regex to extract hours if present
-            match = re.search(r'(\d+)\s*(hour|hr|giờ|hour|hrs)', text_to_search)
+            match = re.search(r'(\d+)\s*(hour|hr|giờ|hrs)', text_to_search)
             if match:
                 duration_val = f"{match.group(1)} giờ"
             else:
@@ -245,307 +413,469 @@ def perform_vector_search(search_text: str, search_mode: str, domain: Optional[s
             "workload": doc_data.get("workload") or ""
         }
         
-        # Build Coursera URL
         slug = course.get("slug")
-        course["url"] = f"https://www.coursera.org/learn/{slug}"
-            
+        course["url"] = f"https://www.coursera.org/learn/{slug}" if slug else ""
         results.append(course)
         
     return results, norm_domain
 
-@app.post("/search", response_model=SearchResponse)
-async def search_courses(request: SearchRequest):
-    """Rest endpoint to perform RAG searching directly on the Coursera catalog."""
-    start_time = time.perf_counter()
-    try:
-        results, domain_used = perform_vector_search(
-            search_text=request.search_text,
-            search_mode=request.search_mode,
-            domain=request.domain,
-            k=request.k or 5
-        )
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        logger.exception("Error in /search API")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-    query_time_ms = (time.perf_counter() - start_time) * 1000
-    
-    return SearchResponse(
-        search_text=request.search_text,
-        search_mode=request.search_mode,
-        domain=domain_used,
-        query_time_ms=query_time_ms,
-        courses=results
-    )
+# --- SSE Progress Stream Endpoint ---
+@app.get("/stream-progress/{task_id}")
+async def stream_progress(task_id: str, request: Request):
+    """Server-Sent Events endpoint to stream execution progress logs with state timings."""
+    if task_id not in progress_queues:
+        progress_queues[task_id] = asyncio.Queue()
 
-@app.post("/architect", response_model=ArchitectResponse)
-async def create_plan(request: ArchitectRequest):
-    """Generate roadmap by identifying skills gaps and querying Coursera database."""
-    # 1. Retrieve user's current skills from Firestore if user_id is provided
-    user_skills = []
-    if request.user_id:
-        if USE_FIRESTORE:
+    async def event_generator():
+        q = progress_queues[task_id]
+        while True:
+            if await request.is_disconnected():
+                logger.info(f"SSE client disconnected for task {task_id}")
+                break
             try:
-                db = get_firestore_client()
-                profile_doc = db.collection("profile_scanner_profiles").document(request.user_id).get()
-                if profile_doc.exists:
-                    profile_data = profile_doc.to_dict() or {}
-                    user_skills = profile_data.get("skills", []) or profile_data.get("extracted_skills", [])
-                    logger.info(f"Retrieved user skills from Firestore profile_scanner_profiles for user {request.user_id}: {user_skills}")
-            except Exception as ex:
-                logger.error(f"Failed to query user profile from Firestore: {ex}")
+                event_data = await asyncio.wait_for(q.get(), timeout=1.0)
+                yield {
+                    "event": "progress",
+                    "data": json.dumps(event_data, ensure_ascii=False)
+                }
+            except asyncio.TimeoutError:
+                # Send heartbeat
+                yield {
+                    "event": "heartbeat",
+                    "data": json.dumps({"timestamp": datetime.datetime.utcnow().isoformat() + "Z"})
+                }
+
+    return EventSourceResponse(event_generator())
+
+# --- Endpoint 1: USE CASE 1 - /skill-gap ---
+@app.post("/skill-gap", response_model=SkillGapResponse)
+async def analyze_skill_gap(request: SkillGapRequest):
+    """Use Case 1: Data-driven skill gap analysis matching top 5 newest jobs from 30 vector-matched postings."""
+    t_total_start = time.perf_counter()
+    task_id = request.task_id or f"task_{uuid.uuid4().hex[:8]}"
+
+    # Step 1: Deterministic Skill Fetching
+    t_step_start = time.perf_counter()
+    user_skills = fetch_user_skills_deterministic(request.user_id, request.current_skills)
+    step_duration = (time.perf_counter() - t_step_start) * 1000.0
+    await emit_progress(task_id, "FETCH_USER_SKILLS", "COMPLETED", step_duration, f"Programmatically retrieved user skills: {user_skills}")
+
+    # Step 2: Data-Driven Job Vector Search (text-multilingual-embedding-002)
+    await emit_progress(task_id, "VECTOR_SEARCH_JOBS", "STARTED", 0.0, f"Performing vector search on 'data_vector_embeddings' for career goal '{request.career_goal}'...")
+    top_5_jobs, vector_duration = await asyncio.to_thread(perform_data_driven_job_search, request.career_goal, 30)
+    await emit_progress(task_id, "VECTOR_SEARCH_JOBS", "COMPLETED", vector_duration, f"Retrieved 30 jobs and selected top 5 newest postings in {vector_duration:.1f}ms.")
+
+    # Step 3: LLM Skill Gap Extraction from real job texts
+    t_llm_start = time.perf_counter()
+    await emit_progress(task_id, "SKILL_GAP_ANALYSIS", "STARTED", 0.0, "Extracting requirements from real job postings and analyzing skill gaps...")
+
+    formatted_jobs_context = ""
+    matched_jobs_list = []
+    for idx, job in enumerate(top_5_jobs):
+        title = job.get("job_title") or job.get("title") or "Tuyển dụng"
+        company = job.get("company") or job.get("Company") or "Công ty tuyển dụng"
+        salary = job.get("salary") or job.get("Lương") or "Thỏa thuận"
+        url = job.get("job_url") or job.get("url") or ""
+        emb_text = job.get("embedding_text") or job.get("Mô tả Công việc") or job.get("Yêu Cầu Công Việc") or ""
         
-        # Fallback to local DB if no skills found in Firestore or Firestore disabled
-        if not user_skills:
-            local_db = read_local_skills_db()
-            user_skills = local_db.get(request.user_id, [])
-            if user_skills:
-                logger.info(f"Retrieved user skills from local DB for user {request.user_id}: {user_skills}")
+        matched_jobs_list.append({
+            "job_id": job.get("job_id") or f"job_{idx}",
+            "job_title": title,
+            "company": company,
+            "salary": salary,
+            "url": url
+        })
+        formatted_jobs_context += f"Job Index {idx}:\nTitle: {title}\nCompany: {company}\nSalary: {salary}\nDetails: {emb_text[:500]}\nURL: {url}\n\n"
 
-    # Fallback to current_skills if no skills found in CV document
-    if not user_skills and request.current_skills:
-        user_skills = [s.strip() for s in request.current_skills.split(",") if s.strip()]
-
-    if not llm:
-        mock_plan = f"Lộ trình đề xuất để chuyển đổi từ '{user_skills}' sang '{request.career_goal}'."
-        return ArchitectResponse(
-            status="success",
-            academic_plan=mock_plan,
-            courses=[],
-            lacking_skills=[],
-            matched_jobs=[],
-            career_goal=request.career_goal
-        )
-        
-    try:
-        # 2. Match jobs in first_page_jobs.json and filter top candidates
-        candidate_jobs = []
-        goal_lower = request.career_goal.lower()
-        goal_keywords = [w for w in re.split(r'\W+', goal_lower) if len(w) > 2]
-        
-        all_jobs = load_jobs()
-        for job in all_jobs:
-            title = (job.get("job_title") or "").lower()
-            url = (job.get("job_url") or "").lower()
-            description = (job.get("Mô tả Công việc") or "").lower()
-            requirements = (job.get("Yêu Cầu Công Việc") or "").lower()
-            industry = (job.get("Ngành nghề") or "").lower()
-            
-            url_title = ""
-            if "/" in url:
-                slug = url.split("/")[-1]
-                if "." in slug:
-                    url_title = slug.split(".")[0].replace("-", " ")
-                    
-            text_to_search = f"{title} {url_title} {industry} {description} {requirements}"
-            
-            score = 0
-            if goal_lower in title or goal_lower in url_title:
-                score += 10
-            if goal_lower in industry:
-                score += 5
-            for kw in goal_keywords:
-                if kw in title or kw in url_title:
-                    score += 4
-                if kw in industry:
-                    score += 2
-                if kw in requirements:
-                    score += 1
-                    
-            if score > 0:
-                candidate_jobs.append((score, job))
-
-        candidate_jobs.sort(key=lambda x: x[0], reverse=True)
-        top_candidates = [item[1] for item in candidate_jobs[:5]]
-        if not top_candidates:
-            top_candidates = all_jobs[:5]
-
-        # 3. LLM analyzes gaps and identifies search queries
-        jobs_context = ""
-        for idx, job in enumerate(top_candidates):
-            title = job.get("job_title") or ""
-            url = job.get("job_url") or ""
-            company = job.get("company") or "Công ty tuyển dụng"
-            salary = job.get("Lương") or "Thỏa thuận"
-            reqs = job.get("Yêu Cầu Công Việc") or ""
-            desc = job.get("Mô tả Công việc") or ""
-            
-            url_title = ""
-            if "/" in url:
-                slug = url.split("/")[-1]
-                if "." in slug:
-                    url_title = slug.split(".")[0].replace("-", " ").title()
-            
-            display_title = title if not title.startswith("Job ") else (url_title or title)
-            jobs_context += f"Job Index: {idx}\nTitle: {display_title}\nCompany: {company}\nSalary: {salary}\nRequirements: {reqs[:400]}\nDescription: {desc[:400]}\nURL: {url}\n\n"
-
-        prompt_queries = f"""
+    prompt_skill_gap = f"""
 You are the AI Academic Architect.
-The user wants to transition to the target career goal. We have retrieved a list of relevant job postings from our market database.
 Target Career Goal: "{request.career_goal}"
 User's Current Skills: {json.dumps(user_skills)}
 
-Here are the candidate jobs:
-{jobs_context}
+Here are 5 real, recent job market postings matching the career goal:
+{formatted_jobs_context}
 
-Step 1: Identify 1 to 3 job postings that best match the career goal (by Job Index).
-Step 2: Extract the required skills (target skills) for these matched jobs.
-Step 3: Perform a skill gap analysis by comparing target skills with the user's current skills. Identify the specific skills the user is lacking.
-Step 4: For each lacking skill, formulate a single search query to look up courses in our Coursera catalog, and specify the domain.
-Always specify a domain from one of these 11 categories:
-"business", "computer-science", "information-technology", "data-science", "life-sciences", "physical-science-and-engineering", "personal-development", "social-sciences", "arts-and-humanities", "math-and-logic", "language-learning"
+Step 1: Extract the specific technical and domain requirements from these real job postings.
+Step 2: Compare these target requirements against the user's current skills. Identify the specific skills the user is lacking.
+Step 3: For each lacking skill, formulate a single search query to look up courses in Coursera.
+Specify a domain from one of: "business", "computer-science", "information-technology", "data-science", "life-sciences", "physical-science-and-engineering", "personal-development", "social-sciences", "arts-and-humanities", "math-and-logic", "language-learning"
 
-Return the output as a valid JSON object with these keys (do not add any markdown formatting wrapper, extra text, or prefix outside the JSON):
-- "matched_jobs": list of objects containing "job_id", "job_title", "company", "url" for the best matched jobs from the candidates above. Use clean titles (if the original title starts with "Job ", use the descriptive title from the URL slug).
-- "lacking_skills": list of strings of specific skills/technologies the user lacks.
-- "search_queries": list of objects for Coursera search, each containing:
-  - "subject": the name of the lacking skill/subject
-  - "search_text": the search query string
-  - "search_mode": "name" or "description"
-  - "domain": the domain name from the 11 strings above
+Return valid JSON with:
+- "matched_jobs": list of objects with "job_id", "job_title", "company", "url"
+- "lacking_skills": list of strings of missing skills
+- "search_queries": list of objects containing "subject", "search_text", "search_mode" ("name" or "description"), "domain"
 
-Example response:
-{{
-  "matched_jobs": [
-    {{"job_id": "35C73750", "job_title": "Kỹ sư Shop drawing", "company": "Handong", "url": "https://..."}}
-  ],
-  "lacking_skills": ["Revit", "AutoCAD"],
-  "search_queries": [
-    {{"subject": "Revit", "search_text": "revit architecture bim design", "search_mode": "description", "domain": "physical-science-and-engineering"}},
-    {{"subject": "AutoCAD", "search_text": "autocad 2d drafting introduction", "search_mode": "name", "domain": "physical-science-and-engineering"}}
-  ]
-}}
+Do not wrap in markdown outside JSON.
 """
-        res_queries = await llm.ainvoke(prompt_queries)
-        raw_content = res_queries.content.strip()
-        
-        # Clean any markdown JSON wrapper code blocks
+    if llm:
+        res = await llm.ainvoke(prompt_skill_gap)
+        raw_content = res.content.strip()
         if raw_content.startswith("```json"):
             raw_content = raw_content[7:]
         if raw_content.endswith("```"):
             raw_content = raw_content[:-3]
         raw_content = raw_content.strip()
-        
+
         try:
             analysis_data = json.loads(raw_content)
         except Exception:
-            logger.warning(f"Failed to parse LLM analysis JSON: {raw_content}. Falling back to default search queries.")
+            logger.warning("Failed to parse LLM skill gap JSON, using default structure.")
             analysis_data = {
-                "matched_jobs": [{"job_id": j.get("job_id"), "job_title": j.get("job_title"), "company": j.get("company"), "url": j.get("job_url")} for j in top_candidates[:2]],
-                "lacking_skills": ["General Skills"],
-                "search_queries": [{"subject": "Goal", "search_text": request.career_goal, "search_mode": "description", "domain": "computer-science"}]
+                "matched_jobs": matched_jobs_list,
+                "lacking_skills": ["Chuyên môn bổ trợ"],
+                "search_queries": [{"subject": "Skill", "search_text": request.career_goal, "search_mode": "description", "domain": "computer-science"}]
             }
-            
-        matched_jobs = analysis_data.get("matched_jobs", [])
-        lacking_skills = analysis_data.get("lacking_skills", [])
-        query_tasks = analysis_data.get("search_queries", [])
+    else:
+        analysis_data = {
+            "matched_jobs": matched_jobs_list,
+            "lacking_skills": ["Kỹ năng chuyên môn"],
+            "search_queries": [{"subject": "Skill", "search_text": request.career_goal, "search_mode": "description", "domain": "computer-science"}]
+        }
 
-        # 4. Perform vector search for each identified query in parallel
-        import asyncio
-        selected_courses = []
-        alternative_courses = []
-        seen_course_ids = set()
+    llm_duration = (time.perf_counter() - t_llm_start) * 1000.0
+    lacking_skills = analysis_data.get("lacking_skills", [])
+    await emit_progress(task_id, "SKILL_GAP_ANALYSIS", "COMPLETED", llm_duration, f"Skill gap analysis completed. Lacking skills identified: {lacking_skills}")
 
-        async def process_task(task):
-            s_text = task.get("search_text")
-            s_mode = task.get("search_mode", "description")
-            s_domain = task.get("domain")
-            subject = task.get("subject", "general")
-            if not s_text:
-                return None, []
-            try:
-                # perform_vector_search is synchronous, run it in a thread pool
-                results, domain_used = await asyncio.to_thread(
-                    perform_vector_search, s_text, s_mode, s_domain, 3
-                )
-                if not results:
-                    return None, []
-                
-                # Let LLM select the best course from the retrieved courses for this subject
-                best_course = results[0]
-                if len(results) > 1:
-                    courses_list_text = "\n".join([f"Index {idx}: {c['name']} (Mô tả: {c['description'][:200]})" for idx, c in enumerate(results)])
-                    prompt_select_best = f"""
-Dựa trên mục tiêu nghề nghiệp: "{request.career_goal}" và kỹ năng còn thiếu: "{subject}".
-Hãy chọn ra đúng 1 khóa học phù hợp nhất, thiết thực nhất từ danh sách các khóa học Coursera dưới đây để người học bắt đầu học kỹ năng này.
-Trả về duy nhất chỉ số Index của khóa học được chọn (ví dụ: 0 hoặc 1 hoặc 2), không trả thêm bất kỳ từ ngữ nào khác.
+    return SkillGapResponse(
+        status="success",
+        career_goal=request.career_goal,
+        user_skills=user_skills,
+        lacking_skills=lacking_skills,
+        matched_jobs=analysis_data.get("matched_jobs", matched_jobs_list),
+        search_queries=analysis_data.get("search_queries", [])
+    )
 
-Danh sách khóa học:
-{courses_list_text}
-"""
-                    try:
-                        res_best = await llm.ainvoke(prompt_select_best)
-                        best_idx_str = res_best.content.strip()
-                        match = re.search(r'\d+', best_idx_str)
-                        if match:
-                            best_idx = int(match.group(0))
-                            if 0 <= best_idx < len(results):
-                                best_course = results[best_idx]
-                                logger.info(f"LLM selected best course for subject '{subject}': index {best_idx} ({best_course['name']})")
-                    except Exception as e:
-                        logger.error(f"Failed to let LLM select best course for subject '{subject}': {e}")
-                
-                alts = [c for c in results if c["course_id"] != best_course["course_id"]]
-                return best_course, alts
-            except Exception as ex:
-                logger.error(f"Failed to run vector query for task '{s_text}': {ex}")
-                return None, []
+# --- Endpoint 2: USE CASE 2 - /create-gantt ---
+@app.post("/create-gantt", response_model=ArchitectResponse)
+async def create_gantt_roadmap(request: CreateGanttRequest):
+    """Use Case 2: Query Coursera catalog, build structured Gantt timeline & narrative text, and store in Firestore."""
+    task_id = request.task_id or f"task_{uuid.uuid4().hex[:8]}"
+    t_start = time.perf_counter()
 
-        task_futures = [process_task(task) for task in query_tasks]
-        task_results = await asyncio.gather(*task_futures)
+    await emit_progress(task_id, "COURSE_SEARCH", "STARTED", 0.0, "Searching Coursera vector catalog for missing skills...")
+    
+    selected_courses = []
+    alternative_courses = []
+    seen_course_ids = set()
+    gantt_tasks = []
 
-        for best, alts in task_results:
-            if best and best["course_id"] not in seen_course_ids:
+    # Map lacking skills to Coursera vector searches
+    current_start_date = datetime.date.today() + datetime.timedelta(days=7) # Start next week
+
+    for idx, skill in enumerate(request.lacking_skills):
+        t_sub = time.perf_counter()
+        results, domain_used = await asyncio.to_thread(
+            perform_vector_search, skill, "description", "computer-science", 4
+        )
+        dur_sub = (time.perf_counter() - t_sub) * 1000.0
+        
+        if results:
+            best = results[0]
+            if best["course_id"] not in seen_course_ids:
                 seen_course_ids.add(best["course_id"])
                 selected_courses.append(best)
-            for alt in alts:
+
+            for alt in results[1:]:
                 if alt["course_id"] not in seen_course_ids:
                     seen_course_ids.add(alt["course_id"])
                     alternative_courses.append(alt)
-        
-        # We delegate academic_plan generation to the orchestrator for streaming token-by-token.
-        academic_plan_summary = f"Lộ trình học tập đề xuất cho mục tiêu {request.career_goal}."
 
-        return ArchitectResponse(
-            status="success",
-            academic_plan=academic_plan_summary,
-            courses=selected_courses,
-            alternative_courses=alternative_courses,
-            lacking_skills=lacking_skills,
-            matched_jobs=matched_jobs,
-            career_goal=request.career_goal
-        )
-    except Exception as e:
-        logger.exception("Error during academic plan generation")
-        raise HTTPException(status_code=500, detail=str(e))
+            # Build Gantt task
+            duration_weeks = 4 # Default 4 weeks per course module
+            if "giờ" in best.get("duration", ""):
+                try:
+                    hrs = int(re.search(r'\d+', best["duration"]).group(0))
+                    duration_weeks = max(1, round(hrs / 10))
+                except Exception:
+                    pass
+            elif "tháng" in best.get("duration", ""):
+                try:
+                    m = int(re.search(r'\d+', best["duration"]).group(0))
+                    duration_weeks = m * 4
+                except Exception:
+                    pass
 
-@app.get("/skills/{user_id}")
-async def get_user_skills(user_id: str):
-    user_skills = []
-    # 1. Try Firestore if enabled
+            end_date = current_start_date + datetime.timedelta(weeks=duration_weeks)
+
+            task_item = {
+                "task_id": f"task_{idx+1}",
+                "phase_name": f"Phase {idx+1}: {skill}",
+                "skill_name": skill,
+                "course_id": best["course_id"],
+                "course_name": best["name"],
+                "course_url": best["url"],
+                "duration_weeks": duration_weeks,
+                "start_date": current_start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "status": "NOT_STARTED",
+                "is_alternative": False
+            }
+            gantt_tasks.append(task_item)
+            current_start_date = end_date + datetime.timedelta(days=1)
+
+    # Generate academic plan narrative text
+    t_plan_start = time.perf_counter()
+    await emit_progress(task_id, "GENERATING_NARRATIVE", "STARTED", 0.0, "Generating academic plan narrative text...")
+
+    narrative_prompt = f"""
+Hãy tạo một bài thuyết minh lộ trình học tập (Markdown format) cho mục tiêu nghề nghiệp: "{request.career_goal}".
+Danh sách các kỹ năng cần học và khóa học tương ứng:
+{json.dumps(gantt_tasks, ensure_ascii=False, indent=2)}
+
+Bài viết cần chia theo các Phase rõ ràng (Phase 1, Phase 2...), mô tả ngắn gọn vai trò của từng kỹ năng và lý do chọn khóa học.
+Format bài viết bằng GitHub Markdown đẹp mắt.
+"""
+    if llm:
+        res_narrative = await llm.ainvoke(narrative_prompt)
+        academic_plan_narrative = res_narrative.content.strip()
+    else:
+        academic_plan_narrative = f"### Lộ Trình Học Tập Cho {request.career_goal}\n\nCác giai đoạn học tập đã được thiết lập dựa trên kỹ năng còn thiếu."
+
+    narrative_duration = (time.perf_counter() - t_plan_start) * 1000.0
+
+    # Build chart_id & save document in Firestore
+    chart_id = f"gantt_{uuid.uuid4().hex[:10]}"
+    chart_payload = {
+        "chart_id": chart_id,
+        "user_id": request.user_id,
+        "career_goal": request.career_goal,
+        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "academic_plan_narrative": academic_plan_narrative,
+        "matched_jobs": request.matched_jobs or [],
+        "tasks": gantt_tasks
+    }
+
     if USE_FIRESTORE:
         try:
             db = get_firestore_client()
-            profile_doc = db.collection("profile_scanner_profiles").document(user_id).get()
-            if profile_doc.exists:
-                profile_data = profile_doc.to_dict() or {}
-                user_skills = profile_data.get("skills", []) or profile_data.get("extracted_skills", [])
-                logger.info(f"Retrieved user skills from Firestore profile_scanner_profiles for user {user_id}: {user_skills}")
-        except Exception as e:
-            logger.error(f"Failed to get user skills from Firestore: {e}")
-            
-    # 2. Try local DB fallback (or if Firestore returned nothing)
-    if not user_skills:
-        local_db = read_local_skills_db()
-        user_skills = local_db.get(user_id, [])
-        
+            db.collection(GANTT_COLLECTION_NAME).document(chart_id).set(chart_payload)
+            logger.info(f"Saved Gantt chart to Firestore collection '{GANTT_COLLECTION_NAME}' with ID: {chart_id}")
+        except Exception as ex:
+            logger.error(f"Failed to save Gantt chart in Firestore: {ex}")
+
+    total_duration = (time.perf_counter() - t_start) * 1000.0
+    await emit_progress(task_id, "GANTT_ROADMAP_COMPLETE", "COMPLETED", total_duration, f"Gantt roadmap generated and saved successfully. Chart ID: {chart_id}")
+
+    return ArchitectResponse(
+        status="success",
+        chart_id=chart_id,
+        academic_plan=academic_plan_narrative,
+        courses=selected_courses,
+        alternative_courses=alternative_courses,
+        lacking_skills=request.lacking_skills,
+        matched_jobs=request.matched_jobs or [],
+        career_goal=request.career_goal,
+        gantt_chart={"tasks": gantt_tasks}
+    )
+
+# --- Endpoint 3: COURSE SWAP USE CASE - Step 1: /get-alternatives ---
+@app.post("/chart/{chart_id}/get-alternatives")
+async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest):
+    """Course Swap Step 1: Search top 5 alternative courses in Coursera vector database for a specified task."""
+    db = get_firestore_client()
+    doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id).get() if USE_FIRESTORE else None
+    
+    skill_query = request.skill_name or "Chuyên môn"
+    current_course_id = ""
+
+    if doc_ref and doc_ref.exists:
+        chart_data = doc_ref.to_dict() or {}
+        tasks = chart_data.get("tasks", [])
+        for t in tasks:
+            if t.get("task_id") == request.task_id:
+                skill_query = t.get("skill_name") or skill_query
+                current_course_id = t.get("course_id") or ""
+                break
+
+    # Vector search top 6 courses to exclude the current course
+    results, _ = await asyncio.to_thread(perform_vector_search, skill_query, "description", "computer-science", 6)
+    filtered_alts = [c for c in results if c["course_id"] != current_course_id][:5]
+
+    return {
+        "status": "success",
+        "chart_id": chart_id,
+        "task_id": request.task_id,
+        "skill_name": skill_query,
+        "alternatives": filtered_alts
+    }
+
+# --- Endpoint 4: COURSE SWAP USE CASE - Step 2: /swap-course ---
+@app.post("/chart/{chart_id}/swap-course")
+async def swap_course(chart_id: str, request: SwapCourseRequest):
+    """Course Swap Step 2: Replace specified task course with selected alternative ID and recalculate Gantt timeline."""
+    if not USE_FIRESTORE:
+        raise HTTPException(status_code=400, detail="Firestore is required for Gantt chart updates.")
+
+    db = get_firestore_client()
+    doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
+
+    chart_data = doc.to_dict() or {}
+    tasks = chart_data.get("tasks", [])
+
+    # Fetch selected course details from Coursera catalog
+    col_ref = db.collection(COLLECTION_NAME)
+    course_doc = col_ref.document(request.selected_course_id).get()
+    
+    selected_name = "Alternative Course"
+    selected_url = ""
+
+    if course_doc.exists:
+        c_data = course_doc.to_dict() or {}
+        selected_name = c_data.get("name") or selected_name
+        slug = c_data.get("slug")
+        selected_url = f"https://www.coursera.org/learn/{slug}" if slug else ""
+
+    # Find and update task
+    task_found = False
+    for t in tasks:
+        if t.get("task_id") == request.task_id:
+            t["course_id"] = request.selected_course_id
+            t["course_name"] = selected_name
+            t["course_url"] = selected_url
+            t["is_alternative"] = True
+            task_found = True
+            break
+
+    if not task_found:
+        raise HTTPException(status_code=404, detail=f"Task '{request.task_id}' not found in chart.")
+
+    # Recalculate start and end dates for all tasks
+    start_date = datetime.date.today() + datetime.timedelta(days=7)
+    for t in tasks:
+        dur = t.get("duration_weeks", 4)
+        end_date = start_date + datetime.timedelta(weeks=dur)
+        t["start_date"] = start_date.isoformat()
+        t["end_date"] = end_date.isoformat()
+        start_date = end_date + datetime.timedelta(days=1)
+
+    chart_data["tasks"] = tasks
+    chart_data["updated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+    doc_ref.set(chart_data, merge=True)
+
+    return {
+        "status": "success",
+        "chart_id": chart_id,
+        "updated_task_id": request.task_id,
+        "gantt_chart": {"tasks": tasks}
+    }
+
+# --- Endpoint 5: Backend Excel Generation (/chart/{chart_id}/excel) ---
+@app.get("/chart/{chart_id}/excel")
+async def export_gantt_excel(chart_id: str):
+    """Generate and stream an openpyxl Excel (.xlsx) workbook for the specified Gantt roadmap."""
+    if not USE_FIRESTORE:
+        raise HTTPException(status_code=400, detail="Firestore is required for Excel export.")
+
+    db = get_firestore_client()
+    doc = db.collection(GANTT_COLLECTION_NAME).document(chart_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
+
+    chart_data = doc.to_dict() or {}
+    tasks = chart_data.get("tasks", [])
+    career_goal = chart_data.get("career_goal", "Lộ Trình Học Tập")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Gantt Roadmap"
+
+    header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    title_font = Font(name="Arial", size=14, bold=True, color="1F4E78")
+    cell_font = Font(name="Arial", size=10)
+    thin_border = Border(
+        left=Side(style="thin", color="D9D9D9"),
+        right=Side(style="thin", color="D9D9D9"),
+        top=Side(style="thin", color="D9D9D9"),
+        bottom=Side(style="thin", color="D9D9D9")
+    )
+
+    ws.merge_cells("A1:H1")
+    ws["A1"] = f"LỘ TRÌNH HỌC TẬP: {career_goal.upper()}"
+    ws["A1"].font = title_font
+    ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+
+    headers = ["Task ID", "Giai Đoạn (Phase)", "Kỹ Năng Mục Tiêu", "Tên Khóa Học", "Thời Gian (Tuần)", "Ngày Bắt Đầu", "Ngày Kết Thúc", "Trạng Thái", "Đường Dẫn Khóa Học"]
+    ws.append([])
+    ws.append(headers)
+
+    for col_num, h_text in enumerate(headers, 1):
+        cell = ws.cell(row=3, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for row_idx, task in enumerate(tasks, start=4):
+        row_data = [
+            task.get("task_id", ""),
+            task.get("phase_name", ""),
+            task.get("skill_name", ""),
+            task.get("course_name", ""),
+            task.get("duration_weeks", 4),
+            task.get("start_date", ""),
+            task.get("end_date", ""),
+            task.get("status", "NOT_STARTED"),
+            task.get("course_url", "")
+        ]
+        ws.append(row_data)
+
+        for col_num in range(1, len(row_data) + 1):
+            cell = ws.cell(row=row_idx, column=col_num)
+            cell.font = cell_font
+            cell.border = thin_border
+            if col_num in (1, 5, 6, 7, 8):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"gantt_roadmap_{chart_id}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+# --- Backward-compatible legacy /architect endpoint ---
+@app.post("/architect", response_model=ArchitectResponse)
+async def create_plan(request: ArchitectRequest):
+    """Legacy endpoint combining /skill-gap and /create-gantt for backward compatibility."""
+    sg_req = SkillGapRequest(
+        career_goal=request.career_goal,
+        current_skills=request.current_skills,
+        user_id=request.user_id,
+        task_id=request.task_id
+    )
+    sg_res = await analyze_skill_gap(sg_req)
+
+    gantt_req = CreateGanttRequest(
+        career_goal=request.career_goal,
+        lacking_skills=sg_res.lacking_skills,
+        user_id=request.user_id,
+        matched_jobs=sg_res.matched_jobs,
+        task_id=request.task_id
+    )
+    gantt_res = await create_gantt_roadmap(gantt_req)
+    return gantt_res
+
+@app.get("/skills/{user_id}")
+async def get_user_skills(user_id: str):
+    user_skills = fetch_user_skills_deterministic(user_id)
     return {"skills": user_skills}
 
 @app.post("/skills/{user_id}")
 async def update_user_skills(user_id: str, request: SkillsUpdateRequest):
-    # 1. Update Firestore if enabled
     updated_firestore = False
     if USE_FIRESTORE:
         try:
@@ -563,7 +893,6 @@ async def update_user_skills(user_id: str, request: SkillsUpdateRequest):
             logger.error(f"Failed to update user skills in Firestore: {e}")
             raise HTTPException(status_code=500, detail=str(e))
             
-    # 2. Update local DB
     try:
         local_db = read_local_skills_db()
         local_db[user_id] = request.skills
