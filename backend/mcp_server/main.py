@@ -365,6 +365,46 @@ def academic_architect(career_goal: str, user_id: str = "", current_skills: str 
     })
 
 @mcp.tool()
+def academic_architect_skill_gap(career_goal: str, user_id: str = "", current_skills: str = "") -> dict:
+    """Use Case 1: Analyze skill gaps against real job market postings for a career goal."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="skill_gap", user_query=_short_text(career_goal), user_id=user_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/skill-gap", {
+        "career_goal": career_goal,
+        "current_skills": current_skills,
+        "user_id": user_id,
+    })
+
+@mcp.tool()
+def academic_architect_create_gantt(career_goal: str, lacking_skills: list[str], user_id: str = "") -> dict:
+    """Use Case 2: Build structured Gantt chart roadmap & narrative text based on approved lacking skills."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="create_gantt", user_query=_short_text(career_goal), user_id=user_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/create-gantt", {
+        "career_goal": career_goal,
+        "lacking_skills": lacking_skills,
+        "user_id": user_id,
+    })
+
+@mcp.tool()
+def academic_architect_get_alternatives(chart_id: str, task_id: str, skill_name: str = "") -> dict:
+    """Course Swap Step 1: Find top 5 alternative courses in Coursera database for a task."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="get_alternatives", chart_id=chart_id, task_id=task_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/chart/{chart_id}/get-alternatives", {
+        "chart_id": chart_id,
+        "task_id": task_id,
+        "skill_name": skill_name,
+    })
+
+@mcp.tool()
+def academic_architect_swap_course(chart_id: str, task_id: str, selected_course_id: str) -> dict:
+    """Course Swap Step 2: Swap a task course with selected alternative ID and update Gantt timeline."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="swap_course", chart_id=chart_id, task_id=task_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/chart/{chart_id}/swap-course", {
+        "chart_id": chart_id,
+        "task_id": task_id,
+        "selected_course_id": selected_course_id,
+    })
+
+@mcp.tool()
 def academic_architect_input_verifier(
     career_goal: str,
     user_id: str,
