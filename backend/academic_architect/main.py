@@ -112,11 +112,7 @@ class SearchResponse(BaseModel):
 class SkillsUpdateRequest(BaseModel):
     skills: List[str]
 
-class ArchitectRequest(BaseModel):
-    career_goal: str
-    current_skills: Optional[str] = None
-    user_id: Optional[str] = None
-    task_id: Optional[str] = None
+
 
 class SkillGapRequest(BaseModel):
     career_goal: str
@@ -904,27 +900,7 @@ async def export_gantt_excel(chart_id: str):
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
-# --- Backward-compatible legacy /architect endpoint ---
-@app.post("/architect", response_model=ArchitectResponse)
-async def create_plan(request: ArchitectRequest):
-    """Legacy endpoint combining /skill-gap and /create-gantt for backward compatibility."""
-    sg_req = SkillGapRequest(
-        career_goal=request.career_goal,
-        current_skills=request.current_skills,
-        user_id=request.user_id,
-        task_id=request.task_id
-    )
-    sg_res = await analyze_skill_gap(sg_req)
 
-    gantt_req = CreateGanttRequest(
-        career_goal=request.career_goal,
-        lacking_skills=sg_res.lacking_skills,
-        user_id=request.user_id,
-        matched_jobs=sg_res.matched_jobs,
-        task_id=request.task_id
-    )
-    gantt_res = await create_gantt_roadmap(gantt_req)
-    return gantt_res
 
 @app.get("/skills/{user_id}")
 async def get_user_skills(user_id: str):

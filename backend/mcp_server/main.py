@@ -367,22 +367,6 @@ def salary_benchmark(user_query: str) -> dict:
     })
 
 
-@mcp.tool()
-def academic_architect(career_goal: str, user_id: str = "", current_skills: str = "") -> dict:
-    """Use this tool to create a roadmap to achieve a certain job description or career goal.
-    It will perform a skill gap analysis using the user's scanned CV and recommend courses and jobs.
-
-    Args:
-        career_goal: the user's target career goal (e.g. 'Data Analyst', 'Frontend Engineer')
-        user_id: the current user's User ID (Google ID) to lookup their scanned CV
-        current_skills: optional comma-separated current skills, if CV is not available
-    """
-    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="roadmap", user_query=_short_text(career_goal), user_id=user_id)
-    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
-        "career_goal": career_goal,
-        "current_skills": current_skills,
-        "user_id": user_id,
-    })
 
 @mcp.tool()
 def academic_architect_skill_gap(career_goal: str, user_id: str = "", current_skills: str = "") -> dict:
