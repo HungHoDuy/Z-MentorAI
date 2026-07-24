@@ -1045,11 +1045,20 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
       {calendarStatus === 'idle' && (
         <>
           <p className="calendar-card-desc">
-            Tạo và tải xuống file CSV để dễ dàng nhập lộ trình học này vào Google Calendar, Outlook hoặc Apple Calendar của bạn.
+            Tải xuống Gantt Chart (Excel) hoặc tạo file CSV để nhập lộ trình học vào Google Calendar.
           </p>
-          <div className="calendar-card-actions">
+          <div className="calendar-card-actions" style={{ display: 'flex', gap: '10px' }}>
+            {output.chart_id && (
+              <button 
+                className="calendar-sync-btn" 
+                style={{ backgroundColor: '#17A2B8', color: 'white' }}
+                onClick={() => window.open(`${backendUrl}/chart/${output.chart_id}/excel`, '_blank')}
+              >
+                Tải Gantt Chart (Excel)
+              </button>
+            )}
             <button className="calendar-sync-btn" onClick={handleGenerateSchedule} disabled={courses.length === 0}>
-              Tạo lịch học tập
+              Tạo lịch học (Google Calendar CSV)
             </button>
           </div>
         </>
