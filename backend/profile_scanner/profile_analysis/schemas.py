@@ -3,6 +3,29 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+FIRESTORE_BENCHMARK_SNAPSHOT_FIELDS = (
+    "benchmark_id",
+    "benchmark_type",
+    "normalized_role",
+    "level",
+    "location_id",
+    "market",
+    "status",
+    "confidence",
+    "confidence_score",
+    "window_days",
+    "window_start",
+    "window_end",
+    "cohort_size",
+    "distinct_company_count",
+    "compiler_version",
+    "generated_at",
+    "expires_at",
+    "riasec",
+    "riasec_source",
+)
+
+
 class ScoreDimension(BaseModel):
     key: str
     label: str
@@ -54,5 +77,16 @@ class ProfileAnalysisResult(BaseModel):
     analyzed_at: str
     message_vi: str
 
-    def as_firestore_payload(self) -> dict[str, Any]:
+    def as_artifact_payload(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
+
+    def as_firestore_payload(self) -> dict[str, Any]:
+        payload = self.as_artifact_payload()
+        snapshot = payload.get("benchmark_snapshot")
+        if isinstance(snapshot, dict):
+            payload["benchmark_snapshot"] = {
+                field: snapshot[field]
+                for field in FIRESTORE_BENCHMARK_SNAPSHOT_FIELDS
+                if snapshot.get(field) is not None
+            }
+        return payload

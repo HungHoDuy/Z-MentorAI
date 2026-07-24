@@ -21,6 +21,7 @@ from profile_analysis.service import (
 )
 from profile_ai_extraction.schemas import StructuredEducation, StructuredExperience, StructuredProfile
 from profile_analysis.benchmark import ROLE_BENCHMARKS, SKILL_ALIASES
+from profile_analysis.schemas import ProfileAnalysisResult
 
 
 SAMPLE_DATA_ANALYST_CV = """
@@ -38,6 +39,52 @@ Project: Sales dashboard using Python, SQL and Power BI. Presented insights to t
 
 
 class ProfileAnalysisTests(unittest.TestCase):
+    def test_firestore_payload_compacts_nested_benchmark_scoring_criteria(self):
+        result = ProfileAnalysisResult(
+            cv_document_id="cv-1",
+            target_role="AI Engineer",
+            benchmark_version="market-benchmark-v1.2",
+            scoring_version="cv-scoring-v2.2",
+            benchmark_type="dynamic_market",
+            benchmark_snapshot={
+                "benchmark_id": "benchmark-1",
+                "benchmark_type": "dynamic_market",
+                "normalized_role": "AI Engineer",
+                "level": "entry",
+                "status": "ready",
+                "expires_at": "2099-01-01T00:00:00+00:00",
+                "riasec": {"I": 1.0, "R": 0.4},
+                "skill_criteria": [
+                    {"skill_id": "python", "aliases": ["python"]},
+                ],
+                "scoring_criteria": {
+                    "core_skills": ["python"],
+                    "essential_skill_groups": [["python"], ["pytorch", "tensorflow"]],
+                },
+            },
+            score_dimensions=[],
+            analyzed_at="2026-07-24T00:00:00+00:00",
+            message_vi="Đã phân tích CV.",
+        )
+
+        artifact_payload = result.as_artifact_payload()
+        firestore_payload = result.as_firestore_payload()
+
+        self.assertEqual(
+            artifact_payload["benchmark_snapshot"]["scoring_criteria"]["essential_skill_groups"],
+            [["python"], ["pytorch", "tensorflow"]],
+        )
+        self.assertNotIn("scoring_criteria", firestore_payload["benchmark_snapshot"])
+        self.assertNotIn("skill_criteria", firestore_payload["benchmark_snapshot"])
+        self.assertEqual(
+            firestore_payload["benchmark_snapshot"]["expires_at"],
+            "2099-01-01T00:00:00+00:00",
+        )
+        self.assertEqual(
+            firestore_payload["benchmark_snapshot"]["riasec"],
+            {"I": 1.0, "R": 0.4},
+        )
+
     def test_dynamic_benchmark_reuse_requires_unexpired_snapshot(self):
         self.assertTrue(
             analysis_benchmark_is_fresh(

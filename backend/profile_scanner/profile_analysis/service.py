@@ -1202,7 +1202,7 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     analysis_object = build_artifact_object_name(original_object, "profile_analysis.json")
     analysis_uri = f"gs://{bucket.name}/{analysis_object}"
     result.analysis_artifact_gcs_uri = analysis_uri
-    upload_json_artifact(bucket, analysis_object, result.as_firestore_payload())
+    upload_json_artifact(bucket, analysis_object, result.as_artifact_payload())
 
     await update_cv_document(cv_document_id, {
         "analysis_status": "completed",
