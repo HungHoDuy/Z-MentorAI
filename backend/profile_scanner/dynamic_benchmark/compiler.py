@@ -14,12 +14,14 @@ from dynamic_benchmark.repository import DynamicBenchmarkRepository
 from dynamic_benchmark.schemas import DynamicBenchmarkSnapshot, DynamicSkillCriterion, MarketJobEvidence
 from profile_ai_extraction.service import parse_json_object
 from profile_analysis.benchmark import SKILL_ALIASES
+from skill_normalization.service import display_name, normalize_key
 
 
-DYNAMIC_BENCHMARK_VERSION = "market-benchmark-v1.1"
+DYNAMIC_BENCHMARK_VERSION = "market-benchmark-v1.2"
 DYNAMIC_BENCHMARK_NOTES = [
     "Role candidates are retrieved from versioned internal job facts with multilingual vector similarity.",
     "Gemini proposes a skill vocabulary, but deterministic code counts job frequency and calculates weights.",
+    "Role-skill fit combines market-weighted essential coverage with the candidate's strongest supporting specialization; alternate AI tracks are not all treated as mandatory.",
     "Every benchmark stores its evidence window, sample size, company count, source names, and representative job links.",
     "The S-E grade measures CV evidence readiness for one target role; it is not a hiring decision or personal-worth score.",
 ]
@@ -27,12 +29,15 @@ DYNAMIC_BENCHMARK_NOTES = [
 
 def infer_level(role_query: str) -> str:
     normalized = normalize(role_query)
-    if any(token in normalized for token in ("intern", "internship", "fresher", "junior", "entry level", "graduate")):
-        return "entry"
-    if any(token in normalized for token in ("manager", "head", "director")):
+    if re.search(r"\b(manager|director|department head|head of)\b", normalized):
         return "manager"
-    if any(token in normalized for token in ("senior", "lead", "principal", "architect")):
+    if re.search(
+        r"\b(senior|principal|architect|tech lead|team lead|lead engineer|lead developer|lead scientist)\b",
+        normalized,
+    ):
         return "senior"
+    if re.search(r"\b(intern|internship|fresher|junior|entry level|graduate)\b", normalized):
+        return "entry"
     return "unspecified"
 
 
@@ -248,28 +253,65 @@ def fallback_vocabulary(role_query: str) -> dict[str, Any]:
 def sanitize_skill_vocabulary(items: Any) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
-    result = []
-    seen = set()
+    merged: dict[str, dict[str, Any]] = {}
     for item in items[:50]:
         if not isinstance(item, dict):
             continue
-        name = normalize_term(item.get("name"))
-        if not name or name in seen:
+        name = canonical_skill_id(item.get("name"))
+        if not name:
             continue
-        aliases = clean_terms([name] + list(item.get("aliases") or []), limit=10)
+        aliases = clean_terms(
+            [
+                name,
+                display_name(name),
+                *list(item.get("aliases") or []),
+                *SKILL_ALIASES.get(name, []),
+            ],
+            limit=15,
+        )
         if not aliases:
             continue
-        seen.add(name)
-        result.append({"name": name, "aliases": aliases})
-    return result
+        existing = merged.setdefault(name, {"name": name, "aliases": []})
+        existing["aliases"] = clean_terms([*existing["aliases"], *aliases], limit=15)
+    return list(merged.values())
+
+
+def canonical_skill_id(value: Any) -> str:
+    """Map noisy AI labels onto stable benchmark skill identifiers."""
+    normalized = normalize_term(value)
+    if not normalized:
+        return ""
+    candidates: list[tuple[int, str]] = []
+    for canonical, aliases in SKILL_ALIASES.items():
+        for alias in [canonical, *aliases]:
+            normalized_alias = normalize_term(alias)
+            if not normalized_alias:
+                continue
+            if normalized == normalized_alias:
+                if display_name(normalized) == display_name(canonical):
+                    return canonical
+                return normalize_key(display_name(normalized))[:80]
+            if re.search(rf"(?<![a-z0-9]){re.escape(normalized_alias)}(?![a-z0-9])", normalized):
+                candidates.append((len(normalized_alias), canonical))
+    if candidates:
+        return max(candidates)[1]
+    return normalize_key(display_name(normalized))[:80]
 
 
 def build_skill_criteria(jobs: list[MarketJobEvidence], vocabulary: list[dict[str, Any]]) -> list[DynamicSkillCriterion]:
     if not jobs:
         return []
+    normalized_vocabulary = sanitize_skill_vocabulary(vocabulary)
+    vocabulary_names = {item["name"] for item in normalized_vocabulary}
     counted = []
-    for item in sanitize_skill_vocabulary(vocabulary):
-        aliases = item["aliases"]
+    for item in normalized_vocabulary:
+        aliases = [
+            alias
+            for alias in item["aliases"]
+            if canonical_skill_id(alias) == item["name"]
+            or canonical_skill_id(alias) not in vocabulary_names
+        ]
+        aliases = clean_terms([item["name"], *aliases], limit=15)
         count = sum(1 for job in jobs if contains_alias(job.requirements_text + "\n" + job.description_text, aliases))
         share = count / len(jobs)
         if count >= 2 and share >= settings.benchmark_min_skill_share:

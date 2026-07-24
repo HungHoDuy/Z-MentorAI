@@ -1,10 +1,14 @@
 import datetime
-import uuid
 from collections import defaultdict
 
 from fastapi import HTTPException
 
 from assessments.definitions import ASSESSMENT_DEFINITIONS, AssessmentDefinition
+from assessments.scoring import (
+    build_assessment_id,
+    build_question_set_hash,
+    rank_dimensions,
+)
 from assessments.schemas import AssessmentScoreRequest, AssessmentScoreResponse
 
 
@@ -58,10 +62,10 @@ def score_assessment_answers(
         max_score = max(counts[dimension] * 5, 1)
         scores[dimension] = round(raw_scores[dimension] / max_score, 2)
 
-    sorted_dimensions = sorted(
-        definition.dimension_labels.keys(),
-        key=lambda dimension: (scores[dimension], raw_scores[dimension], dimension),
-        reverse=True,
+    sorted_dimensions, tied_top_dimensions, score_margin = rank_dimensions(
+        list(definition.dimension_labels.keys()),
+        scores,
+        raw_scores,
     )
     top_dimensions = sorted_dimensions[:3]
     top_dimension = top_dimensions[0]
@@ -71,11 +75,18 @@ def score_assessment_answers(
 
     return AssessmentScoreResponse(
         status="success",
-        assessment_id=str(uuid.uuid4()),
+        assessment_id=build_assessment_id(
+            user_id=request.user_id,
+            assessment_type=definition.assessment_type,
+            assessment_version=definition.version,
+            answers=request.answers,
+            attempt_id=request.attempt_id or request.session_id,
+        ),
         assessment_type=definition.assessment_type,
         assessment_version=definition.version,
         user_id=request.user_id,
         session_id=request.session_id,
+        attempt_id=request.attempt_id,
         scores=scores,
         raw_scores=raw_scores,
         top_dimensions=top_dimensions,
@@ -83,6 +94,9 @@ def score_assessment_answers(
         result_label_vi=definition.result_label_vi,
         interpretation_vi=definition.interpretation_by_dimension[top_dimension],
         recommendations_vi=recommendations[:5],
+        question_set_hash=build_question_set_hash(definition.questions),
+        tied_top_dimensions=tied_top_dimensions,
+        score_margin=score_margin,
         answered_count=len(request.answers),
         missing_question_ids=missing_question_ids,
         created_at=utc_now(),

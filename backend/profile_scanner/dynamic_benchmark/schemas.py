@@ -75,6 +75,8 @@ class DynamicBenchmarkSnapshot(BaseModel):
             "education_keywords": self.education_keywords,
             "skill_aliases": aliases,
             "skill_weights": weights,
+            "scoring_policy": "essential_plus_best_supporting_v1",
+            "supporting_target_count": min(4, len(supporting)),
             "level": self.level,
             "scorable": self.status == "ready",
         }

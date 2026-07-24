@@ -32,6 +32,7 @@ services:
     environment:
       - PORT=8080
       - PROFILE_SCANNER_URL=${PROFILE_SCANNER_URL:-http://profile-scanner:8080}
+      - PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS=${PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS:-540}
       - MARKET_SCOUT_URL=${MARKET_SCOUT_URL:-http://market-scout:8080}
       - ACADEMIC_ARCHITECT_URL=${ACADEMIC_ARCHITECT_URL:-http://academic-architect:8080}
     depends_on:

@@ -1,7 +1,10 @@
+import uuid
+
 from fastapi import APIRouter, HTTPException
 
 from assessments.definitions import ASSESSMENT_DEFINITIONS
 from assessments.repository import get_latest_assessment_result, save_assessment_result
+from assessments.scoring import build_question_set_hash
 from assessments.schemas import AssessmentScoreRequest, AssessmentScoreResponse, AssessmentStartResponse
 from assessments.service import get_assessment_definition, score_assessment_answers
 from core.config import logger, settings
@@ -55,6 +58,8 @@ async def start_assessment(assessment_type: str, user_id: str):
         status="success",
         assessment_type=definition.assessment_type,
         assessment_version=definition.version,
+        question_set_hash=build_question_set_hash(definition.questions),
+        attempt_id=str(uuid.uuid4()),
         title=definition.title,
         eyebrow_vi=definition.eyebrow_vi,
         description_vi=definition.description_vi,
@@ -70,8 +75,8 @@ async def start_assessment(assessment_type: str, user_id: str):
 async def score_assessment(assessment_type: str, request: AssessmentScoreRequest):
     result = score_assessment_answers(assessment_type, request)
     result_payload = result.model_dump() if hasattr(result, "model_dump") else result.dict()
-    await save_assessment_result(result_payload)
-    return result
+    saved_result = await save_assessment_result(result_payload)
+    return AssessmentScoreResponse(**saved_result)
 
 
 @router.get("/{assessment_type}/latest/{user_id}")

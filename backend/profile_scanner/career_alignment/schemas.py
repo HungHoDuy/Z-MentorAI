@@ -7,6 +7,8 @@ class CareerAlignmentResponse(BaseModel):
     user_id: str
     target_role: str | None = None
     benchmark_profile_id: str | None = None
+    benchmark_type: str | None = None
+    benchmark_version: str | None = None
     cv_readiness_score: float | None = None
     holland_alignment_score: float | None = None
     career_alignment_score: float | None = None

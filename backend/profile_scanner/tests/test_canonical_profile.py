@@ -1,6 +1,10 @@
 import unittest
 
-from canonical_profile.service import build_profile_action, identity_match_score
+from canonical_profile.service import (
+    build_canonical_payload,
+    build_profile_action,
+    identity_match_score,
+)
 
 
 class CanonicalProfileTests(unittest.TestCase):
@@ -43,6 +47,33 @@ class CanonicalProfileTests(unittest.TestCase):
             cv_document_id="cv-3",
         )
         self.assertEqual(action["action_required"], "confirm_profile_overwrite")
+
+    def test_canonical_fingerprint_changes_when_scoring_changes(self):
+        base_analysis = {
+            "candidate_identity": {"full_name": "Nguyen Van A"},
+            "target_role": "AI Engineer",
+            "benchmark_profile_id": "benchmark-1",
+            "benchmark_version": "v1",
+            "scoring_version": "score-v1",
+            "skill_normalization_version": "skills-v1",
+            "normalized_skills": [{"skill_id": "python"}],
+            "total_score": 60,
+            "grade": "C",
+        }
+        first = build_canonical_payload(
+            user_id="user-1",
+            cv_document_id="cv-1",
+            analysis=base_analysis,
+            previous_profile=None,
+        )
+        second = build_canonical_payload(
+            user_id="user-1",
+            cv_document_id="cv-1",
+            analysis={**base_analysis, "total_score": 70, "grade": "B"},
+            previous_profile=first,
+        )
+        self.assertNotEqual(first["analysis_fingerprint"], second["analysis_fingerprint"])
+        self.assertEqual(second["schema_version"], "canonical-profile-v2")
 
 
 if __name__ == "__main__":

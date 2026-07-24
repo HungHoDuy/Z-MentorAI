@@ -36,6 +36,7 @@ class ProfileResponse(BaseModel):
     benchmark_sample_size: Optional[int] = None
     benchmark_distinct_companies: Optional[int] = None
     benchmark_sources: Optional[list[dict]] = None
+    benchmark_snapshot: Optional[dict] = None
     grade: Optional[str] = None
     total_score: Optional[float] = None
     score_dimensions: Optional[list[dict]] = None

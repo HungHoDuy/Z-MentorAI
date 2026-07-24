@@ -1,4 +1,5 @@
 import datetime
+import unicodedata
 
 from assessments.repository import get_latest_assessment_result
 from canonical_profile.repository import get_canonical_profile
@@ -15,6 +16,38 @@ RIASEC_DIMENSIONS = ("R", "I", "A", "S", "E", "C")
 
 def utc_now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def normalize_role(value: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return " ".join(normalized.casefold().replace("_", " ").replace("-", " ").split())
+
+
+def resolve_profile_benchmark(profile: dict | None) -> dict | None:
+    if not profile:
+        return None
+
+    snapshot = profile.get("benchmark_snapshot")
+    if isinstance(snapshot, dict):
+        scoring_criteria = snapshot.get("scoring_criteria")
+        return {
+            **(scoring_criteria if isinstance(scoring_criteria, dict) else {}),
+            **snapshot,
+        }
+
+    benchmark_id = str(profile.get("benchmark_profile_id") or "")
+    if benchmark_id in ROLE_BENCHMARKS:
+        return ROLE_BENCHMARKS[benchmark_id]
+
+    target_role = normalize_role(profile.get("target_role"))
+    if not target_role:
+        return None
+    for slug, benchmark in ROLE_BENCHMARKS.items():
+        aliases = [slug, benchmark.get("label", ""), *benchmark.get("aliases", [])]
+        if target_role in {normalize_role(alias) for alias in aliases}:
+            return benchmark
+    return None
 
 
 def normalize_distribution(values: dict[str, float]) -> dict[str, float]:
@@ -87,9 +120,11 @@ async def synthesize_career_alignment(user_id: str) -> CareerAlignmentResponse:
         missing.append("holland_assessment")
 
     benchmark_id = (profile or {}).get("benchmark_profile_id")
-    benchmark = ROLE_BENCHMARKS.get(benchmark_id or "")
+    benchmark = resolve_profile_benchmark(profile)
     if profile and not benchmark:
-        missing.append("supported_target_role_benchmark")
+        missing.append("target_role_benchmark")
+    elif profile and not benchmark.get("riasec"):
+        missing.append("role_interest_profile")
     cv_readiness = (profile or {}).get("total_score")
     if profile and cv_readiness is None:
         missing.append("cv_readiness_score")
@@ -102,6 +137,8 @@ async def synthesize_career_alignment(user_id: str) -> CareerAlignmentResponse:
             user_id=user_id,
             target_role=(profile or {}).get("target_role"),
             benchmark_profile_id=benchmark_id,
+            benchmark_type=(profile or {}).get("benchmark_type"),
+            benchmark_version=(profile or {}).get("benchmark_version"),
             cv_readiness_score=cv_readiness,
             missing_components=missing,
             holland_top_code=(holland or {}).get("top_code"),
@@ -123,6 +160,8 @@ async def synthesize_career_alignment(user_id: str) -> CareerAlignmentResponse:
         user_id=user_id,
         target_role=target_role,
         benchmark_profile_id=benchmark_id,
+        benchmark_type=profile.get("benchmark_type"),
+        benchmark_version=profile.get("benchmark_version"),
         cv_readiness_score=float(cv_readiness),
         holland_alignment_score=holland_alignment,
         career_alignment_score=overall,

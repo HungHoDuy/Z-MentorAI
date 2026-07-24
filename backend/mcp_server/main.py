@@ -14,6 +14,9 @@ mcp = FastMCP("Agent MCP Server")
 PROFILE_SCANNER_URL = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
 MARKET_SCOUT_URL = os.getenv("MARKET_SCOUT_URL", "http://market-scout:8080")
 ACADEMIC_ARCHITECT_URL = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080")
+PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS = float(
+    os.getenv("PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS", "540")
+)
 def _log_event(event: str, **fields: Any) -> None:
     payload = {"event": event, **fields}
     logger.info(json.dumps(payload, ensure_ascii=False, default=str))
@@ -86,10 +89,19 @@ def _upstream_error_payload(
         })
     return payload
 
-def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
+def fetch_data_sync(
+    url: str,
+    endpoint: str,
+    payload: dict,
+    timeout_seconds: float = 180.0,
+) -> dict:
     start = perf_counter()
     try:
-        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=180.0)
+        response = httpx.post(
+            f"{url}{endpoint}",
+            json=payload,
+            timeout=timeout_seconds,
+        )
         response.raise_for_status()
         data = response.json()
         duration_ms = round((perf_counter() - start) * 1000, 2)
@@ -129,6 +141,7 @@ def profile_scanner(
     answers_json: str = "",
     cv_document_id: str = "",
     assessment_type: str = "",
+    attempt_id: str = "",
     decision: str = "",
     target_role: str = ""
 ) -> dict:
@@ -239,6 +252,7 @@ def profile_scanner(
         return fetch_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/score", {
             "user_id": user_id,
             "answers": answers,
+            "attempt_id": attempt_id or None,
             "source": "orchestrator_chat"
         })
 
@@ -267,15 +281,21 @@ def profile_scanner(
         return fetch_data_sync(PROFILE_SCANNER_URL, "/holland/score", {
             "user_id": user_id,
             "answers": answers,
+            "attempt_id": attempt_id or None,
             "source": "orchestrator_chat"
         })
 
-    return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
-        "user_id": user_id,
-        "background_info": background_info,
-        "cv_document_id": cv_document_id,
-        "target_role": target_role,
-    })
+    return fetch_data_sync(
+        PROFILE_SCANNER_URL,
+        "/scan",
+        {
+            "user_id": user_id,
+            "background_info": background_info,
+            "cv_document_id": cv_document_id,
+            "target_role": target_role,
+        },
+        timeout_seconds=PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS,
+    )
 
 @mcp.tool()
 def market_scout(

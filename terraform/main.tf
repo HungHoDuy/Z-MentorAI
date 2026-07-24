@@ -100,6 +100,16 @@ resource "google_storage_bucket" "profile_scanner_cv_bucket" {
   versioning {
     enabled = true
   }
+
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
 }
 
 resource "google_storage_bucket_iam_member" "profile_scanner_cv_bucket_object_user" {
@@ -223,6 +233,7 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
   ]
 
   template {
+    timeout         = "600s"
     service_account = google_service_account.profile_scanner_sa.email
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.profile_scanner_image}"
@@ -386,6 +397,7 @@ resource "google_cloud_run_v2_service" "mcp_server" {
   depends_on = [google_project_service.apis]
 
   template {
+    timeout = "600s"
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.mcp_server_image}"
       ports {
@@ -394,6 +406,10 @@ resource "google_cloud_run_v2_service" "mcp_server" {
       env {
         name  = "PROFILE_SCANNER_URL"
         value = google_cloud_run_v2_service.profile_scanner.uri
+      }
+      env {
+        name  = "PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS"
+        value = "540"
       }
       env {
         name  = "MARKET_SCOUT_URL"
@@ -420,6 +436,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   ]
 
   template {
+    timeout         = "600s"
     service_account = google_service_account.orchestrator_sa.email
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.orchestrator_image}"

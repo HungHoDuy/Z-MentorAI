@@ -341,7 +341,10 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
             return "Đã phân tích khoảng cách kỹ năng từ dữ liệu tuyển dụng thực tế."
         elif name == "academic_architect_swap_course":
             return "Đã cập nhật khóa học thay thế vào lộ trình Gantt Chart."
-        elif name == "academic_architect_input_verifier":
+        output = normalize_tool_output(tool_call.get("output"))
+        if name == "academic_architect":
+            return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
+        if name == "academic_architect_input_verifier":
             return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
         elif name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
@@ -366,6 +369,65 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
                     return profile_action["message_vi"]
                 return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
+
+
+def compact_tool_output_for_history(tool_name: str, output: Any) -> Any:
+    normalized = normalize_tool_output(output)
+    compact = output
+    if tool_name == "profile_scanner" and normalized:
+        compact = dict(normalized)
+        compact.pop("benchmark_snapshot", None)
+        compact.pop("structured_profile", None)
+        compact.pop("benchmark_sources", None)
+        compact.pop("raw_extracted_skills", None)
+    encoded = json.dumps(compact, ensure_ascii=False, default=str).encode("utf-8")
+    if len(encoded) <= 200_000:
+        return compact
+    summary = normalize_tool_output(compact) or {}
+    return {
+        "status": summary.get("status", "success"),
+        "feature": summary.get("feature"),
+        "message_vi": summary.get("message_vi") or summary.get("answer"),
+        "history_output_truncated": True,
+        "original_size_bytes": len(encoded),
+    }
+
+
+def compact_history_messages(
+    messages: list[dict],
+    *,
+    max_messages: int = 80,
+    max_bytes: int = 750_000,
+) -> tuple[list[dict], int]:
+    recent = messages[-max_messages:]
+    turns: list[list[dict]] = []
+    current_turn: list[dict] = []
+    for message in recent:
+        if message.get("role") == "user" and current_turn:
+            turns.append(current_turn)
+            current_turn = [message]
+        else:
+            current_turn.append(message)
+    if current_turn:
+        turns.append(current_turn)
+
+    kept_turns_reversed = []
+    total_bytes = 0
+    for turn in reversed(turns):
+        turn_bytes = len(
+            json.dumps(turn, ensure_ascii=False, default=str).encode("utf-8")
+        )
+        if kept_turns_reversed and total_bytes + turn_bytes > max_bytes:
+            break
+        kept_turns_reversed.append(turn)
+        total_bytes += turn_bytes
+    compacted = [
+        message
+        for turn in reversed(kept_turns_reversed)
+        for message in turn
+    ]
+    return compacted, max(0, len(messages) - len(compacted))
+
 
 def sanitize_user_message_for_history(user_message: str) -> str:
     content = (user_message or "").strip()
@@ -469,7 +531,16 @@ async def save_chat_exchange(
     if assistant_content or assistant_tool_calls:
         assistant_record = {"role": "assistant", "content": assistant_content}
         if assistant_tool_calls:
-            assistant_record["tool_calls"] = assistant_tool_calls
+            assistant_record["tool_calls"] = [
+                {
+                    **tool_call,
+                    "output": compact_tool_output_for_history(
+                        tool_call.get("name", ""),
+                        tool_call.get("output"),
+                    ),
+                }
+                for tool_call in assistant_tool_calls
+            ]
         session["messages"].append(assistant_record)
     
     if session.get("title") in ("New Chat", "Cuộc trò chuyện mới"):
@@ -485,6 +556,14 @@ async def save_chat_exchange(
             print(f"Error generating session title: {e}")
             session["title"] = user_message[:30] + ("..." if len(user_message) > 30 else "")
             
+    compacted_messages, dropped_count = compact_history_messages(session.get("messages", []))
+    session["messages"] = compacted_messages
+    if dropped_count:
+        session["history_messages_dropped"] = (
+            int(session.get("history_messages_dropped", 0)) + dropped_count
+        )
+        session["history_compacted_at"] = now
+
     if USE_FIRESTORE:
         session_to_save = session.copy()
         session_to_save["user_id"] = google_id
@@ -908,6 +987,7 @@ def get_system_message(user_id: str) -> SystemMessage:
         "The Holland/RIASEC test is a Profile Scanner capability, not a separate agent. "
         "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
+        "When an assessment attempt_id is present, pass it unchanged to profile_scanner while scoring. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "The MI / Multiple Intelligences assessment is a Profile Scanner capability for learning style and intelligence tendency, not an official MBTI test. "
         "If the user asks for MI, Multiple Intelligences, tri thong minh da dang, learning style, study style, MBTI, or personality-style testing, call profile_scanner with task='assessment_start' and assessment_type='multiple_intelligences'. "
@@ -957,19 +1037,22 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                 
                 if event_type == "on_tool_start":
                     tool_input = event["data"].get("input")
-                    running_tool_inputs[name] = tool_input
-                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': tool_input})}\n\n"
+                    tool_call_id = str(event.get("run_id") or f"{name}-{uuid.uuid4()}")
+                    running_tool_inputs[tool_call_id] = tool_input
+                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'tool_call_id': tool_call_id, 'input': tool_input})}\n\n"
                 
                 elif event_type == "on_tool_end":
                     tool_output = event["data"].get("output")
                     serializable_output = serialize_tool_output(tool_output)
+                    tool_call_id = str(event.get("run_id") or f"{name}-{uuid.uuid4()}")
                     assistant_tool_calls.append({
+                        "id": tool_call_id,
                         "name": name,
-                        "input": running_tool_inputs.get(name),
+                        "input": running_tool_inputs.get(tool_call_id),
                         "output": serializable_output,
                         "status": "completed",
                     })
-                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': serializable_output})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'tool_call_id': tool_call_id, 'output': serializable_output})}\n\n"
                 
                 elif event_type == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
