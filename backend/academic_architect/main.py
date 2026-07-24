@@ -786,6 +786,7 @@ async def export_gantt_excel(chart_id: str):
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     title_font = Font(name="Arial", size=14, bold=True, color="1F4E78")
     cell_font = Font(name="Arial", size=10)
+    gantt_fill = PatternFill(start_color="17A2B8", end_color="17A2B8", fill_type="solid")
     thin_border = Border(
         left=Side(style="thin", color="D9D9D9"),
         right=Side(style="thin", color="D9D9D9"),
@@ -798,7 +799,33 @@ async def export_gantt_excel(chart_id: str):
     ws["A1"].font = title_font
     ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
 
+    # Parse dates to calculate project timeline
+    for task in tasks:
+        sd = task.get("start_date", "")
+        ed = task.get("end_date", "")
+        try:
+            task["_parsed_start"] = datetime.datetime.fromisoformat(sd.replace("Z", "+00:00")).date() if sd else datetime.date.today()
+            task["_parsed_end"] = datetime.datetime.fromisoformat(ed.replace("Z", "+00:00")).date() if ed else datetime.date.today() + datetime.timedelta(days=28)
+        except Exception:
+            task["_parsed_start"] = datetime.date.today()
+            task["_parsed_end"] = datetime.date.today() + datetime.timedelta(days=28)
+
+    if tasks:
+        earliest_start = min(t["_parsed_start"] for t in tasks)
+        latest_end = max(t["_parsed_end"] for t in tasks)
+    else:
+        earliest_start = datetime.date.today()
+        latest_end = datetime.date.today() + datetime.timedelta(days=30)
+    
+    total_days = (latest_end - earliest_start).days
+    total_weeks = max(1, (total_days // 7) + 1)
+
     headers = ["Task ID", "Giai Đoạn (Phase)", "Kỹ Năng Mục Tiêu", "Tên Khóa Học", "Thời Gian (Tuần)", "Ngày Bắt Đầu", "Ngày Kết Thúc", "Trạng Thái", "Đường Dẫn Khóa Học"]
+    base_header_len = len(headers)
+    
+    for w in range(1, total_weeks + 1):
+        headers.append(f"Tuần {w}")
+
     ws.append([])
     ws.append(headers)
 
@@ -820,21 +847,37 @@ async def export_gantt_excel(chart_id: str):
             task.get("status", "NOT_STARTED"),
             task.get("course_url", "")
         ]
+        
+        # Add empty cells for the timeline section
+        row_data.extend([""] * total_weeks)
         ws.append(row_data)
+
+        task_start_week = (task["_parsed_start"] - earliest_start).days // 7
+        task_end_week = (task["_parsed_end"] - earliest_start).days // 7
 
         for col_num in range(1, len(row_data) + 1):
             cell = ws.cell(row=row_idx, column=col_num)
             cell.font = cell_font
             cell.border = thin_border
-            if col_num in (1, 5, 6, 7, 8):
-                cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+            if col_num <= base_header_len:
+                if col_num in (1, 5, 6, 7, 8):
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
             else:
-                cell.alignment = Alignment(horizontal="left", vertical="center")
+                week_idx = col_num - base_header_len - 1
+                if task_start_week <= week_idx <= task_end_week:
+                    cell.fill = gantt_fill
 
     for col in ws.columns:
-        max_len = max(len(str(cell.value or '')) for cell in col)
-        col_letter = get_column_letter(col[0].column)
-        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+        col_idx = col[0].column
+        col_letter = get_column_letter(col_idx)
+        if col_idx <= base_header_len:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+        else:
+            ws.column_dimensions[col_letter].width = 8
 
     output = BytesIO()
     wb.save(output)
