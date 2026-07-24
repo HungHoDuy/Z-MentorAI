@@ -1,0 +1,67 @@
+[
+  {
+    "source_id": "wef_future_jobs_2025",
+    "source_name": "Future of Jobs Report 2025",
+    "publisher": "World Economic Forum",
+    "source_type": "labor_market_report",
+    "published_at": "2025-01-07",
+    "scope_location_ids": ["global", "vietnam"],
+    "scope_period": "2025-2030",
+    "url": "https://pact-for-skills.ec.europa.eu/community-resources/publications-and-documents/future-jobs-report-2025_en",
+    "allowed_domain": "pact-for-skills.ec.europa.eu",
+    "reliability_score": 0.9,
+    "topics": ["future_jobs", "automation", "skills"]
+  },
+  {
+    "source_id": "ilo_employment_social_trends_2026",
+    "source_name": "World Employment and Social Outlook: Trends 2026",
+    "publisher": "International Labour Organization",
+    "source_type": "labor_market_report",
+    "published_at": "2026-01-01",
+    "scope_location_ids": ["global", "vietnam"],
+    "scope_period": "2026",
+    "url": "https://www.ilo.org/publications/flagship-reports/employment-and-social-trends-2026",
+    "allowed_domain": "www.ilo.org",
+    "reliability_score": 0.9,
+    "topics": ["employment", "labor_market", "future_jobs"]
+  },
+  {
+    "source_id": "manpower_vietnam_employment_outlook_2026",
+    "source_name": "ManpowerGroup Vietnam Employment Outlook Survey 2026",
+    "publisher": "ManpowerGroup Vietnam",
+    "source_type": "employment_outlook",
+    "published_at": "2026-01-01",
+    "scope_location_ids": ["vietnam"],
+    "scope_period": "2026",
+    "url": "https://www.manpower.com.vn/nb/insights/meos/2026",
+    "allowed_domain": "www.manpower.com.vn",
+    "reliability_score": 0.85,
+    "topics": ["vietnam", "employment", "hiring_outlook"]
+  },
+  {
+    "source_id": "topdev_vietnam_it_market_report_2024",
+    "source_name": "Vietnam Tech Talents Report 2024",
+    "publisher": "TopDev",
+    "source_type": "it_market_report",
+    "published_at": "2024-01-01",
+    "scope_location_ids": ["vietnam"],
+    "scope_period": "2024-2025",
+    "url": "https://topdev.vn/vietnam-tech-talents-report-topdev-2024",
+    "allowed_domain": "topdev.vn",
+    "reliability_score": 0.8,
+    "topics": ["vietnam", "it", "tech_talent", "skills"]
+  },
+  {
+    "source_id": "vietnamworks_intech_ai_hiring_article",
+    "source_name": "Luong ung vien mang AI cao hon vi tri khac 10-50",
+    "publisher": "VietnamWorks inTECH",
+    "source_type": "labor_market_article",
+    "published_at": "2025-01-01",
+    "scope_location_ids": ["vietnam"],
+    "scope_period": "2025",
+    "url": "https://intech.vietnamworks.com/article/luong-ung-vien-mang-al-cao-hon-vi-tri-khac-10-50",
+    "allowed_domain": "intech.vietnamworks.com",
+    "reliability_score": 0.75,
+    "topics": ["vietnam", "it", "ai", "salary"]
+  }
+]
