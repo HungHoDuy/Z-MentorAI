@@ -91,6 +91,7 @@ class TrendLlmSummaryService:
         return {
             "query": result.to_dict()["query"],
             "signal": result.signal.to_dict(),
+            "job_sources": result.to_dict().get("job_sources", []),
             "deterministic_draft": fallback.answer,
             "instructions": {
                 "language": "Vietnamese",

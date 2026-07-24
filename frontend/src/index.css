@@ -29,6 +29,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme='dark'] {
+  --bg-app: #10151d;
+  --bg-chat: #151b24;
+  --bg-sidebar: #0d1219;
+  --text-primary: #edf2f7;
+  --text-secondary: #c3ccd9;
+  --text-muted: #93a0b2;
+  --text-faint: #6f7d90;
+  --border-subtle: #293241;
+  --border-medium: #3a4658;
+  --accent: #2dd4bf;
+  --accent-strong: #0f8f83;
+  --accent-soft: #153c39;
+  color-scheme: dark;
+}
+
 *,
 *::before,
 *::after {

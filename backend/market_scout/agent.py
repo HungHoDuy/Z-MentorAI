@@ -5,11 +5,14 @@ import json
 import logging
 from time import perf_counter
 from typing import Any
+import unicodedata
 
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlow, SalaryBenchmarkFlowResult
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlow, TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest, MarketScoutResponse
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQueryInput, TrendQueryIntent
+from backend.market_scout.services.market_scout_query_understanding_service import MarketScoutQueryUnderstandingService
+from backend.market_scout.services.trend_tracker.trend_entity_extractor_service import TrendEntityExtractorService
 from backend.market_scout.services.trend_tracker.trend_llm_summary_service import TrendLlmSummaryService
 
 logger = logging.getLogger("market_scout")
@@ -39,6 +42,8 @@ class MarketScoutAgent:
         trend_flow: Any | None = None,
         hybrid_flow: Any | None = None,
         response_composer: Any | None = None,
+        trend_entity_extractor: TrendEntityExtractorService | None = None,
+        query_understanding_service: Any | None = None,
         default_top_k: int = 30,
         default_fetch_k: int | None = 80,
     ) -> None:
@@ -49,6 +54,8 @@ class MarketScoutAgent:
         self.trend_flow = trend_flow
         self.hybrid_flow = hybrid_flow
         self.response_composer = response_composer or TrendLlmSummaryService()
+        self.trend_entity_extractor = trend_entity_extractor or TrendEntityExtractorService()
+        self.query_understanding_service = query_understanding_service or MarketScoutQueryUnderstandingService()
         self.default_top_k = default_top_k
         self.default_fetch_k = default_fetch_k
 
@@ -216,12 +223,17 @@ class MarketScoutAgent:
     ) -> TrendQueryInput:
         entities = await self._trend_entities(request)
         return TrendQueryInput(
-            intent=_trend_intent_or_default(entities.get("trend_intent"), market_intent),
-            job_family_id=_text_or_none(entities.get("job_family_id")),
-            job_category_id=_text_or_none(entities.get("job_category_id")),
+            intent=_trend_intent_or_default(
+                entities.get("trend_intent") or _trend_intent_from_query(request.user_query),
+                market_intent,
+            ),
+            job_family_id=_text_or_none(entities.get("job_family_id") or entities.get("resolved_job_family_id")),
+            job_category_id=_text_or_none(entities.get("job_category_id") or entities.get("resolved_job_category_id")),
             job_category=_text_or_none(entities.get("job_category")),
             location_id=_text_or_none(entities.get("location_id")),
             location=_text_or_none(entities.get("location")),
+            role_mention=_text_or_none(entities.get("role_mention") or entities.get("target_role")),
+            job_sources=_job_sources_or_empty(entities.get("job_sources")),
         )
 
     async def _trend_entities(self, request: MarketScoutRequest) -> dict[str, Any]:
@@ -235,6 +247,8 @@ class MarketScoutAgent:
             entities.update(context_trend)
         if request.entities_hint:
             entities.update(request.entities_hint)
+        entities.update(self._trend_entities_from_query_understanding(request.user_query, entities))
+        entities.update(self.trend_entity_extractor.extract(request.user_query, entities))
         if self.entity_extractor is not None:
             try:
                 extracted = self.entity_extractor.extract(request.user_query, request.user_context)
@@ -244,6 +258,39 @@ class MarketScoutAgent:
             if isinstance(extracted, dict):
                 entities.update({key: value for key, value in extracted.items() if value is not None})
         return entities
+
+    def _trend_entities_from_query_understanding(
+        self,
+        user_query: str,
+        existing_entities: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.query_understanding_service is None:
+            return {}
+        try:
+            understanding = self.query_understanding_service.understand(user_query)
+        except Exception as exc:
+            _log_event(
+                "market_scout_query_understanding_failed",
+                agent="market_scout",
+                user_query=_short_query(user_query),
+                error=str(exc),
+            )
+            return {}
+        trend_query = getattr(understanding, "trend_query", None)
+        if trend_query is None:
+            return {}
+        extracted = {
+            "trend_intent": getattr(getattr(trend_query, "intent", None), "value", None),
+            "role_mention": getattr(trend_query, "role_mention", None),
+            "location_text": getattr(trend_query, "location_text", None),
+            "job_category_hint": getattr(trend_query, "job_category_hint", None),
+            "job_family_hint": getattr(trend_query, "job_family_hint", None),
+        }
+        return {
+            key: value
+            for key, value in extracted.items()
+            if value is not None and not existing_entities.get(key)
+        }
 
     @staticmethod
     def _compose_trend_response(
@@ -266,7 +313,10 @@ class MarketScoutAgent:
         return MarketScoutResponse(
             agent="market_scout",
             intent=intent,
-            answer="Vui long cung cap job category hoac job family va dia diem de truy van Trend Tracker.",
+            answer=(
+                "Minh can ten vi tri/cong viec va khu vuc ban muon xem nhu cau tuyen dung. "
+                "Vi du: AI Engineer tai Ha Noi co dang tuyen nhieu khong?"
+            ),
             confidence="low",
             data={},
             sources=[],
@@ -308,7 +358,7 @@ async def _maybe_await(value: Any) -> Any:
 
 
 def _classify_intent(query: str) -> MarketScoutIntent:
-    normalized = query.casefold()
+    normalized = _query_key(query)
     has_salary_signal = any(keyword in normalized for keyword in _SALARY_KEYWORDS)
 
     if has_salary_signal:
@@ -332,6 +382,25 @@ def _trend_intent_or_default(value: Any, market_intent: MarketScoutIntent) -> Tr
     return TrendQueryIntent.CURRENT_DEMAND
 
 
+def _trend_intent_from_query(query: str) -> str | None:
+    normalized = _query_key(query)
+    if any(keyword in normalized for keyword in ("skill", "ky nang", "yeu cau")):
+        return TrendQueryIntent.CURRENT_SKILL_DEMAND.value
+    return None
+
+
+def _query_key(value: Any) -> str:
+    text = str(value).replace(chr(273), "d").replace(chr(272), "D")
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(character for character in text if unicodedata.category(character) != "Mn")
+    return text.casefold()
+
+
+def _job_sources_or_empty(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
 def _text_or_none(value: Any) -> str | None:
     if value is None:
         return None
@@ -341,11 +410,18 @@ def _text_or_none(value: Any) -> str | None:
 
 _TREND_ENTITY_FIELDS = {
     "trend_intent",
+    "role_mention",
     "job_family_id",
+    "resolved_job_family_id",
+    "job_family_hint",
     "job_category_id",
+    "resolved_job_category_id",
     "job_category",
+    "job_category_hint",
     "location_id",
     "location",
+    "location_text",
+    "job_sources",
 }
 
 def _salary_limitations(result: SalaryBenchmarkFlowResult) -> list[str]:
@@ -382,10 +458,15 @@ _TREND_KEYWORDS = (
     "forecast",
     "decline",
     "automation",
+    "skill",
+    "ky nang",
+    "yeu cau",
     "xu huong",
-    "xu hướng",
     "nhu cau",
-    "nhu cầu",
     "tuyen nhieu",
-    "tuyển nhiều",
+    "tuyen dung",
+    "dang tuyen",
+    "viec lam",
+    "co tuyen dung",
+    "co dang tuyen",
 )

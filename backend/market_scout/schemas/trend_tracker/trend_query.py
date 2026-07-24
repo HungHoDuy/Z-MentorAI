@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class TrendQueryIntent(str, Enum):
@@ -20,6 +21,8 @@ class TrendQueryInput:
     job_category: str | None = None
     location_id: str | None = None
     location: str | None = None
+    role_mention: str | None = None
+    job_sources: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -30,3 +33,5 @@ class TrendQuery:
     job_family_id: str
     location_id: str
     job_category_id: str | None = None
+    role_mention: str | None = None
+    job_sources: list[dict[str, Any]] = field(default_factory=list)

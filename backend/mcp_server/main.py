@@ -25,6 +25,45 @@ def _short_text(value: str | None, max_length: int = 500) -> str:
         return text
     return text[: max_length - 3] + "..."
 
+def _log_upstream_response(endpoint: str, data: dict[str, Any], duration_ms: float) -> None:
+    if endpoint not in {"/scout", "/salary-benchmark"}:
+        return
+    answer = str(data.get("answer") or "")
+    job_sources = _extract_job_sources(data)
+    _log_event(
+        "mcp_market_scout_response",
+        endpoint=endpoint,
+        intent=data.get("intent"),
+        confidence=data.get("confidence"),
+        duration_ms=duration_ms,
+        answer_preview=_short_text(answer, max_length=1000),
+        answer_has_url=("http://" in answer or "https://" in answer),
+        top_level_sources_count=len(data.get("sources") or []) if isinstance(data.get("sources"), list) else 0,
+        job_sources_count=len(job_sources),
+        job_sources_preview=[_job_source_preview(item) for item in job_sources[:5]],
+    )
+
+
+def _extract_job_sources(data: dict[str, Any]) -> list[dict[str, Any]]:
+    data_payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+    job_sources = data_payload.get("job_sources")
+    if isinstance(job_sources, list):
+        return [item for item in job_sources if isinstance(item, dict)]
+    signal = data_payload.get("signal") if isinstance(data_payload.get("signal"), dict) else {}
+    signal_sources = signal.get("job_sources")
+    if isinstance(signal_sources, list):
+        return [item for item in signal_sources if isinstance(item, dict)]
+    return []
+
+
+def _job_source_preview(source: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "company": source.get("company"),
+        "job_title": source.get("job_title"),
+        "job_url": source.get("job_url"),
+        "score": source.get("score"),
+    }
+
 def _upstream_error_payload(
     method: str,
     url: str,
@@ -52,8 +91,11 @@ def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
     try:
         response = httpx.post(f"{url}{endpoint}", json=payload, timeout=180.0)
         response.raise_for_status()
-        _log_event("mcp_upstream_success", endpoint=endpoint, status_code=response.status_code, duration_ms=round((perf_counter() - start) * 1000, 2))
-        return response.json()
+        data = response.json()
+        duration_ms = round((perf_counter() - start) * 1000, 2)
+        _log_event("mcp_upstream_success", endpoint=endpoint, status_code=response.status_code, duration_ms=duration_ms)
+        _log_upstream_response(endpoint=endpoint, data=data, duration_ms=duration_ms)
+        return data
     except httpx.HTTPStatusError as exc:
         error_payload = _upstream_error_payload("POST", url, endpoint, exc, exc.response)
         error_payload["duration_ms"] = round((perf_counter() - start) * 1000, 2)
@@ -85,21 +127,52 @@ def profile_scanner(
     background_info: str = "",
     task: str = "scan_profile",
     answers_json: str = "",
-    cv_document_id: str = ""
+    cv_document_id: str = "",
+    assessment_type: str = "",
+    decision: str = "",
+    target_role: str = ""
 ) -> dict:
-    """Use this Profile Scanner agent tool for CV/profile scanning and Holland/RIASEC career-interest assessment.
+    """Use this Profile Scanner agent tool for CV/profile scanning and career/profile assessments.
 
     Supported task values:
-    - scan_profile: scan a previously uploaded CV document when cv_document_id is provided.
+    - scan_profile: scan a CV by cv_document_id, or the user's latest CV when no id is available; pass target_role when explicit.
     - holland_start: start the Holland/RIASEC test and return the question bank.
     - holland_score: score and save completed Holland/RIASEC answers.
+    - assessment_start: start a supported assessment, for example assessment_type="multiple_intelligences".
+    - assessment_score: score and save a supported assessment.
+    - profile_confirm: accept, update, overwrite, or reject a CV profile proposal.
+    - career_alignment: synthesize canonical CV profile, Holland, and MI results.
 
-    For holland_score, answers_json must be a JSON array like:
+    For scoring tasks, answers_json must be a JSON array like:
     [{"question_id":"R1","score":5},{"question_id":"I1","score":4}]
     Scores are integers from 1 to 5.
     """
     normalized_task = task.strip().lower()
-    sub_agent = "holland_test" if normalized_task in {"holland", "holland_start", "riasec", "riasec_start", "holland_score", "riasec_score"} or answers_json.strip() else "scan_cv"
+    normalized_assessment_type = (assessment_type or "").strip().lower()
+    is_assessment_task = normalized_task in {
+        "mi",
+        "mi_start",
+        "multiple_intelligences",
+        "multiple_intelligences_start",
+        "assessment_start",
+        "mi_score",
+        "multiple_intelligences_score",
+        "assessment_score",
+    }
+    is_holland_task = normalized_task in {
+        "holland",
+        "holland_start",
+        "riasec",
+        "riasec_start",
+        "holland_score",
+        "riasec_score",
+    }
+    if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
+        sub_agent = "career_alignment"
+    elif normalized_task in {"profile_confirm", "confirm_profile"}:
+        sub_agent = "canonical_profile"
+    else:
+        sub_agent = "assessment" if is_assessment_task else "holland_test" if is_holland_task or answers_json.strip() else "scan_cv"
     _log_event(
         "mcp_tool_call",
         agent="profile_scanner",
@@ -107,8 +180,67 @@ def profile_scanner(
         user_id=user_id,
         user_query=_short_text(background_info),
         task=normalized_task,
+        assessment_type=normalized_assessment_type,
         has_cv_document=bool(cv_document_id),
     )
+
+    if normalized_task in {"profile_confirm", "confirm_profile"}:
+        if not cv_document_id or decision not in {"accept", "update", "overwrite", "reject"}:
+            return {
+                "status": "error",
+                "feature": "profile_confirmation",
+                "error": "cv_document_id and a valid decision are required.",
+            }
+        return fetch_data_sync(PROFILE_SCANNER_URL, "/profiles/confirm", {
+            "user_id": user_id,
+            "cv_document_id": cv_document_id,
+            "decision": decision,
+        })
+
+    if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
+        return fetch_data_sync(PROFILE_SCANNER_URL, f"/alignment/synthesize/{user_id}", {})
+
+    if normalized_task in {
+        "mi",
+        "mi_start",
+        "multiple_intelligences",
+        "multiple_intelligences_start",
+        "assessment_start",
+    }:
+        target_assessment = normalized_assessment_type or "multiple_intelligences"
+        return get_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/start/{user_id}")
+
+    if normalized_task in {
+        "mi_score",
+        "multiple_intelligences_score",
+        "assessment_score",
+    }:
+        target_assessment = normalized_assessment_type or "multiple_intelligences"
+        if not answers_json.strip():
+            return {
+                "status": "error",
+                "feature": "assessment",
+                "assessment_type": target_assessment,
+                "error": "answers_json is required when task is assessment_score.",
+                "expected_format": [{"question_id": "M1", "score": 5}]
+            }
+
+        try:
+            answers = json.loads(answers_json)
+        except json.JSONDecodeError as exc:
+            return {
+                "status": "error",
+                "feature": "assessment",
+                "assessment_type": target_assessment,
+                "error": f"answers_json must be valid JSON: {exc}",
+                "expected_format": [{"question_id": "M1", "score": 5}]
+            }
+
+        return fetch_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/score", {
+            "user_id": user_id,
+            "answers": answers,
+            "source": "orchestrator_chat"
+        })
 
     if normalized_task in {"holland", "holland_start", "riasec", "riasec_start"}:
         return get_data_sync(PROFILE_SCANNER_URL, f"/holland/start/{user_id}")
@@ -141,17 +273,21 @@ def profile_scanner(
     return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
         "user_id": user_id,
         "background_info": background_info,
-        "cv_document_id": cv_document_id
+        "cv_document_id": cv_document_id,
+        "target_role": target_role,
     })
 
 @mcp.tool()
 def market_scout(
-    industry: str,
+    user_query: str,
+    industry: str = "",
     target_role: str = "",
-    user_query: str = "",
     intent_hint: str = "",
 ) -> dict:
     """Use this tool for job market trends, hiring demand, automation exposure, and general market outlook.
+    Always pass the user's original question in user_query.
+    For role-level hiring demand questions, user_query is enough; do not ask the user for job category or job family.
+    Optional industry and target_role are only hints when they are already known.
     For salary or compensation questions, prefer the salary_benchmark tool.
     If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
     sub_agent = intent_hint.strip() or ("salary_benchmark" if _looks_like_salary_query(user_query) else "trend_tracker")

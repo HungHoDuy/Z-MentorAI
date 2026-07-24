@@ -58,18 +58,18 @@ class TrendQueryNormalizer:
                 "job_family_id does not match the resolved job_category_id."
             )
         resolved_family_id = family_id or category_family_id
-        if not resolved_family_id:
-            raise ValueError("A job_family_id or job_category_id is required for MVP trend queries.")
+        
 
         location_id = self._resolve_location(query_input.location_id or query_input.location)
-        if not location_id:
-            raise ValueError("A location_id or location is required for MVP trend queries.")
+        
 
         return TrendQuery(
             intent=intent,
             job_family_id=resolved_family_id,
             location_id=location_id,
             job_category_id=category_id,
+            role_mention=_optional_text(query_input.role_mention),
+            job_sources=list(query_input.job_sources),
         )
 
     def _normalize_intent(self, value: TrendQueryIntent | str) -> TrendQueryIntent:
@@ -135,3 +135,10 @@ def _text_key(value: str | None) -> str:
 def _slugify(value: str | None) -> str | None:
     key = _text_key(value)
     return key.replace(" ", "-") or None
+
+
+def _optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None

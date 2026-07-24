@@ -193,6 +193,86 @@ class UploadAvatarRequest(BaseModel):
     avatar_base64: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    target_role: Optional[str] = None
+
+
+class SettingsUpdateRequest(BaseModel):
+    language: Optional[str] = None
+    theme: Optional[str] = None
+
+
+PROFILE_EDITABLE_FIELDS = {
+    "name", "phone", "location", "linkedin_url", "github_url",
+    "portfolio_url", "target_role",
+}
+
+
+def require_known_user(user_id: str) -> dict:
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Missing user identity")
+    if USE_FIRESTORE:
+        snapshot = firestore_client.collection("user").document(user_id).get()
+        if not snapshot.exists:
+            raise HTTPException(status_code=401, detail="Unknown user")
+        return snapshot.to_dict()
+    user = read_users_db().get("users", {}).get(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unknown user")
+    return user
+
+
+def get_profile_workspace(user_id: str) -> dict:
+    user = require_known_user(user_id)
+    preferences = user.get("preferences") or {"language": "vi", "theme": "light"}
+    canonical = None
+    active_document = None
+    if USE_FIRESTORE:
+        profile_snapshot = firestore_client.collection(
+            os.getenv("PROFILE_SCANNER_PROFILES_COLLECTION", "profile_scanner_profiles")
+        ).document(user_id).get()
+        canonical = profile_snapshot.to_dict() if profile_snapshot.exists else None
+        active_document_id = (canonical or {}).get("active_cv_document_id")
+        if active_document_id:
+            document_snapshot = firestore_client.collection(
+                os.getenv("CV_DOCUMENTS_COLLECTION", "profile_scanner_cv_documents")
+            ).document(active_document_id).get()
+            active_document = document_snapshot.to_dict() if document_snapshot.exists else None
+
+    identity = (canonical or {}).get("identity") or {}
+    return {
+        "user_id": user_id,
+        "email": user.get("email", ""),
+        "name": user.get("name") or identity.get("full_name") or "",
+        "picture": user.get("picture", ""),
+        "custom_avatar": user.get("custom_avatar"),
+        "phone": user.get("phone") or identity.get("phone") or "",
+        "location": user.get("location") or identity.get("location") or "",
+        "linkedin_url": user.get("linkedin_url") or identity.get("linkedin_url") or "",
+        "github_url": user.get("github_url") or identity.get("github_url") or "",
+        "portfolio_url": user.get("portfolio_url") or identity.get("portfolio_url") or "",
+        "target_role": user.get("target_role") or (canonical or {}).get("target_role") or "",
+        "preferences": preferences,
+        "current_cv": None if not canonical else {
+            "cv_document_id": canonical.get("active_cv_document_id"),
+            "original_filename": (active_document or {}).get("original_filename"),
+            "uploaded_at": (active_document or {}).get("uploaded_at"),
+            "grade": canonical.get("grade"),
+            "total_score": canonical.get("total_score"),
+            "headline": canonical.get("headline"),
+            "summary": canonical.get("summary"),
+            "skills": canonical.get("normalized_skills") or canonical.get("skills") or [],
+            "profile_version": canonical.get("profile_version"),
+        },
+    }
+
+
 if USE_VERTEX_AI:
     from langchain_google_vertexai import ChatVertexAI
     llm = ChatVertexAI(
@@ -260,27 +340,41 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
         elif name == "academic_architect_swap_course":
             return "Đã cập nhật khóa học thay thế vào lộ trình Gantt Chart."
         elif name == "academic_architect_input_verifier":
+        output = normalize_tool_output(tool_call.get("output"))
+        if name == "academic_architect":
+            return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
+        if name == "academic_architect_input_verifier":
             return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
-        elif name == "market_scout":
+        if name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
-        elif name == "profile_scanner":
-            output = normalize_tool_output(tool_call.get("output"))
+        if name == "profile_scanner":
+            if output.get("feature") == "profile_confirmation":
+                return output.get("message_vi", "Đã cập nhật trạng thái hồ sơ cá nhân.")
+            if output.get("feature") == "career_alignment":
+                return "Đã tổng hợp mức độ phù hợp giữa CV, Holland và MI."
+            if output.get("feature") == "assessment":
+                if output.get("questions"):
+                    return f"Đã tạo biểu mẫu {output.get('title', 'assessment')}."
+                if output.get("top_dimensions"):
+                    return f"Đã chấm điểm {output.get('title', 'assessment')}."
             if output.get("feature") == "holland_assessment":
                 if output.get("questions"):
                     return "Đã tạo biểu mẫu Holland Test."
                 if output.get("top_code"):
                     return "Đã chấm điểm Holland Test và lưu kết quả RIASEC."
-            elif output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+            if output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+                profile_action = output.get("profile_action") or {}
+                if profile_action.get("message_vi"):
+                    return profile_action["message_vi"]
                 return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
-
 
 def sanitize_user_message_for_history(user_message: str) -> str:
     content = (user_message or "").strip()
     if not content:
         return ""
 
-    if "holland_score" not in content and "answers_json" not in content:
+    if "holland_score" not in content and "assessment_score" not in content and "answers_json" not in content:
         return content
 
     answered_count = None
@@ -297,9 +391,20 @@ def sanitize_user_message_for_history(user_message: str) -> str:
             answered_count = None
 
     if answered_count:
+        if "assessment_score" in content or "multiple_intelligences" in content:
+            return (
+                f"Mình đã hoàn thành bài MI với {answered_count} câu trả lời. "
+                "Hãy chấm điểm và lưu kết quả Multiple Intelligences vào hồ sơ của mình."
+            )
         return (
             f"Mình đã hoàn thành Holland Test với {answered_count} câu trả lời. "
             "Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình."
+        )
+
+    if "assessment_score" in content or "multiple_intelligences" in content:
+        return (
+            "Mình đã hoàn thành bài MI. "
+            "Hãy chấm điểm và lưu kết quả Multiple Intelligences vào hồ sơ của mình."
         )
 
     return (
@@ -491,6 +596,43 @@ async def auth_upload_avatar(request: UploadAvatarRequest):
     user["custom_avatar"] = request.avatar_base64
     await save_user(request.google_id, user)
     return user
+
+
+@app.get("/me/profile")
+async def get_my_profile(x_user_id: str = Header(...)):
+    return get_profile_workspace(x_user_id)
+
+
+@app.patch("/me/profile")
+async def update_my_profile(request: ProfileUpdateRequest, x_user_id: str = Header(...)):
+    user = require_known_user(x_user_id)
+    updates = request.model_dump(exclude_none=True)
+    for key in list(updates):
+        if key not in PROFILE_EDITABLE_FIELDS:
+            updates.pop(key)
+            continue
+        if isinstance(updates[key], str):
+            updates[key] = updates[key].strip()
+    user.update(updates)
+    user["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await save_user(x_user_id, user)
+    return get_profile_workspace(x_user_id)
+
+
+@app.patch("/me/settings")
+async def update_my_settings(request: SettingsUpdateRequest, x_user_id: str = Header(...)):
+    user = require_known_user(x_user_id)
+    updates = request.model_dump(exclude_none=True)
+    language = updates.get("language", (user.get("preferences") or {}).get("language", "vi"))
+    theme = updates.get("theme", (user.get("preferences") or {}).get("theme", "light"))
+    if language not in {"vi", "en"}:
+        raise HTTPException(status_code=422, detail="language must be vi or en")
+    if theme not in {"light", "dark"}:
+        raise HTTPException(status_code=422, detail="theme must be light or dark")
+    user["preferences"] = {"language": language, "theme": theme}
+    user["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await save_user(x_user_id, user)
+    return user["preferences"]
 
 
 @app.post("/profile-scanner/cv/upload")
@@ -769,7 +911,15 @@ def get_system_message(user_id: str) -> SystemMessage:
         "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
+        "The MI / Multiple Intelligences assessment is a Profile Scanner capability for learning style and intelligence tendency, not an official MBTI test. "
+        "If the user asks for MI, Multiple Intelligences, tri thong minh da dang, learning style, study style, MBTI, or personality-style testing, call profile_scanner with task='assessment_start' and assessment_type='multiple_intelligences'. "
+        "When the user provides MI answers, convert them into answers_json and call profile_scanner with task='assessment_score' and assessment_type='multiple_intelligences'. "
+        "If the latest user message explicitly says to call profile_scanner with task='assessment_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
+        "If the user provides or changes a target role after uploading a CV, call profile_scanner with task='scan_profile' and target_role set to the user's exact role. Profile Scanner will select the user's latest CV when cv_document_id is unavailable. "
+        "If the latest user message explicitly requests profile_confirm and includes cv_document_id plus decision, call profile_scanner immediately with task='profile_confirm', the exact cv_document_id, and decision. Do not reinterpret the decision. "
+        "If the user asks whether their CV direction conflicts with Holland or MI, or asks for a combined career alignment analysis, call profile_scanner with task='career_alignment'. "
+        "Career alignment is deterministic: never invent a conflict state or use MI as proof that a career is unsuitable. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
         "For course roadmap or learning planning: "

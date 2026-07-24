@@ -15,6 +15,7 @@ DEFAULT_LLM_MODEL = "gemini-2.5-flash"
 DEFAULT_VERTEX_LOCATION = "us-central1"
 PROMPT_VERSION = "salary-summary-v1"
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[2] / "prompts" / "salary_summary_system_prompt.txt"
 
 
 class ChatModel(Protocol):
@@ -67,7 +68,7 @@ class SalarySummaryService:
             llm = self._llm or self._build_llm()
             response = llm.invoke(
                 [
-                    SystemMessage(content=_SYSTEM_PROMPT),
+                    SystemMessage(content=_load_system_prompt()),
                     HumanMessage(content=json.dumps(payload, ensure_ascii=False, indent=2)),
                 ]
             )
@@ -119,20 +120,10 @@ class SalarySummaryService:
         }
 
 
-_SYSTEM_PROMPT = """You are the Salary Benchmark summary writer for Market Scout.
-
-Rules:
-- Write the final answer in Vietnamese.
-- Use only the JSON data provided by the user message.
-- Do not invent salaries, companies, URLs, confidence values, or extra market facts.
-- Do not recalculate salary; use salary_range_text or salary_range exactly as provided.
-- If salary_range is null, say the available data is not sufficient for a reliable benchmark.
-- If confidence is low, clearly mention that the result should be treated as a weak estimate.
-- Keep the answer concise and suitable for an end user.
-- Include the most relevant source URLs only when they are present in the provided JSON.
-"""
 
 
+def _load_system_prompt(prompt_file: Path = SYSTEM_PROMPT_FILE) -> str:
+    return prompt_file.read_text(encoding="utf-8")
 def _salary_range_text(benchmark: SalaryBenchmarkResult) -> str | None:
     if benchmark.salary_range is None:
         return None

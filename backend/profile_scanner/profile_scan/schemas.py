@@ -7,6 +7,7 @@ class ProfileRequest(BaseModel):
     user_id: str
     background_info: str = ""
     cv_document_id: Optional[str] = None
+    target_role: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -24,12 +25,23 @@ class ProfileResponse(BaseModel):
     extracted_at: Optional[str] = None
     ocr_fallback_used: Optional[bool] = None
     target_role: Optional[str] = None
+    target_role_source: Optional[str] = None
+    target_role_confidence: Optional[float] = None
+    benchmark_status: Optional[str] = None
     benchmark_profile_id: Optional[str] = None
     benchmark_version: Optional[str] = None
+    benchmark_type: Optional[str] = None
+    benchmark_confidence: Optional[str] = None
+    benchmark_confidence_score: Optional[float] = None
+    benchmark_sample_size: Optional[int] = None
+    benchmark_distinct_companies: Optional[int] = None
+    benchmark_sources: Optional[list[dict]] = None
     grade: Optional[str] = None
     total_score: Optional[float] = None
     score_dimensions: Optional[list[dict]] = None
     extracted_skills: Optional[list[str]] = None
+    normalized_skills: Optional[list[dict]] = None
+    skill_normalization_version: Optional[str] = None
     work_experiences: Optional[list[str]] = None
     education_records: Optional[list[str]] = None
     projects: Optional[list[str]] = None
@@ -41,5 +53,7 @@ class ProfileResponse(BaseModel):
     ai_extraction_used: Optional[bool] = None
     ai_extraction_confidence: Optional[float] = None
     structured_profile: Optional[dict] = None
+    candidate_identity: Optional[dict] = None
+    profile_action: Optional[dict] = None
     analysis_artifact_gcs_uri: Optional[str] = None
     analyzed_at: Optional[str] = None

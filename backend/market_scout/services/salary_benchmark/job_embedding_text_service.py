@@ -19,6 +19,17 @@ class JobEmbeddingTextService:
         "Thông Tin Khác",
         "other_info",
     )
+    DESCRIPTION_FIELDS = (
+        "Mô tả Công việc",
+        "Mô tả công việc",
+        "description",
+        "job_description",
+    )
+    CATEGORY_FIELDS = (
+        "Ngành nghề",
+        "industry",
+        "job_category",
+    )
 
     def build_text(self, document_id: str, data: dict[str, Any]) -> str | None:
         record = SalaryJobRecord.from_firestore(document_id, data)
@@ -27,6 +38,8 @@ class JobEmbeddingTextService:
 
         requirements = _clean_text(_first_value(data, self.REQUIREMENT_FIELDS))
         other_info = _clean_text(_first_value(data, self.OTHER_INFO_FIELDS))
+        description = _clean_text(_first_value(data, self.DESCRIPTION_FIELDS))
+        category = _clean_text(_first_value(data, self.CATEGORY_FIELDS))
 
         parts = [
             ("Job title", record.job_title),
@@ -38,6 +51,8 @@ class JobEmbeddingTextService:
                 self._salary_text(record),
             ),
             ("Benefits", ", ".join(record.benefits)),
+            ("Industry", category),
+            ("Description", description),
             ("Other info", other_info),
             ("Requirements", requirements),
         ]

@@ -5,6 +5,7 @@ from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest
 from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryInput, TrendQueryIntent
+from backend.market_scout.services.trend_tracker.trend_entity_extractor_service import TrendEntityExtractorService
 from backend.market_scout.services.trend_tracker.trend_summary_service import TrendSummaryService
 
 
@@ -16,6 +17,21 @@ class FakeTrendFlow:
     def run(self, query_input: TrendQueryInput) -> TrendTrackerFlowResult:
         self.inputs.append(query_input)
         return self.result
+
+
+class FakeRoleSearchService:
+    def resolve_role(self, *, role_query: str, location_id: str | None = None, top_k: int = 5):
+        return FakeRoleResolutionResult()
+
+
+class FakeRoleResolutionResult:
+    accepted = True
+    resolved_job_category_id = "software_it"
+    resolved_job_family_id = "digital_telecom"
+    confidence = "medium"
+    rejection_reason = None
+    matches = []
+
 
 class FakeTrendSummaryService:
     def summarize(self, result: TrendTrackerFlowResult):
@@ -67,6 +83,120 @@ def test_agent_maps_decline_risk_to_automation_exposure_by_default() -> None:
     assert trend_flow.inputs[0].intent == TrendQueryIntent.AUTOMATION_EXPOSURE
 
 
+
+
+def test_agent_maps_legacy_market_scout_industry_to_trend_category_and_location() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="nhu cau tuyen dung nganh banking tai Ha Noi co cao khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+                entities_hint={"industry": "banking"},
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_category_id="banking",
+        location_id="ha-noi",
+    )
+
+
+def test_agent_resolves_legacy_target_role_with_role_fact_search() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(
+        trend_flow=trend_flow,
+        response_composer=FakeTrendSummaryService(),
+        trend_entity_extractor=TrendEntityExtractorService(role_search_service=FakeRoleSearchService()),
+    )
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="backend engineer tai Ha Noi co dang tuyen dung nhieu khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+                entities_hint={"target_role": "backend engineer"},
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_family_id="digital_telecom",
+        job_category_id="software_it",
+        location_id="ha-noi",
+    )
+
+
+
+
+def test_agent_uses_resolved_role_category_and_family_for_trend_query() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="backend engineer tai Ha Noi co dang tuyen dung nhieu khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+                entities_hint={
+                    "resolved_job_category_id": "software_it",
+                    "resolved_job_family_id": "digital_telecom",
+                    "location_id": "ha-noi",
+                },
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_family_id="digital_telecom",
+        job_category_id="software_it",
+        location_id="ha-noi",
+    )
+
+def test_agent_extracts_job_family_and_location_from_user_query() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="nhu cau tuyen dung vi tri nhan vien commercial tai Ha Noi co cao khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_family_id="commercial",
+        location_id="ha-noi",
+    )
+
+
+def test_agent_extracts_job_category_and_location_from_user_query() -> None:
+    trend_flow = FakeTrendFlow(_trend_result())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+
+    asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="nhu cau tuyen dung nganh banking tai Ha Noi co cao khong?",
+                intent_hint=MarketScoutIntent.TREND_TRACKER,
+            )
+        )
+    )
+
+    assert trend_flow.inputs[0] == TrendQueryInput(
+        intent=TrendQueryIntent.CURRENT_DEMAND,
+        job_category_id="banking",
+        location_id="ha-noi",
+    )
 def _trend_result() -> TrendTrackerFlowResult:
     query = TrendQuery(
         intent=TrendQueryIntent.CURRENT_DEMAND,
@@ -91,3 +221,4 @@ def _trend_result() -> TrendTrackerFlowResult:
             limitations=["One snapshot is not a trend."],
         ),
     )
+

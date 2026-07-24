@@ -1,0 +1,215 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Salary Benchmark DB Design">
+    <mxGraphModel dx="1780" dy="1120" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1780" pageHeight="1160" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Salary Benchmark Database Design" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=28;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="28" width="620" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Current Firestore collections, vector index, and non-persisted runtime result used by Market Scout Salary Benchmark" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="42" y="66" width="980" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cbd5e1;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="28" width="470" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_blue" value="" style="rounded=0;html=1;fillColor=#2563eb;strokeColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="46" width="46" height="4" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_blue_t" value="Main query/read flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1348" y="37" width="150" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_dash" value="" style="rounded=0;html=1;fillColor=#64748b;strokeColor=#64748b;dashed=1;dashPattern=3 5;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="46" width="46" height="4" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_dash_t" value="Batch write / derived data" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1568" y="37" width="145" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="gcp_boundary" value="Google Cloud Project - Z-MentorAI / Firestore" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#60a5fa;strokeWidth=2;verticalAlign=top;align=left;fontSize=15;fontStyle=1;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="105" width="1700" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="db_boundary" value="Salary Benchmark Data Boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#22c55e;strokeWidth=2;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="145" width="1640" height="620" as="geometry" />
+        </mxCell>
+        <mxCell id="source_collection" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffdf2;strokeColor=#d97706;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="105" y="205" width="365" height="350" as="geometry" />
+        </mxCell>
+        <mxCell id="source_fs_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="128" y="230" width="38" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="badge1" value="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d97706;strokeColor=#d97706;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="432" y="218" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="source_title" value="data_for_vectorize" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=18;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="224" width="230" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="source_sub" value="Raw / cleaned job posting collection" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="180" y="254" width="230" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="source_fields" value="&lt;b&gt;Document identity&lt;/b&gt;&lt;br&gt;Firestore document id&lt;br&gt;job_id / job_url&lt;br&gt;&lt;br&gt;&lt;b&gt;Job matching fields&lt;/b&gt;&lt;br&gt;job_title, company&lt;br&gt;work location&lt;br&gt;min_experience&lt;br&gt;&lt;br&gt;&lt;b&gt;Salary source fields&lt;/b&gt;&lt;br&gt;min_salary, max_salary&lt;br&gt;benefits" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="130" y="292" width="315" height="238" as="geometry" />
+        </mxCell>
+        <mxCell id="offline_pipeline" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="535" y="205" width="410" height="350" as="geometry" />
+        </mxCell>
+        <mxCell id="badge2" value="2" style="ellipse;whiteSpace=wrap;html=1;fillColor=#64748b;strokeColor=#64748b;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="907" y="218" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="offline_title" value="Batch Indexing &amp; Salary Bounds" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=18;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="562" y="224" width="330" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="offline_sub" value="Offline jobs that build/update the salary-search collection" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="562" y="254" width="330" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="embed_service" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="570" y="300" width="335" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vertex_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjIwIiBoZWlnaHQ9IjE3LjUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgdmlld0JveD0iMCAwIDIwIDE3LjUiPiYjeGE7CTxzdHlsZSB0eXBlPSJ0ZXh0L2NzcyI+JiN4YTsJLnN0MHtmaWxsOiM0Mjg1ZjQ7fSYjeGE7CS5zdDF7ZmlsbDojNjY5ZGY2O30mI3hhOwk8L3N0eWxlPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDAiIGQ9Ik0xOC45MSAxMC42M0wyMCA4Ljc1IDE3LjgyIDVoLTMuMDdsLTEuMDYtMS44NkgxMi41VjEuODhoMS45NGwxLjA2IDEuODdoMS41OUwxNC45IDBoLTQuMjd2NWgxLjczbC43MyAxLjI1aC0yLjQ2djIuNWgyLjI2bDEuMDUtMS44N2gyLjgxbC43MiAxLjI1aC0yLjhMMTMuNjIgMTBoLTIuOTl2NC4zOGgzLjRsLS43MiAxLjI1aC0yLjY4djEuODdoNC4yN2wzLjI4LTUuNjJoLTIuMDlsLS43MyAxLjI1SDEyLjV2LTEuMjVoMi4xNGwuNzQtMS4yNXoiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QxIiBkPSJNMS4wOSAxMC42M0wwIDguNzUgMi4xOCA1aDMuMDdsMS4wNi0xLjg2SDcuNVYxLjg4SDUuNTZMNC41IDMuNzVIMi45MUw1LjEgMGg0LjI4djVINy42NGwtLjczIDEuMjVoMi40N3YyLjVINy4xMUw2LjA2IDYuODhIMy4yNWwtLjcyIDEuMjVoMi44TDYuMzggMTBoM3Y0LjM4SDUuOTdsLjcyIDEuMjVoMi42OXYxLjg3SDUuMWwtMy4yOC01LjYyaDIuMDlsLjczIDEuMjVINy41di0xLjI1SDUuMzZsLS43NC0xLjI1eiIvPiYjeGE7PC9zdmc+;" vertex="1" parent="1">
+          <mxGeometry x="588" y="316" width="34" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="embed_label" value="Build embedding text + vector" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="635" y="310" width="240" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="embed_class" value="EmbedFirestoreJobsPipeline / JobEmbeddingTextService" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="635" y="334" width="245" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bounds_service" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#f97316;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="570" y="412" width="335" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="bounds_label" value="Estimate missing salary bounds" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="422" width="260" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="bounds_class" value="EstimateSalaryBoundsPipeline / SalaryBoundEstimationService" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="600" y="446" width="260" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_collection" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="185" width="640" height="410" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_fs_icon" value="" style="editableCssRules=.*;html=1;shape=image;verticalLabelPosition=bottom;labelBackgroundColor=#ffffff;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnY9Imh0dHBzOi8vdmVjdGEuaW8vbmFubyIgd2lkdGg9IjMyMy45MDU2MTAzOTg2NzUxNSIgaGVpZ2h0PSIzNzYuNDIyMjk0OTYzNjg0MDciIHZpZXdCb3g9Ii0wLjA5NzAwMDAwMjg2MTAyMjk1IDAuMjg3OTk5OTg3NjAyMjMzOSA4NS42OTk5OTY5NDgyNDIxOSA5OS41OTUwMDEyMjA3MDMxMiI+JiN4YTs8c3R5bGUgdHlwZT0idGV4dC9jc3MiPiYjeGE7CS5zdDB7ZmlsbDojYWVjYmZhO30mI3hhOwkuc3Qxe2ZpbGw6IzY2OWRmNjt9JiN4YTsJLnN0MntmaWxsOiM0Mjg1ZjQ7fSYjeGE7PC9zdHlsZT4mI3hhOwk8cGF0aCBjbGFzcz0ic3QwIiBkPSJNLS4wOTcgNzUuODE1VjU1Ljg3NGw0Mi44NS0yMC4xODN2MTkuMDd6bTAtMzUuNDAzVjIwLjQ3MUw0Mi43NTMuMjg4djE5LjA3eiIvPiYjeGE7CTxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik04NS42MDMgNzUuODE1VjU1Ljg3NGwtNDIuODUtMjAuMTgzdjE5LjA3em0wLTM1LjQwM1YyMC40NzFMNDIuNzUzLjI4OHYxOS4wN3oiLz4mI3hhOwk8cGF0aCBjbGFzcz0ic3QyIiBkPSJNNDIuNzUzIDgwLjMxNGwxNi4yMTctNy41MjUgMjEuMDg0IDkuNzE3LTM3LjMwMSAxNy4zNzd6Ii8+JiN4YTs8L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="1035" y="210" width="38" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="badge3" value="3" style="ellipse;whiteSpace=wrap;html=1;fillColor=#0284c7;strokeColor=#0284c7;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1608" y="200" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_title" value="data_vector_embeddings" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=18;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="204" width="390" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_sub" value="Denormalized salary vector-search collection" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="236" width="410" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_fields_left" value="&lt;b&gt;Identity &amp; source&lt;/b&gt;&lt;br&gt;source_collection&lt;br&gt;source_document_id&lt;br&gt;job_id, job_url&lt;br&gt;&lt;br&gt;&lt;b&gt;Job/query filters&lt;/b&gt;&lt;br&gt;job_title, company&lt;br&gt;locations&lt;br&gt;min_experience&lt;br&gt;benefits" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="288" width="260" height="235" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_fields_mid" value="&lt;b&gt;Salary fields&lt;/b&gt;&lt;br&gt;salary_min_vnd&lt;br&gt;salary_max_vnd&lt;br&gt;currency = VND&lt;br&gt;period = monthly&lt;br&gt;has_salary&lt;br&gt;raw_min_salary&lt;br&gt;raw_max_salary&lt;br&gt;salary_factor" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1285" y="288" width="185" height="235" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_fields_right" value="&lt;b&gt;Vector fields&lt;/b&gt;&lt;br&gt;embedding&lt;br&gt;embedding_text&lt;br&gt;embedding_model&lt;br&gt;embedding_dimension&lt;br&gt;embedding_updated_at" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1475" y="288" width="150" height="235" as="geometry" />
+        </mxCell>
+        <mxCell id="vector_index" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#0891b2;strokeWidth=2;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="630" width="640" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="badge4" value="4" style="ellipse;whiteSpace=wrap;html=1;fillColor=#0891b2;strokeColor=#0891b2;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1608" y="645" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="index_title" value="Firestore Vector Index" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=16;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="650" width="300" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="index_fields" value="Collection: &lt;b&gt;data_vector_embeddings&lt;/b&gt; &amp;nbsp; | &amp;nbsp; Vector field: &lt;b&gt;embedding&lt;/b&gt; &amp;nbsp; | &amp;nbsp; Distance: &lt;b&gt;COSINE&lt;/b&gt; &amp;nbsp; | &amp;nbsp; Result field: &lt;b&gt;vector_distance&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="682" width="555" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime_boundary" value="Runtime Read Path - no salary benchmark result collection is written" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;strokeWidth=2;verticalAlign=top;align=left;fontSize=14;fontStyle=1;spacing=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="835" width="1640" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="request_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="115" y="910" width="245" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="badge5" value="5" style="ellipse;whiteSpace=wrap;html=1;fillColor=#2563eb;strokeColor=#2563eb;fontColor=#ffffff;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="326" y="920" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="request_title" value="Salary user query" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="930" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="request_fields" value="job title, location, years of experience" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="140" y="958" width="175" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="normalizer_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="415" y="910" width="245" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="normalizer_title" value="Normalize salary query" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="928" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="normalizer_fields" value="SalaryQueryNormalizer&lt;br&gt;SalarySearchQuery" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="440" y="956" width="180" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="repo_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="720" y="910" width="270" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="repo_title" value="Vector nearest-neighbor read" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="745" y="928" width="215" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="repo_fields" value="SalaryVectorRepository.find_nearest&lt;br&gt;top_k / fetch_k / vector_distance" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="745" y="956" width="215" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="service_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="910" width="265" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="service_title" value="Benchmark calculation" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="928" width="200" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="service_fields" value="SalaryBenchmarkService&lt;br&gt;filter salary, remove outliers, average range" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="956" width="205" height="31" as="geometry" />
+        </mxCell>
+        <mxCell id="result_card" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#f97316;strokeWidth=1.5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1375" y="900" width="285" height="112" as="geometry" />
+        </mxCell>
+        <mxCell id="result_title" value="SalaryBenchmarkResult" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#0f172a;spacing=0;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="918" width="210" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="result_fields" value="Computed in memory, returned by API:&lt;br&gt;salary_range, sample_size, confidence, sources, limitations" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#64748b;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="946" width="225" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_source_to_embed" value="read source docs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.42;exitDx=0;exitDy=0;entryX=0;entryY=0.42;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="source_collection" target="offline_pipeline">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_embed_to_vector" value="write vectors + metadata" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.42;exitDx=0;exitDy=0;entryX=0;entryY=0.42;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="offline_pipeline" target="vector_collection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bounds_to_vector" value="merge salary bounds" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.78;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="bounds_service" target="vector_collection">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="970" y="450" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_vector_to_index" value="indexed by embedding" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0891b2;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;dashed=1;dashPattern=3 5;strokeWidth=1.5;" edge="1" parent="1" source="vector_collection" target="vector_index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_req_norm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="request_card" target="normalizer_card">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_norm_repo" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="normalizer_card" target="repo_card">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_repo_index" value="find_nearest" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="repo_card" target="vector_index">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="925" y="815" />
+              <mxPoint x="1170" y="815" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_repo_service" value="top salary samples" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="repo_card" target="service_card">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_service_result" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563eb;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;fontSize=11;" edge="1" parent="1" source="service_card" target="result_card">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="Note: Salary Benchmark does not persist per-query results. The persisted search surface is the vector collection; API responses are composed from nearest jobs at runtime." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1105" width="1220" height="28" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

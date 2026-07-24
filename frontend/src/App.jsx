@@ -11,12 +11,16 @@ import {
   FileSearch,
   GraduationCap,
   LogOut,
+  Lock,
+  Moon,
   MessageSquare,
   Network,
   Paperclip,
   Plus,
   Send,
   Sparkles,
+  Settings,
+  Sun,
   Terminal,
   Trash2,
   Upload,
@@ -32,6 +36,45 @@ const acceptedCvMimeTypes = new Set([
 
 const acceptedCvExtensions = ['pdf', 'docx'];
 const maxCvFileSizeBytes = 10 * 1024 * 1024;
+
+const uiText = {
+  vi: {
+    profile: 'Thông tin cá nhân', settings: 'Cài đặt', logout: 'Đăng xuất',
+    personalTitle: 'Hồ sơ cá nhân', personalDesc: 'Thông tin dùng để các agent hiểu đúng bối cảnh nghề nghiệp của bạn.',
+    fullName: 'Họ và tên', email: 'Email tài khoản', phone: 'Số điện thoại', location: 'Địa điểm',
+    targetRole: 'Vị trí mục tiêu', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio',
+    save: 'Lưu thay đổi', saving: 'Đang lưu...', saved: 'Đã lưu thông tin.', currentCv: 'Hồ sơ CV hiện tại',
+    noCv: 'Bạn chưa xác nhận CV nào làm hồ sơ hiện tại.', uploadDate: 'Ngày tải lên', version: 'Phiên bản hồ sơ',
+    language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', settingsDesc: 'Tùy chỉnh cách Z-MentorAI hiển thị trên thiết bị này.',
+    backChat: 'Quay lại trò chuyện', assessmentResult: 'Kết quả bài đánh giá', answered: 'câu đã trả lời', learningTips: 'Gợi ý học tập'
+  },
+  en: {
+    profile: 'Personal profile', settings: 'Settings', logout: 'Sign out',
+    personalTitle: 'Personal profile', personalDesc: 'Information that helps agents understand your career context.',
+    fullName: 'Full name', email: 'Account email', phone: 'Phone', location: 'Location',
+    targetRole: 'Target role', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio',
+    save: 'Save changes', saving: 'Saving...', saved: 'Profile saved.', currentCv: 'Current CV profile',
+    noCv: 'You have not confirmed a CV as your current profile.', uploadDate: 'Uploaded', version: 'Profile version',
+    language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', settingsDesc: 'Customize how Z-MentorAI appears on this device.',
+    backChat: 'Back to chat', assessmentResult: 'Assessment result', answered: 'answered', learningTips: 'Learning suggestions'
+  }
+};
+
+const scoreDimensionLabels = {
+  vi: { role_skill_fit: 'Mức độ phù hợp kỹ năng', experience_evidence: 'Kinh nghiệm và bằng chứng', education_certification: 'Học vấn và chứng chỉ', career_readiness: 'Mức độ sẵn sàng nghề nghiệp', cv_clarity: 'Độ rõ ràng và khả năng đọc ATS' },
+  en: { role_skill_fit: 'Role skill fit', experience_evidence: 'Experience and evidence', education_certification: 'Education and certification', career_readiness: 'Career-readiness signals', cv_clarity: 'CV clarity and ATS completeness' }
+};
+
+function localizeRecommendation(text, locale) {
+  if (locale === 'en' || !text) return text;
+  const dimensionEntries = Object.entries(scoreDimensionLabels.en);
+  const matchedDimension = dimensionEntries.find(([, label]) => text.toLowerCase().includes(label.toLowerCase()));
+  const label = matchedDimension ? scoreDimensionLabels.vi[matchedDimension[0]] : '';
+  if (text.startsWith('Improve ') && label) return `Cải thiện ${label.toLowerCase()}: bổ sung bằng chứng cụ thể và có thể kiểm chứng trong CV.`;
+  if (text.includes('No quantified achievement')) return 'Bổ sung thành tựu có số liệu hoặc tác động đo lường được.';
+  if (text.includes('No email detected')) return 'Bổ sung email liên hệ rõ ràng trong CV.';
+  return text;
+}
 
 function formatFileSize(bytes) {
   if (!bytes) return '0 KB';
@@ -87,6 +130,13 @@ const suggestedQuestions = [
     desc: 'Kiểm tra nhóm RIASEC và gợi ý hướng nghề phù hợp',
     prompt: 'Tôi muốn làm Holland Test / RIASEC để xem nhóm nghề nghiệp nào phù hợp với tôi.'
   },
+
+  {
+    agent: 'profile_scanner',
+    title: 'MI Test',
+    desc: 'Khám phá nhóm năng lực và kiểu học nổi trội',
+    prompt: 'Tôi muốn làm MI Test / Multiple Intelligences để xem nhóm năng lực và kiểu học nào phù hợp với tôi.'
+  },
   {
     agent: 'market_scout',
     title: 'Khảo sát thị trường',
@@ -102,8 +152,8 @@ const suggestedQuestions = [
   {
     agent: 'profile_scanner',
     title: 'Tư vấn tổng hợp',
-    desc: 'Kích hoạt tất cả agent để kiểm tra định hướng từ đầu đến cuối',
-    prompt: 'Hãy đánh giá hồ sơ của tôi cho vị trí Entry-Level Data Analyst. Kinh nghiệm hiện tại của tôi gồm truy vấn SQL và dựng mô hình Excel. Hãy quét nền tảng, khảo sát thị trường và thiết kế lộ trình học cho tôi.'
+    desc: 'Đối chiếu CV, Holland và MI để kiểm tra định hướng',
+    prompt: 'Hãy tổng hợp CV, Holland và MI của tôi để kiểm tra định hướng nghề nghiệp có đang xung đột hay không.'
   }
 ];
 
@@ -177,25 +227,36 @@ function normalizeStoredToolCalls(toolCalls = []) {
 function hasHollandInteractiveToolCall(toolCalls = []) {
   return toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    return output?.feature === 'holland_assessment'
-      && (output?.questions || output?.top_code);
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    const hasProfileAction = output?.feature === 'profile_scan'
+      && Array.isArray(output?.profile_action?.options)
+      && output.profile_action.options.length > 0;
+    return (isAssessmentOutput
+      && (output?.questions || output?.top_code || output?.top_dimensions || output?.result_code))
+      || hasProfileAction
+      || output?.feature === 'profile_confirmation'
+      || output?.feature === 'career_alignment';
   });
 }
 
 function getVisibleToolCalls(toolCalls = []) {
   const hasSuccessfulHollandResult = toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    return output?.feature === 'holland_assessment' && output?.top_code;
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    return isAssessmentOutput && (output?.top_code || output?.top_dimensions || output?.result_code);
   });
 
   if (!hasSuccessfulHollandResult) return toolCalls;
 
   return toolCalls.filter((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    const isSupersededHollandError = output?.feature === 'holland_assessment'
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    const isSupersededHollandError = isAssessmentOutput
       && (output?.status === 'error' || output?.error)
       && !output?.questions
-      && !output?.top_code;
+      && !output?.top_code
+      && !output?.top_dimensions
+      && !output?.result_code;
     return !isSupersededHollandError;
   });
 }
@@ -209,9 +270,56 @@ const riasecLabels = {
   C: 'Conventional - Quy củ'
 };
 
-function HollandResultCard({ result }) {
+const multipleIntelligenceLabels = {
+  linguistic: 'Ngôn ngữ',
+  logical_math: 'Logic / Toán học',
+  spatial: 'Không gian / Hình ảnh',
+  bodily_kinesthetic: 'Vận động / Thực hành',
+  musical: 'Âm nhạc / Nhịp điệu',
+  interpersonal: 'Giao tiếp / Thấu hiểu người khác',
+  intrapersonal: 'Tự nhận thức',
+  naturalistic: 'Thiên nhiên / Phân loại hệ thống'
+};
+
+const localizedRiasecLabels = {
+  vi: { R: 'Thực tế', I: 'Nghiên cứu', A: 'Nghệ thuật', S: 'Xã hội', E: 'Dẫn dắt', C: 'Quy củ' },
+  en: { R: 'Realistic', I: 'Investigative', A: 'Artistic', S: 'Social', E: 'Enterprising', C: 'Conventional' }
+};
+void riasecLabels;
+void multipleIntelligenceLabels;
+
+const localizedMiLabels = {
+  vi: { linguistic: 'Ngôn ngữ', logical_math: 'Logic / Toán học', spatial: 'Không gian / Hình ảnh', bodily_kinesthetic: 'Vận động / Thực hành', musical: 'Âm nhạc / Nhịp điệu', interpersonal: 'Giao tiếp / Thấu hiểu người khác', intrapersonal: 'Tự nhận thức', naturalistic: 'Thiên nhiên / Phân loại hệ thống' },
+  en: { linguistic: 'Linguistic', logical_math: 'Logical / Mathematical', spatial: 'Spatial / Visual', bodily_kinesthetic: 'Bodily / Kinesthetic', musical: 'Musical / Rhythmic', interpersonal: 'Interpersonal', intrapersonal: 'Intrapersonal', naturalistic: 'Naturalistic' }
+};
+
+function getAssessmentDisplayConfig(result, locale = 'vi') {
+  if (result?.feature === 'assessment') {
+    return {
+      eyebrow: `Kết quả ${result.title || 'Assessment'}`,
+      title: result.result_code || result.top_dimensions?.join(' / ') || result.title || 'Đang cập nhật',
+      labels: localizedMiLabels[locale],
+      answerUnit: 'câu đã trả lời'
+    };
+  }
+
+  return {
+    eyebrow: 'Kết quả Holland Test',
+    title: result?.top_code || 'Đang cập nhật',
+    labels: localizedRiasecLabels[locale],
+    answerUnit: 'câu đã trả lời'
+  };
+}
+
+function HollandResultCard({ result, locale = 'vi' }) {
   const scores = result?.scores || {};
-  const topCode = result?.top_code || 'Đang cập nhật';
+  const displayConfig = getAssessmentDisplayConfig(result, locale);
+  const displayTitle = result?.feature === 'assessment'
+    ? (result?.top_dimensions || []).map((key) => localizedMiLabels[locale][key] || key).join(' / ')
+    : result?.top_code;
+  const displayEyebrow = result?.feature === 'assessment'
+    ? uiText[locale].assessmentResult
+    : (locale === 'vi' ? 'Kết quả Holland Test' : 'Holland Test result');
   const answeredCount = result?.answered_count;
   const hasScores = Object.keys(scores).length > 0;
 
@@ -219,27 +327,26 @@ function HollandResultCard({ result }) {
     <div className="holland-result-card">
       <div className="holland-result-header">
         <div>
-          <div className="holland-eyebrow">Kết quả Holland Test</div>
-          <h3>{topCode}</h3>
+          <div className="holland-eyebrow">{displayEyebrow}</div>
+          <h3>{displayTitle || displayConfig.title}</h3>
           <p>{result?.interpretation_vi || 'Agent đã ghi nhận kết quả bài test của bạn.'}</p>
         </div>
         {answeredCount && (
           <div className="holland-result-count">
             <strong>{answeredCount}</strong>
-            <span>câu đã trả lời</span>
+            <span>{uiText[locale].answered}</span>
           </div>
         )}
       </div>
 
       {hasScores && (
-        <div className="holland-score-list" aria-label="Điểm RIASEC">
-          {Object.entries(riasecLabels).map(([code, label]) => {
+        <div className="holland-score-list" aria-label="Điểm assessment">
+          {Object.entries(displayConfig.labels).map(([code, label]) => {
             const score = Number(scores[code] || 0);
             const percent = Math.round(score * 100);
             return (
               <div className="holland-score-row" key={code}>
                 <div className="holland-score-meta">
-                  <span>{code}</span>
                   <strong>{label}</strong>
                   <em>{percent}%</em>
                 </div>
@@ -251,29 +358,110 @@ function HollandResultCard({ result }) {
           })}
         </div>
       )}
+
+      {Array.isArray(result?.recommendations_vi) && result.recommendations_vi.length > 0 && (
+        <div className="profile-scan-grid">
+          <div>
+            <span className="profile-scan-section-title">Gợi ý học tập</span>
+            <ul className="profile-recommendations">
+              {result.recommendations_vi.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProfileScanResultCard({ result }) {
-  const grade = result?.grade || 'E';
+function ProfileConfirmationActions({ action, onSendMessage }) {
+  const [submitting, setSubmitting] = useState('');
+  const [completed, setCompleted] = useState(false);
+  const [error, setError] = useState('');
+  const options = Array.isArray(action?.options) ? action.options : [];
+
+  if (!options.length) {
+    return action?.message_vi ? (
+      <div className="profile-action-status"><CheckCircle2 size={16} />{action.message_vi}</div>
+    ) : null;
+  }
+
+  const handleDecision = async (option) => {
+    if (submitting || completed) return;
+    const displayText = option.decision === 'reject'
+      ? 'Không, hãy giữ nguyên hồ sơ cá nhân hiện tại.'
+      : `${option.label_vi} từ CV vừa tải lên.`;
+    const backendText = [
+      displayText,
+      `Call profile_scanner immediately with task="profile_confirm", cv_document_id="${action.cv_document_id}", and decision="${option.decision}".`,
+      'Do not ask for confirmation again and do not change the decision.'
+    ].join('\n');
+    setSubmitting(option.decision);
+    setError('');
+    const ok = await onSendMessage({ displayText, backendText });
+    setSubmitting('');
+    if (ok) setCompleted(true);
+    else setError('Chưa cập nhật được hồ sơ. Vui lòng kiểm tra kết nối và thử lại.');
+  };
+
+  return (
+    <div className="profile-confirmation-panel">
+      <div>
+        <span className="profile-scan-section-title">Xác nhận hồ sơ cá nhân</span>
+        <p>{action.message_vi}</p>
+      </div>
+      <div className="profile-confirmation-actions">
+        {options.map((option, index) => (
+          <button
+            key={option.decision}
+            className={index === 0 ? 'primary' : 'secondary'}
+            disabled={Boolean(submitting) || completed}
+            onClick={() => handleDecision(option)}
+            type="button"
+          >
+            {submitting === option.decision ? 'Đang xử lý...' : option.label_vi}
+          </button>
+        ))}
+      </div>
+      {completed && <div className="profile-action-status"><CheckCircle2 size={16} />Đã gửi lựa chọn.</div>}
+      {error && <div className="holland-form-error">{error}</div>}
+    </div>
+  );
+}
+
+function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
+  const hasGrade = Boolean(result?.grade) && result?.total_score !== null && result?.total_score !== undefined;
+  const grade = result?.grade || 'N/A';
   const dimensions = Array.isArray(result?.score_dimensions) ? result.score_dimensions : [];
   const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
-  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations.map((item) => localizeRecommendation(item, locale)) : [];
   const strengths = Array.isArray(result?.strengths) ? result.strengths : [];
 
   return (
     <div className="profile-scan-card">
       <div className="profile-scan-header">
-        <div className={`profile-rank-mark rank-${grade.toLowerCase()}`}>
+        <div className={`profile-rank-mark rank-${grade.toLowerCase().replace('/', '-')}`}>
           <span>{grade}</span>
         </div>
         <div className="profile-scan-title">
-          <div className="profile-scan-eyebrow">CV Benchmark</div>
+          <div className="profile-scan-eyebrow">{locale === 'vi' ? 'Đánh giá CV' : 'CV benchmark'}</div>
           <h3>{result?.target_role || 'Profile Scanner'}</h3>
           <p>{result?.message_vi || 'Profile Scanner đã hoàn tất phân tích CV.'}</p>
-          <div className="profile-analysis-mode">
-            {result?.ai_extraction_used ? (
+            <div className="profile-analysis-mode">
+              <span>{result?.benchmark_type === 'dynamic_market'
+                ? (locale === 'vi' ? `Benchmark thị trường · độ tin cậy ${result?.benchmark_confidence || 'chưa xác định'} · ${result?.benchmark_sample_size || 0} tin tuyển dụng / ${result?.benchmark_distinct_companies || 0} công ty` : `Market benchmark · ${result?.benchmark_confidence || 'unknown'} confidence · ${result?.benchmark_sample_size || 0} jobs / ${result?.benchmark_distinct_companies || 0} companies`)
+                : (locale === 'vi' ? 'Benchmark dự phòng · dữ liệu thị trường chưa đủ ngưỡng' : 'Fallback benchmark · insufficient market evidence')}</span>
+              <span>{result?.ai_extraction_used ? (locale === 'vi' ? `Gemini hỗ trợ trích xuất · độ tin cậy ${Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%` : `Gemini-assisted extraction · ${Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}% confidence`) : (locale === 'vi' ? 'Phân tích theo quy tắc dự phòng' : 'Rule-based fallback analysis')}</span>
+            </div>
+            <div className="profile-analysis-mode legacy-analysis-mode">
+              {result?.benchmark_type === 'dynamic_market' && (
+                <span>
+                  Market benchmark · {result?.benchmark_confidence || 'unknown'} confidence · {result?.benchmark_sample_size || 0} JD / {result?.benchmark_distinct_companies || 0} công ty
+                </span>
+              )}
+              {result?.benchmark_type === 'static_fallback' && (
+                <span>Static benchmark fallback · market evidence chưa đạt ngưỡng</span>
+              )}
+              {result?.ai_extraction_used ? (
               <span>Gemini-assisted extraction · confidence {Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%</span>
             ) : (
               <span>Heuristic fallback analysis</span>
@@ -281,8 +469,8 @@ function ProfileScanResultCard({ result }) {
           </div>
         </div>
         <div className="profile-total-score">
-          <strong>{Math.round(Number(result?.total_score || 0))}</strong>
-          <span>/100</span>
+          <strong>{hasGrade ? Math.round(Number(result.total_score)) : '--'}</strong>
+          <span>{hasGrade ? '/100' : 'chưa chấm'}</span>
         </div>
       </div>
 
@@ -293,7 +481,7 @@ function ProfileScanResultCard({ result }) {
             return (
               <div className="profile-dimension-row" key={dimension.key || dimension.label}>
                 <div className="profile-dimension-meta">
-                  <strong>{dimension.label}</strong>
+                  <strong>{scoreDimensionLabels[locale][dimension.key] || dimension.label}</strong>
                   <span>{score}/100 · {Math.round(Number(dimension.weight || 0) * 100)}%</span>
                 </div>
                 <div className="profile-dimension-track">
@@ -321,6 +509,41 @@ function ProfileScanResultCard({ result }) {
           </ul>
         </div>
       </div>
+      {result?.profile_action && (
+        <ProfileConfirmationActions action={result.profile_action} onSendMessage={onSendMessage} />
+      )}
+    </div>
+  );
+}
+
+function CareerAlignmentCard({ result }) {
+  const stateLabels = {
+    aligned: 'Định hướng phù hợp',
+    interest_conflict: 'Xung đột về hứng thú',
+    readiness_gap: 'Thiếu bằng chứng sẵn sàng',
+    exploration_advised: 'Nên khám phá thêm',
+    mixed_or_uncertain: 'Chưa đủ rõ ràng',
+    insufficient_data: 'Thiếu dữ liệu'
+  };
+  const recommendations = Array.isArray(result?.recommendations_vi) ? result.recommendations_vi : [];
+  return (
+    <div className="career-alignment-card">
+      <div className="career-alignment-header">
+        <div>
+          <span className="profile-scan-eyebrow">Career Alignment · {result?.rule_version}</span>
+          <h3>{stateLabels[result?.alignment_state] || stateLabels.insufficient_data}</h3>
+          <p>{result?.target_role || 'Chưa xác định target role'}</p>
+        </div>
+        {result?.career_alignment_score !== null && result?.career_alignment_score !== undefined && (
+          <div className="profile-total-score"><strong>{Math.round(result.career_alignment_score)}</strong><span>/100</span></div>
+        )}
+      </div>
+      <div className="alignment-metrics">
+        <span>CV readiness <strong>{result?.cv_readiness_score ?? '--'}</strong></span>
+        <span>Holland alignment <strong>{result?.holland_alignment_score ?? '--'}</strong></span>
+        <span>Conflict <strong>{result?.conflict_severity || 'unknown'}</strong></span>
+      </div>
+      {recommendations.length > 0 && <ul className="profile-recommendations">{recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
     </div>
   );
 }
@@ -372,6 +595,11 @@ function HollandTestForm({ output, onSendMessage }) {
   const [submitError, setSubmitError] = useState('');
   const questions = output?.questions || [];
   const latestResult = output?.latest_result;
+  const isGenericAssessment = output?.feature === 'assessment';
+  const assessmentType = output?.assessment_type || 'holland_riasec';
+  const assessmentTitle = output?.title || 'Holland Test';
+  const assessmentEyebrow = output?.eyebrow_vi || 'Bài đánh giá RIASEC';
+  const assessmentDescription = output?.description_vi || 'Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.';
   const answeredCount = Object.keys(answers).length;
   const isComplete = answeredCount === questions.length;
 
@@ -383,13 +611,22 @@ function HollandTestForm({ output, onSendMessage }) {
       question_id: question.id,
       score: answers[question.id]
     }));
-    const displayText = `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
-    const backendText = [
-      'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
-      '```json',
-      JSON.stringify(payload, null, 2),
-      '```'
-    ].join('\n');
+    const displayText = isGenericAssessment
+      ? `Mình đã hoàn thành ${assessmentTitle} với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả vào hồ sơ của mình.`
+      : `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
+    const backendText = isGenericAssessment
+      ? [
+        `Mình đã hoàn thành ${assessmentTitle}. Hãy chấm điểm bằng profile_scanner tool với task="assessment_score", assessment_type="${assessmentType}" và answers_json sau:`,
+        '```json',
+        JSON.stringify(payload, null, 2),
+        '```'
+      ].join('\n')
+      : [
+        'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
+        '```json',
+        JSON.stringify(payload, null, 2),
+        '```'
+      ].join('\n');
     setSubmitting(true);
     setSubmitError('');
     const ok = await onSendMessage({
@@ -408,9 +645,9 @@ function HollandTestForm({ output, onSendMessage }) {
     <div className="holland-form">
       <div className="holland-form-header">
         <div>
-          <div className="holland-eyebrow">Bài đánh giá RIASEC</div>
-          <h3>Holland Test</h3>
-          <p>Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.</p>
+          <div className="holland-eyebrow">{assessmentEyebrow}</div>
+          <h3>{assessmentTitle}</h3>
+          <p>{assessmentDescription}</p>
         </div>
         <div className="holland-progress">
           <strong>{answeredCount}/{questions.length}</strong>
@@ -421,15 +658,15 @@ function HollandTestForm({ output, onSendMessage }) {
       {latestResult && (
         <div className="holland-latest">
           <span>Kết quả gần nhất</span>
-          <strong>{latestResult.top_code}</strong>
+          <strong>{latestResult.top_code || latestResult.result_code || latestResult.top_dimensions?.join(' / ')}</strong>
           <small>{latestResult.interpretation_vi}</small>
         </div>
       )}
 
       <div className="holland-scale">
-        <span>1 - Rất không giống</span>
-        <span>3 - Trung lập</span>
-        <span>5 - Rất giống</span>
+        <span>1 - {output?.scale?.['1'] || 'Rất không giống'}</span>
+        <span>3 - {output?.scale?.['3'] || 'Trung lập'}</span>
+        <span>5 - {output?.scale?.['5'] || 'Rất giống'}</span>
       </div>
 
       <div className="holland-question-list">
@@ -946,7 +1183,7 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage, user, backendUrl }) {
+function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfileDocuments, locale = 'vi' }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -956,20 +1193,34 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
   const Icon = info.icon;
   const normalizedOutput = normalizeToolOutput(output);
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
+  const isAssessmentOutput = normalizedOutput?.feature === 'assessment';
   const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
-  const shouldRenderHollandForm = isHollandOutput
+  const isProfileConfirmationOutput = normalizedOutput?.feature === 'profile_confirmation';
+  const isCareerAlignmentOutput = normalizedOutput?.feature === 'career_alignment';
+  const shouldRenderHollandForm = (isHollandOutput || isAssessmentOutput)
     && normalizedOutput?.questions
     && status === 'completed';
-  const shouldRenderHollandResult = isHollandOutput
-    && normalizedOutput?.top_code
+  const shouldRenderHollandResult = (isHollandOutput || isAssessmentOutput)
+    && (normalizedOutput?.top_code || normalizedOutput?.top_dimensions || normalizedOutput?.result_code)
     && status === 'completed';
   const shouldRenderProfileScanResult = isProfileScanOutput
-    && normalizedOutput?.grade
     && status === 'completed';
   const shouldRenderVerifier = toolName === 'academic_architect_input_verifier'
     && status === 'completed';
-  const toolLabel = isHollandOutput && toolName === 'profile_scanner'
-    ? `${info.label} · Holland Test`
+  const profileActionResolved = isProfileScanOutput
+    && resolvedProfileDocuments?.has(normalizedOutput?.profile_action?.cv_document_id);
+  const profileScanResult = profileActionResolved
+    ? {
+      ...normalizedOutput,
+      profile_action: {
+        ...normalizedOutput.profile_action,
+        options: [],
+        message_vi: 'Lựa chọn cho CV này đã được xử lý.'
+      }
+    }
+    : normalizedOutput;
+  const toolLabel = (isHollandOutput || isAssessmentOutput) && toolName === 'profile_scanner'
+    ? `${info.label} · ${normalizedOutput?.title || 'Assessment'}`
     : info.label;
 
   return (
@@ -1009,9 +1260,13 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
               {shouldRenderHollandForm ? (
                 <HollandTestForm output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : shouldRenderHollandResult ? (
-                <HollandResultCard result={normalizedOutput} />
+                <HollandResultCard result={normalizedOutput} locale={locale} />
               ) : shouldRenderProfileScanResult ? (
-                <ProfileScanResultCard result={normalizedOutput} />
+                <ProfileScanResultCard result={profileScanResult} onSendMessage={onSendMessage} locale={locale} />
+              ) : isCareerAlignmentOutput && status === 'completed' ? (
+                <CareerAlignmentCard result={normalizedOutput} />
+              ) : isProfileConfirmationOutput && status === 'completed' ? (
+                <div className="profile-action-status"><CheckCircle2 size={16} />{normalizedOutput?.message_vi}</div>
               ) : shouldRenderVerifier ? (
                 <AcademicArchitectInputConfirmWidget output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : (
@@ -1117,7 +1372,98 @@ function LoginScreen({ googleClientId }) {
   );
 }
 
-function AppHeader({ activeAgents, avatarSrc, user, onAvatarClick, onLogout }) {
+function AccountHeader({ activeAgents, avatarSrc, user, locale, onNavigate, onAvatarClick, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+  const t = uiText[locale];
+
+  useEffect(() => {
+    const close = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => event.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  return (
+    <header className="app-header">
+      <button className="brand-section brand-button" onClick={() => onNavigate('chat')} type="button">
+        <span className="brand-logo"><Sparkles size={20} /></span>
+        <span><strong className="brand-title">Z-MentorAI</strong><span className="brand-subtitle">AI Career Mentor</span></span>
+      </button>
+      <div className="agent-status-bar">
+        {Object.keys(agentInfo).slice(0, 3).map((key) => (
+          <div className={`agent-badge ${activeAgents.includes(key) ? 'active' : ''}`} key={key}>
+            <span className="badge-dot" /><span>{agentInfo[key].label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="account-menu" ref={menuRef}>
+        <button className="account-trigger" aria-expanded={open} onClick={() => setOpen((value) => !value)} type="button">
+          {avatarSrc ? <img src={avatarSrc} alt="" className="user-avatar" /> : <span className="user-avatar-placeholder"><User size={18} /></span>}
+          <span className="user-info"><span className="user-name">{user.name}</span><span className="user-email">{user.email}</span></span>
+          <ChevronDown size={16} />
+        </button>
+        {open && (
+          <div className="account-dropdown">
+            <button onClick={() => { onNavigate('profile'); setOpen(false); }} type="button"><User size={17} /><span>{t.profile}</span></button>
+            <button onClick={() => { onNavigate('settings'); setOpen(false); }} type="button"><Settings size={17} /><span>{t.settings}</span></button>
+            <button onClick={() => { onAvatarClick(); setOpen(false); }} type="button"><Upload size={17} /><span>{locale === 'vi' ? 'Đổi ảnh đại diện' : 'Change avatar'}</span></button>
+            <div className="account-dropdown-separator" />
+            <button className="danger" onClick={onLogout} type="button"><LogOut size={17} /><span>{t.logout}</span></button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}
+
+function ProfileWorkspace({ profile, locale, onBack, onSave, loading }) {
+  const t = uiText[locale];
+  const [form, setForm] = useState(profile || {});
+  const [status, setStatus] = useState('');
+  const fields = [
+    ['name', t.fullName], ['phone', t.phone], ['location', t.location], ['target_role', t.targetRole],
+    ['linkedin_url', t.linkedin], ['github_url', t.github], ['portfolio_url', t.portfolio]
+  ];
+  const save = async (event) => {
+    event.preventDefault();
+    setStatus('saving');
+    const ok = await onSave(form);
+    setStatus(ok ? 'saved' : 'error');
+  };
+  const cv = profile?.current_cv;
+  const skills = (cv?.skills || []).map((skill) => typeof skill === 'string' ? skill : (skill[`display_name_${locale}`] || skill.canonical_name));
+  return (
+    <main className="account-workspace">
+      <div className="account-workspace-header"><button onClick={onBack} type="button"><ArrowRight size={17} />{t.backChat}</button><div><h2>{t.personalTitle}</h2><p>{t.personalDesc}</p></div></div>
+      <div className="profile-layout">
+        <form className="profile-form" onSubmit={save}>
+          <label className="profile-field"><span>{t.email}</span><div className="locked-input"><Lock size={15} /><input disabled value={profile?.email || ''} /></div></label>
+          {fields.map(([key, label]) => <label className="profile-field" key={key}><span>{label}</span><input value={form[key] || ''} onChange={(event) => setForm((value) => ({ ...value, [key]: event.target.value }))} /></label>)}
+          <div className="profile-save-row"><button disabled={loading || status === 'saving'} type="submit">{status === 'saving' ? t.saving : t.save}</button>{status === 'saved' && <span><CheckCircle2 size={16} />{t.saved}</span>}{status === 'error' && <span className="form-error">{locale === 'vi' ? 'Không thể lưu thông tin.' : 'Could not save profile.'}</span>}</div>
+        </form>
+        <section className="current-cv-panel">
+          <div className="current-cv-title"><FileText size={20} /><div><span>{t.currentCv}</span><strong>{cv?.original_filename || t.noCv}</strong></div>{cv?.grade && <span className={`cv-grade grade-${String(cv.grade).toLowerCase()}`}>{cv.grade}</span>}</div>
+          {cv && <><div className="cv-facts"><div><span>{t.uploadDate}</span><strong>{cv.uploaded_at ? new Date(cv.uploaded_at).toLocaleDateString(locale === 'vi' ? 'vi-VN' : 'en-US') : '--'}</strong></div><div><span>{t.version}</span><strong>v{cv.profile_version || 1}</strong></div><div><span>{locale === 'vi' ? 'Điểm CV' : 'CV score'}</span><strong>{cv.total_score ? `${Math.round(cv.total_score)}/100` : '--'}</strong></div></div>{cv.summary && <p className="cv-summary">{cv.summary}</p>}<div className="profile-skill-cloud">{skills.slice(0, 16).map((skill) => <span key={skill}>{skill}</span>)}</div></>}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function SettingsWorkspace({ locale, theme, onBack, onChange }) {
+  const t = uiText[locale];
+  return <main className="account-workspace settings-workspace"><div className="account-workspace-header"><button onClick={onBack} type="button"><ArrowRight size={17} />{t.backChat}</button><div><h2>{t.settings}</h2><p>{t.settingsDesc}</p></div></div><section className="settings-list"><div className="setting-row"><div><strong>{t.language}</strong><span>Vietnamese / English</span></div><div className="segmented-control"><button className={locale === 'vi' ? 'active' : ''} onClick={() => onChange('language', 'vi')} type="button">VI</button><button className={locale === 'en' ? 'active' : ''} onClick={() => onChange('language', 'en')} type="button">EN</button></div></div><div className="setting-row"><div><strong>{t.appearance}</strong><span>{locale === 'vi' ? 'Chọn chế độ hiển thị phù hợp.' : 'Choose a comfortable display mode.'}</span></div><div className="segmented-control"><button className={theme === 'light' ? 'active' : ''} onClick={() => onChange('theme', 'light')} type="button"><Sun size={15} />{t.light}</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => onChange('theme', 'dark')} type="button"><Moon size={15} />{t.dark}</button></div></div></section></main>;
+}
+
+// eslint-disable-next-line no-unused-vars
+function LegacyAppHeader({ activeAgents, avatarSrc, user, onAvatarClick, onLogout }) {
   return (
     <header className="app-header">
       <div className="brand-section">
@@ -1257,7 +1603,12 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
   );
 }
 
-function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl }) {
+function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl, locale = 'vi' }) {
+  const resolvedProfileDocuments = new Set(
+    messages.flatMap((message) => (message.toolCalls || []).map((toolCall) => normalizeToolOutput(toolCall.output)))
+      .filter((output) => output?.feature === 'profile_confirmation' && output?.cv_document_id)
+      .map((output) => output.cv_document_id)
+  );
   return (
     <div className="messages-feed">
       {messages.map((msg) => {
@@ -1279,6 +1630,8 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                 onSendMessage={onSendMessage}
                 user={user}
                 backendUrl={backendUrl}
+                resolvedProfileDocuments={resolvedProfileDocuments}
+                locale={locale}
               />
             ))}
 
@@ -1460,7 +1813,8 @@ function ChatWorkspace({
   onCvFileChange,
   onRemoveCvAttachment,
   cvUploadError,
-  backendUrl
+  backendUrl,
+  locale = 'vi'
 }) {
   return (
     <div className="chat-area">
@@ -1475,6 +1829,7 @@ function ChatWorkspace({
           onSendMessage={onSendMessage}
           user={user}
           backendUrl={backendUrl}
+          locale={locale}
         />
       )}
 
@@ -1512,6 +1867,13 @@ export default function App() {
   const [activeAgents, setActiveAgents] = useState([]);
   const [cvAttachment, setCvAttachment] = useState(null);
   const [cvUploadError, setCvUploadError] = useState('');
+  const [workspace, setWorkspace] = useState('chat');
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [preferences, setPreferences] = useState(() => ({
+    language: localStorage.getItem('z_mentor_language') || 'vi',
+    theme: localStorage.getItem('z_mentor_theme') || 'light'
+  }));
 
   const backendUrl = useMemo(() => import.meta.env.VITE_API_URL || window.location.origin, []);
   const messagesEndRef = useRef(null);
@@ -1519,6 +1881,54 @@ export default function App() {
   const avatarInputRef = useRef(null);
   const cvInputRef = useRef(null);
   const bootstrappedSessionsRef = useRef(null);
+  const locale = preferences.language;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = preferences.theme;
+    document.documentElement.lang = preferences.language;
+    localStorage.setItem('z_mentor_language', preferences.language);
+    localStorage.setItem('z_mentor_theme', preferences.theme);
+  }, [preferences]);
+
+  const fetchProfile = useCallback(async () => {
+    if (!user) return;
+    setProfileLoading(true);
+    try {
+      const response = await fetch(`${backendUrl}/me/profile`, { headers: { 'X-User-Id': user.google_id } });
+      if (!response.ok) throw new Error('Unable to load profile');
+      const data = await response.json();
+      setProfile(data);
+      if (data.preferences) setPreferences(data.preferences);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [backendUrl, user]);
+
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  const saveProfile = async (form) => {
+    setProfileLoading(true);
+    try {
+      const response = await fetch(`${backendUrl}/me/profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-User-Id': user.google_id }, body: JSON.stringify(form) });
+      if (!response.ok) return false;
+      const data = await response.json();
+      setProfile(data);
+      const nextUser = { ...user, name: data.name };
+      setUser(nextUser);
+      localStorage.setItem('z_mentor_user', JSON.stringify(nextUser));
+      return true;
+    } finally { setProfileLoading(false); }
+  };
+
+  const updatePreference = async (key, value) => {
+    const next = { ...preferences, [key]: value };
+    setPreferences(next);
+    try {
+      await fetch(`${backendUrl}/me/settings`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-User-Id': user.google_id }, body: JSON.stringify(next) });
+    } catch (error) { console.error(error); }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2093,15 +2503,21 @@ export default function App() {
 
   return (
     <div className="app-container">
-        <AppHeader
+        <AccountHeader
           activeAgents={activeAgents}
           avatarSrc={avatarSrc}
           user={user}
           onAvatarClick={handleAvatarClick}
           onLogout={handleLogout}
+          locale={locale}
+          onNavigate={setWorkspace}
         />
 
-      <main className="chat-main">
+      {workspace === 'profile' ? (
+        <ProfileWorkspace key={`${profile?.user_id || 'profile'}-${profile?.current_cv?.profile_version || 0}`} profile={profile} locale={locale} onBack={() => setWorkspace('chat')} onSave={saveProfile} loading={profileLoading} />
+      ) : workspace === 'settings' ? (
+        <SettingsWorkspace locale={locale} theme={preferences.theme} onBack={() => setWorkspace('chat')} onChange={updatePreference} />
+      ) : <main className="chat-main">
         <SessionSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -2130,8 +2546,9 @@ export default function App() {
           onRemoveCvAttachment={handleRemoveCvAttachment}
           cvUploadError={cvUploadError}
           backendUrl={backendUrl}
+          locale={locale}
         />
-      </main>
+      </main>}
 
       <input
         type="file"

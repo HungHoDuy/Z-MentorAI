@@ -63,6 +63,83 @@ class TrendJobFactRepository:
 
         return sorted(facts_by_job_key.values(), key=lambda fact: fact.job_key)
 
+    def list_job_sources(
+        self,
+        *,
+        job_family_id: str,
+        location_id: str,
+        job_category_id: str | None = None,
+        limit: int = 5,
+        max_scan: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """Return representative active job links for a family/category-location cohort."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive.")
+        firestore_query = self.firestore_client.collection(self.collection_name)
+        firestore_query = _apply_where(firestore_query, "job_family_ids", "array_contains", job_family_id).limit(max_scan)
+
+        facts_by_job_key: dict[str, JobCategoryTrendJobFact] = {}
+        for document in firestore_query.stream(timeout=self.stream_timeout):
+            fact = job_category_trend_fact_from_document(document.id, document.to_dict() or {})
+            if fact is None:
+                continue
+            if location_id not in fact.location_ids:
+                continue
+            if job_category_id and job_category_id not in fact.job_category_ids:
+                continue
+            if fact.is_active is False or not fact.job_url:
+                continue
+            current = facts_by_job_key.get(fact.job_key)
+            if current is None or _is_newer_fact(fact, current):
+                facts_by_job_key[fact.job_key] = fact
+
+        facts = sorted(
+            facts_by_job_key.values(),
+            key=lambda fact: (
+                fact.is_active is not True,
+                -(fact.source_updated_at or date.min).toordinal(),
+                -(fact.source_expires_at or date.min).toordinal(),
+                fact.job_title,
+            ),
+        )[:limit]
+        return [_job_source_from_fact(fact) for fact in facts]
+
+    def list_for_role_search(
+        self,
+        *,
+        location_id: str | None = None,
+        max_scan: int = 2000,
+    ) -> list[JobCategoryTrendJobFact]:
+        """Return candidate facts for role resolution, optionally narrowed by location."""
+
+        if max_scan <= 0:
+            raise ValueError("max_scan must be positive.")
+
+        firestore_query = self.firestore_client.collection(self.collection_name)
+        if location_id:
+            firestore_query = _apply_where(firestore_query, "location_ids", "array_contains", location_id)
+        firestore_query = firestore_query.limit(max_scan)
+
+        facts: list[JobCategoryTrendJobFact] = []
+        for document in firestore_query.stream(timeout=self.stream_timeout):
+            fact = job_category_trend_fact_from_document(document.id, document.to_dict() or {})
+            if fact is not None:
+                facts.append(fact)
+        return facts
+
+
+def _job_source_from_fact(fact: JobCategoryTrendJobFact) -> dict[str, Any]:
+    return {
+        "job_key": fact.job_key,
+        "company": fact.company,
+        "job_title": fact.job_title,
+        "job_url": fact.job_url,
+        "location_ids": list(fact.location_ids),
+        "job_category_ids": list(fact.job_category_ids),
+        "job_family_ids": list(fact.job_family_ids),
+        "source": fact.source,
+    }
 
 def job_category_trend_fact_from_document(
     document_id: str,

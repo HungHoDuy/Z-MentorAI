@@ -123,6 +123,7 @@ async def intake_cv_file(
         "user_id": user_id,
         "session_id": session_id,
         "target_role": target_role,
+        "requested_target_role": target_role,
         "message": message,
         "original_filename": original_filename,
         "mime_type": mime_type,

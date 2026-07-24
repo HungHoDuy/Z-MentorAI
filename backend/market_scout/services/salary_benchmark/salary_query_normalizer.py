@@ -48,6 +48,32 @@ TITLE_STOPWORDS = {
     "bao",
     "nhieu",
     "thang",
+    "toi",
+    "minh",
+    "em",
+    "anh",
+    "chi",
+    "ban",
+    "co",
+    "o",
+    "tai",
+    "khu",
+    "vuc",
+    "voi",
+    "lam",
+    "viec",
+    "ha",
+    "noi",
+    "ho",
+    "chi",
+    "minh",
+    "hcm",
+    "tphcm",
+    "tp",
+    "da",
+    "nang",
+    "la",
+    "khong",
 }
 
 
@@ -88,7 +114,7 @@ class SalaryQueryNormalizer:
     @classmethod
     def normalize_job_title(cls, job_title: str | None) -> str:
         normalized = cls.normalize_text(job_title)
-        tokens = [token for token in normalized.split() if token not in TITLE_STOPWORDS]
+        tokens = [token for token in normalized.split() if token not in TITLE_STOPWORDS and not token.isdigit()]
         return " ".join(tokens)
 
     @classmethod
@@ -157,7 +183,10 @@ class SalaryQueryNormalizer:
         )
         candidate = " ".join(candidate.split()).strip(" -,:;")
 
-        if not candidate or self.normalize_job_title(candidate) == "":
+        normalized_title = self.normalize_job_title(candidate)
+        if not candidate or not normalized_title:
+            return None
+        if all(token.isdigit() for token in normalized_title.split()):
             return None
         return candidate
 
