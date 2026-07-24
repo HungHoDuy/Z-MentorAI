@@ -1,4 +1,5 @@
-BENCHMARK_VERSION = "cv-benchmark-v2.0"
+BENCHMARK_VERSION = "cv-benchmark-v2.2"
+SCORING_VERSION = "cv-scoring-v2.2"
 
 BENCHMARK_NOTES = [
     "Occupation and skill mappings use an internal, versioned subset derived from O*NET and ESCO concepts.",
@@ -26,6 +27,7 @@ DIMENSION_WEIGHTS = {
 }
 
 SKILL_ALIASES = {
+    "artificial intelligence": ["artificial intelligence", "ai"],
     "python": ["python"],
     "java": ["java", "spring boot", "spring framework"],
     "c#": ["c#", ".net", "asp.net"],
@@ -37,10 +39,18 @@ SKILL_ALIASES = {
     "statistics": ["statistics", "statistical", "a/b testing", "hypothesis testing", "probability"],
     "machine learning": ["machine learning", "scikit-learn", "sklearn", "tensorflow", "pytorch", "xgboost"],
     "deep learning": ["deep learning", "neural network", "cnn", "rnn", "transformer"],
+    "computer vision": ["computer vision", "image recognition", "object detection", "opencv"],
+    "pytorch": ["pytorch", "torch"],
+    "tensorflow": ["tensorflow", "keras"],
     "llm": ["large language model", "llm", "gemini", "openai", "langchain", "llamaindex"],
     "nlp": ["natural language processing", "nlp", "text classification", "named entity recognition"],
     "rag": ["retrieval augmented generation", "rag", "vector database", "vector db", "embedding"],
     "mlops": ["mlops", "model serving", "model monitoring", "feature store", "vertex ai"],
+    "model optimization": ["model optimization", "quantization", "pruning", "onnx", "tensorrt"],
+    "data engineering": ["data engineering", "data pipeline", "data platform"],
+    "chatbot": ["chatbot", "conversational ai", "virtual assistant"],
+    "real-time": ["real-time", "realtime", "stream processing"],
+    "c/c++": ["c++", "cplusplus", "c language"],
     "etl": ["etl", "data pipeline", "airflow", "dbt", "data warehouse"],
     "javascript": ["javascript", "js", "ecmascript"],
     "typescript": ["typescript", "ts"],
@@ -80,8 +90,16 @@ CAREER_READINESS_SIGNALS = {
     "communication": ["presented", "communicated", "wrote", "documented", "stakeholder", "presentation", "báo cáo", "trình bày"],
     "teamwork": ["team", "collaborated", "cross-functional", "worked with", "nhóm", "phối hợp"],
     "leadership": ["led", "managed", "mentored", "owned", "leader", "dẫn dắt", "quản lý"],
-    "critical thinking": ["analyzed", "optimized", "debugged", "solved", "root cause", "phân tích", "tối ưu"],
-    "professionalism": ["deadline", "quality", "standard", "process", "compliance", "quy trình", "chất lượng"],
+    "critical thinking": [
+        "analyzed", "optimized", "debugged", "solved", "root cause",
+        "root-cause", "investigation", "validation", "bug fixing",
+        "troubleshooting", "solution architecture", "requirements analysis",
+        "model development", "phân tích", "tối ưu",
+    ],
+    "professionalism": [
+        "deadline", "quality", "standard", "process", "compliance", "testing",
+        "unit test", "validation", "security", "quy trình", "chất lượng",
+    ],
     "technology": ["built", "implemented", "automated", "deployed", "developed", "xây dựng", "triển khai"],
     "career self-development": ["certification", "course", "self-study", "bootcamp", "khóa học", "chứng chỉ", "tự học"],
 }

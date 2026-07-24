@@ -23,12 +23,14 @@ class ProfileAnalysisResult(BaseModel):
     benchmark_status: str = "resolved"
     benchmark_profile_id: str | None = None
     benchmark_version: str
+    scoring_version: str
     benchmark_type: str = "static"
     benchmark_confidence: str | None = None
     benchmark_confidence_score: float | None = None
     benchmark_sample_size: int | None = None
     benchmark_distinct_companies: int | None = None
     benchmark_sources: list[dict[str, Any]] = Field(default_factory=list)
+    benchmark_snapshot: dict[str, Any] | None = None
     grade: str | None = None
     total_score: float | None = None
     score_dimensions: list[ScoreDimension]

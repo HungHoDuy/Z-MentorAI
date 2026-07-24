@@ -1,8 +1,16 @@
+import datetime
+import uuid
+
 from fastapi import HTTPException
 
 from canonical_profile.service import prepare_profile_action
-from cv_extraction.service import extract_cv_text
-from cv_intake.repository import get_cv_document, get_latest_cv_document, update_cv_document
+from cv_extraction.service import EXTRACTION_VERSION, extract_cv_text
+from cv_intake.repository import (
+    claim_cv_processing,
+    get_cv_document,
+    get_latest_cv_document,
+    update_cv_document,
+)
 from profile_analysis.service import analyze_cv_profile
 from profile_scan.schemas import ProfileRequest, ProfileResponse
 
@@ -15,7 +23,11 @@ def build_profile_response(document: dict, analysis, profile_action: dict | None
         message_vi=analysis.message_vi,
         next_status=(
             "profile_updated"
-            if profile_action and profile_action.get("action_required") in {"auto_update_profile", "profile_current"}
+            if profile_action and profile_action.get("action_required") in {
+                "auto_update_profile",
+                "profile_current",
+                "profile_refreshed",
+            }
             else "pending_profile_confirmation"
         ),
         parser_type=document.get("parser_type"),
@@ -37,6 +49,7 @@ def build_profile_response(document: dict, analysis, profile_action: dict | None
         benchmark_sample_size=analysis.benchmark_sample_size,
         benchmark_distinct_companies=analysis.benchmark_distinct_companies,
         benchmark_sources=analysis.benchmark_sources,
+        benchmark_snapshot=analysis.benchmark_snapshot,
         grade=analysis.grade,
         total_score=analysis.total_score,
         score_dimensions=[dimension.model_dump(mode="json") for dimension in analysis.score_dimensions],
@@ -82,20 +95,63 @@ async def analyze_profile(request: ProfileRequest) -> ProfileResponse:
         raise HTTPException(status_code=404, detail="CV document not found for this user.")
 
     cv_document_id = document["cv_document_id"]
-    if request.target_role and request.target_role.strip() != (document.get("requested_target_role") or "").strip():
+    processing_attempt_id = str(uuid.uuid4())
+    claimed = await claim_cv_processing(cv_document_id, processing_attempt_id)
+    if not claimed:
+        raise HTTPException(
+            status_code=409,
+            detail="This CV is already being processed. Please retry shortly.",
+        )
+    try:
+        if request.target_role and request.target_role.strip() != (document.get("requested_target_role") or "").strip():
+            await update_cv_document(cv_document_id, {
+                "requested_target_role": request.target_role.strip(),
+                "analysis_status": "pending",
+                "next_status": "pending_profile_analysis",
+            })
+            document = await get_cv_document(cv_document_id)
+
+        if (
+            document.get("extraction_status") != "completed"
+            or document.get("extraction_version") != EXTRACTION_VERSION
+        ):
+            await update_cv_document(cv_document_id, {
+                "processing_stage": "extracting_cv",
+                "processing_stage_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            })
+            await extract_cv_text(document)
+            document = await get_cv_document(cv_document_id)
+            if not document:
+                raise HTTPException(status_code=404, detail="CV document not found after extraction.")
+
         await update_cv_document(cv_document_id, {
-            "requested_target_role": request.target_role.strip(),
-            "analysis_status": "pending",
-            "next_status": "pending_profile_analysis",
+            "processing_stage": "analyzing_profile",
+            "processing_stage_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         })
-        document = await get_cv_document(cv_document_id)
-
-    if document.get("extraction_status") != "completed":
-        await extract_cv_text(document)
-        document = await get_cv_document(cv_document_id)
-        if not document:
-            raise HTTPException(status_code=404, detail="CV document not found after extraction.")
-
-    analysis = await analyze_cv_profile(document)
-    profile_action = await prepare_profile_action(document, analysis.as_firestore_payload())
-    return build_profile_response(document, analysis, profile_action)
+        analysis = await analyze_cv_profile(document)
+        await update_cv_document(cv_document_id, {
+            "processing_stage": "preparing_canonical_profile",
+            "processing_stage_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        })
+        profile_action = await prepare_profile_action(document, analysis.as_firestore_payload())
+        await update_cv_document(cv_document_id, {
+            "processing_status": "completed",
+            "processing_stage": "completed",
+            "processing_attempt_id": processing_attempt_id,
+            "processing_finished_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "processing_error": None,
+        })
+        return build_profile_response(document, analysis, profile_action)
+    except Exception as exc:
+        try:
+            await update_cv_document(cv_document_id, {
+                "processing_status": "failed",
+                "processing_stage": "failed",
+                "processing_attempt_id": processing_attempt_id,
+                "processing_finished_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "processing_error": str(exc)[:500],
+            })
+        except Exception:
+            # Preserve the original pipeline failure; request middleware logs the traceback.
+            pass
+        raise

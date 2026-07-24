@@ -2,6 +2,8 @@ import json
 import os
 from typing import Optional
 
+from google.api_core.exceptions import AlreadyExists
+
 from core.config import logger, settings
 
 
@@ -34,7 +36,7 @@ def write_local_results(data: dict) -> None:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
-async def save_assessment_result(result: dict) -> None:
+async def save_assessment_result(result: dict) -> dict:
     if settings.use_firestore:
         logger.info(
             "Saving assessment result",
@@ -45,12 +47,23 @@ async def save_assessment_result(result: dict) -> None:
                 "collection": settings.assessments_collection_name,
             },
         )
-        firestore_client.collection(settings.assessments_collection_name).document(result["assessment_id"]).set(result)
-        return
+        document_ref = firestore_client.collection(settings.assessments_collection_name).document(
+            result["assessment_id"]
+        )
+        try:
+            document_ref.create(result)
+            return result
+        except AlreadyExists:
+            snapshot = document_ref.get()
+            return snapshot.to_dict() if snapshot.exists else result
 
     data = read_local_results()
+    existing = data["assessments"].get(result["assessment_id"])
+    if existing:
+        return existing
     data["assessments"][result["assessment_id"]] = result
     write_local_results(data)
+    return result
 
 
 async def get_latest_assessment_result(user_id: str, assessment_type: str) -> Optional[dict]:

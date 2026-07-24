@@ -1,9 +1,24 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
-class StructuredExperience(BaseModel):
+class NullSafeExtractionModel(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def use_defaults_for_null_values(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        return {
+            key: [item for item in item_value if item is not None]
+            if isinstance(item_value, list)
+            else item_value
+            for key, item_value in value.items()
+            if item_value is not None
+        }
+
+
+class StructuredExperience(NullSafeExtractionModel):
     title: str = ""
     organization: str = ""
     duration: str = ""
@@ -12,7 +27,7 @@ class StructuredExperience(BaseModel):
     impact_evidence: list[str] = Field(default_factory=list)
 
 
-class StructuredEducation(BaseModel):
+class StructuredEducation(NullSafeExtractionModel):
     institution: str = ""
     degree: str = ""
     field: str = ""
@@ -20,7 +35,7 @@ class StructuredEducation(BaseModel):
     evidence: str = ""
 
 
-class StructuredProject(BaseModel):
+class StructuredProject(NullSafeExtractionModel):
     name: str = ""
     summary: str = ""
     skills: list[str] = Field(default_factory=list)
@@ -28,7 +43,7 @@ class StructuredProject(BaseModel):
     url: str = ""
 
 
-class StructuredProfile(BaseModel):
+class StructuredProfile(NullSafeExtractionModel):
     extraction_source: str = "ai"
     full_name: str = ""
     email: str = ""

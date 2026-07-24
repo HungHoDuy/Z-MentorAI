@@ -1,4 +1,6 @@
 import datetime
+import hashlib
+import json
 import re
 import unicodedata
 
@@ -15,6 +17,7 @@ from core.config import logger
 
 
 IDENTITY_MATCH_VERSION = "identity-match-v1"
+CANONICAL_PROFILE_SCHEMA_VERSION = "canonical-profile-v2"
 
 
 def utc_now() -> str:
@@ -157,7 +160,36 @@ def build_canonical_payload(
     source_document_ids = list((previous_profile or {}).get("source_document_ids", []))
     if cv_document_id not in source_document_ids:
         source_document_ids.append(cv_document_id)
+    fingerprint_payload = {
+        "cv_document_id": cv_document_id,
+        "identity": analysis.get("candidate_identity", {}),
+        "structured_profile": analysis.get("structured_profile") or {},
+        "scoring_version": analysis.get("scoring_version"),
+        "benchmark_profile_id": analysis.get("benchmark_profile_id"),
+        "benchmark_version": analysis.get("benchmark_version"),
+        "benchmark_type": analysis.get("benchmark_type"),
+        "benchmark_status": analysis.get("benchmark_status"),
+        "skill_normalization_version": analysis.get("skill_normalization_version"),
+        "target_role": analysis.get("target_role"),
+        "grade": analysis.get("grade"),
+        "total_score": analysis.get("total_score"),
+        "normalized_skills": analysis.get("normalized_skills", []),
+        "work_experiences": analysis.get("work_experiences", []),
+        "education_records": analysis.get("education_records", []),
+        "projects": analysis.get("projects", []),
+        "score_dimensions": analysis.get("score_dimensions", []),
+        "recommendations": analysis.get("recommendations", []),
+    }
+    analysis_fingerprint = hashlib.sha256(
+        json.dumps(
+            fingerprint_payload,
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     return {
+        "schema_version": CANONICAL_PROFILE_SCHEMA_VERSION,
         "user_id": user_id,
         "identity": analysis.get("candidate_identity", {}),
         "headline": (analysis.get("structured_profile") or {}).get("headline", ""),
@@ -171,8 +203,14 @@ def build_canonical_payload(
         "target_role": analysis.get("target_role"),
         "benchmark_profile_id": analysis.get("benchmark_profile_id"),
         "benchmark_version": analysis.get("benchmark_version"),
+        "benchmark_type": analysis.get("benchmark_type"),
+        "benchmark_status": analysis.get("benchmark_status"),
+        "benchmark_snapshot": analysis.get("benchmark_snapshot"),
+        "scoring_version": analysis.get("scoring_version"),
         "grade": analysis.get("grade"),
         "total_score": analysis.get("total_score"),
+        "score_dimensions": analysis.get("score_dimensions", []),
+        "analysis_fingerprint": analysis_fingerprint,
         "active_cv_document_id": cv_document_id,
         "source_document_ids": source_document_ids,
         "profile_version": int((previous_profile or {}).get("profile_version", 0)) + 1,
@@ -184,11 +222,35 @@ def build_canonical_payload(
 async def prepare_profile_action(document: dict, analysis: dict) -> dict:
     user_id = document["user_id"]
     existing_profile = await get_canonical_profile(user_id)
+    candidate_profile_payload = build_canonical_payload(
+        user_id=user_id,
+        cv_document_id=document["cv_document_id"],
+        analysis=analysis,
+        previous_profile=existing_profile,
+    )
     if (
         existing_profile
         and existing_profile.get("active_cv_document_id") == document["cv_document_id"]
         and document.get("profile_link_status") == "active"
     ):
+        if existing_profile.get("analysis_fingerprint") != candidate_profile_payload.get("analysis_fingerprint"):
+            saved_profile = await save_profile_version(
+                profile=candidate_profile_payload,
+                previous_profile=existing_profile,
+                cv_document_id=document["cv_document_id"],
+            )
+            return {
+                "action_required": "profile_refreshed",
+                "cv_document_id": document["cv_document_id"],
+                "candidate_identity": analysis.get("candidate_identity", {}),
+                "profile_version": saved_profile.get("profile_version"),
+                "profile_status": "updated",
+                "message_vi": (
+                    "CV hiện hành đã được phân tích lại bằng phiên bản benchmark mới. "
+                    "Hồ sơ cá nhân đã được đồng bộ và lưu thành một phiên bản mới."
+                ),
+                "options": [],
+            }
         return {
             "action_required": "profile_current",
             "cv_document_id": document["cv_document_id"],
@@ -224,14 +286,8 @@ async def prepare_profile_action(document: dict, analysis: dict) -> dict:
     )
 
     if action["action_required"] == "auto_update_profile":
-        profile = build_canonical_payload(
-            user_id=user_id,
-            cv_document_id=document["cv_document_id"],
-            analysis=analysis,
-            previous_profile=existing_profile,
-        )
         saved_profile = await save_profile_version(
-            profile=profile,
+            profile=candidate_profile_payload,
             previous_profile=existing_profile,
             cv_document_id=document["cv_document_id"],
         )
@@ -250,10 +306,17 @@ async def confirm_profile_decision(request: ProfileDecisionRequest) -> ProfileDe
         raise HTTPException(status_code=409, detail="CV analysis must complete before profile confirmation.")
 
     existing_profile = await get_canonical_profile(request.user_id)
+    candidate_profile_payload = build_canonical_payload(
+        user_id=request.user_id,
+        cv_document_id=request.cv_document_id,
+        analysis=analysis,
+        previous_profile=existing_profile,
+    )
     if (
         existing_profile
         and existing_profile.get("active_cv_document_id") == request.cv_document_id
         and document.get("profile_link_status") == "active"
+        and existing_profile.get("analysis_fingerprint") == candidate_profile_payload.get("analysis_fingerprint")
     ):
         return ProfileDecisionResponse(
             user_id=request.user_id,
@@ -302,14 +365,8 @@ async def confirm_profile_decision(request: ProfileDecisionRequest) -> ProfileDe
             detail=f"Decision {request.decision} is invalid for {action['action_required']}.",
         )
 
-    profile = build_canonical_payload(
-        user_id=request.user_id,
-        cv_document_id=request.cv_document_id,
-        analysis=analysis,
-        previous_profile=existing_profile,
-    )
     saved_profile = await save_profile_version(
-        profile=profile,
+        profile=candidate_profile_payload,
         previous_profile=existing_profile,
         cv_document_id=request.cv_document_id,
     )
