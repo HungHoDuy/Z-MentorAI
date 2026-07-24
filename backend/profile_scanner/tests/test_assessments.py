@@ -33,6 +33,12 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(result.top_dimensions[0], "logical_math")
         self.assertEqual(result.answered_count, len(MULTIPLE_INTELLIGENCES.questions))
         self.assertFalse(result.missing_question_ids)
+        duplicate = score_assessment_answers(
+            "multiple_intelligences",
+            AssessmentScoreRequest(user_id="test-user", answers=list(reversed(answers))),
+        )
+        self.assertEqual(result.assessment_id, duplicate.assessment_id)
+        self.assertTrue(result.question_set_hash)
 
     def test_unknown_question_id_rejected(self):
         with self.assertRaises(HTTPException):
@@ -53,6 +59,42 @@ class AssessmentTests(unittest.TestCase):
                     answers=[AssessmentAnswer(question_id="L1", score=3)],
                 ),
             )
+
+    def test_equal_scores_report_tied_dimensions(self):
+        answers = [
+            AssessmentAnswer(question_id=question.id, score=3)
+            for question in MULTIPLE_INTELLIGENCES.questions
+        ]
+        result = score_assessment_answers(
+            "multiple_intelligences",
+            AssessmentScoreRequest(user_id="test-user", answers=answers),
+        )
+        self.assertEqual(
+            result.tied_top_dimensions,
+            list(MULTIPLE_INTELLIGENCES.dimension_labels.keys()),
+        )
+        self.assertEqual(result.score_margin, 0.0)
+
+    def test_retake_uses_a_new_attempt_id_but_retries_remain_idempotent(self):
+        answers = [
+            AssessmentAnswer(question_id=question.id, score=3)
+            for question in MULTIPLE_INTELLIGENCES.questions
+        ]
+        first = score_assessment_answers(
+            "multiple_intelligences",
+            AssessmentScoreRequest(user_id="test-user", answers=answers, attempt_id="attempt-1"),
+        )
+        retry = score_assessment_answers(
+            "multiple_intelligences",
+            AssessmentScoreRequest(user_id="test-user", answers=answers, attempt_id="attempt-1"),
+        )
+        retake = score_assessment_answers(
+            "multiple_intelligences",
+            AssessmentScoreRequest(user_id="test-user", answers=answers, attempt_id="attempt-2"),
+        )
+
+        self.assertEqual(first.assessment_id, retry.assessment_id)
+        self.assertNotEqual(first.assessment_id, retake.assessment_id)
 
 
 if __name__ == "__main__":

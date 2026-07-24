@@ -2,8 +2,10 @@ import datetime
 
 from dynamic_benchmark.compiler import (
     build_skill_criteria,
+    canonical_skill_id,
     compile_dynamic_benchmark,
     infer_level,
+    sanitize_skill_vocabulary,
 )
 from dynamic_benchmark.schemas import MarketJobEvidence
 from profile_analysis.service import extract_matching_skills, score_role_skill_fit
@@ -66,6 +68,23 @@ def test_infer_level_from_role_title():
     assert infer_level("Senior Data Engineer") == "senior"
     assert infer_level("Product Manager") == "manager"
     assert infer_level("Data Analyst") == "unspecified"
+    assert infer_level("Leadership Coach") == "unspecified"
+    assert infer_level("Headless CMS Developer") == "unspecified"
+    assert infer_level("Graduate Admissions Manager") == "manager"
+
+
+def test_noisy_ai_vocabulary_is_canonicalized_and_merged():
+    skills = sanitize_skill_vocabulary([
+        {"name": "Artificial Intelligence / AI", "aliases": ["AI"]},
+        {"name": "artificial intelligence", "aliases": ["artificial intelligence"]},
+        {"name": "PyTorch", "aliases": ["torch"]},
+    ])
+
+    by_name = {item["name"]: item for item in skills}
+    assert "artificial intelligence" in by_name
+    assert "pytorch" in by_name
+    assert len([item for item in skills if item["name"] == "artificial intelligence"]) == 1
+    assert canonical_skill_id("Machine Learning / ML") == "machine learning"
 
 
 def test_compile_high_confidence_market_benchmark_with_365_day_window():
@@ -139,3 +158,79 @@ def test_market_weights_drive_role_skill_score_deterministically():
     assert 0 < dimension.score < 100
     assert "python" in skills
     assert "sql" in dimension.missing
+
+
+def test_dynamic_score_is_not_capped_when_benchmark_has_no_supporting_skills():
+    text = "Built and deployed Python services; reduced inference latency by 40%."
+    dimension = score_role_skill_fit(
+        ["Python"],
+        {
+            "core_skills": ["python"],
+            "essential_skill_groups": [["python"]],
+            "supporting_skills": [],
+            "skill_aliases": {"python": ["python"]},
+            "skill_weights": {"python": 1.0},
+        },
+        text=text,
+        project_lines=[text],
+    )
+
+    assert dimension.score == 100
+
+
+def test_explicit_skill_owns_its_alias_in_market_frequency_counting():
+    jobs = [
+        job.model_copy(
+            update={
+                "requirements_text": "PyTorch production experience required.",
+                "description_text": "Build models using PyTorch.",
+            }
+        )
+        for job in make_jobs(10)
+    ]
+    criteria = build_skill_criteria(
+        jobs,
+        [
+            {"name": "machine learning", "aliases": ["machine learning", "pytorch"]},
+            {"name": "pytorch", "aliases": ["pytorch", "torch"]},
+        ],
+    )
+
+    assert [criterion.skill_id for criterion in criteria] == ["pytorch"]
+
+
+def test_dynamic_score_rewards_a_strong_specialization_without_requiring_every_track():
+    benchmark = {
+        "core_skills": ["artificial intelligence", "python"],
+        "essential_skill_groups": [["artificial intelligence"], ["python"]],
+        "supporting_skills": ["computer vision", "llm", "rag", "nlp", "data engineering"],
+        "skill_aliases": {
+            "artificial intelligence": ["artificial intelligence", "ai"],
+            "python": ["python"],
+            "computer vision": ["computer vision"],
+            "llm": ["llm"],
+            "rag": ["rag"],
+            "nlp": ["nlp"],
+            "data engineering": ["data engineering"],
+        },
+        "skill_weights": {
+            "artificial intelligence": 0.25,
+            "python": 0.20,
+            "computer vision": 0.14,
+            "llm": 0.12,
+            "rag": 0.11,
+            "nlp": 0.10,
+            "data engineering": 0.08,
+        },
+        "supporting_target_count": 3,
+    }
+    text = "Built and deployed Python AI applications using LLM, RAG and NLP."
+    dimension = score_role_skill_fit(
+        ["Artificial Intelligence", "Python", "LLM", "RAG", "NLP"],
+        benchmark,
+        text=text,
+        work_lines=[text],
+    )
+
+    assert dimension.score >= 70
+    assert "computer vision" not in dimension.missing
