@@ -1177,14 +1177,14 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
       )}
 
       {calendarStatus === 'success' && (
-        <div className="calendar-sync-success-msg">
-          <span className="success-check">✓</span>
-          <span>{calendarMessage}</span>
-          <div style={{ marginTop: '10px' }}>
-            <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
-              Đóng
-            </button>
+        <div className="calendar-sync-success-msg" style={{ width: '100%', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="success-check">✓</span>
+            <span>{calendarMessage}</span>
           </div>
+          <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+            Đóng
+          </button>
         </div>
       )}
 
