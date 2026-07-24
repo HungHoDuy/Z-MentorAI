@@ -973,6 +973,40 @@ async def generate_schedule(request: CalendarAppendRequest, x_user_id: str = Hea
             detail=f"Failed to generate schedule: {str(e)}"
         )
 
+@app.get("/chart/{chart_id}/excel")
+async def proxy_gantt_excel(chart_id: str):
+    academic_url = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080").rstrip("/")
+    target_url = f"{academic_url}/chart/{chart_id}/excel"
+    
+    client = httpx.AsyncClient()
+    req = client.build_request("GET", target_url)
+    try:
+        r = await client.send(req, stream=True)
+        if r.status_code != 200:
+            await r.aclose()
+            await client.aclose()
+            raise HTTPException(status_code=r.status_code, detail="Failed to fetch excel from Academic Architect")
+            
+        async def stream_content():
+            try:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+            finally:
+                await r.aclose()
+                await client.aclose()
+
+        filename = f"gantt_roadmap_{chart_id}.xlsx"
+        return StreamingResponse(
+            stream_content(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await client.aclose()
+        logger.error(f"Error proxying Excel download: {e}")
+        raise HTTPException(status_code=500, detail="Error proxying Gantt Excel")
 
 
 # System prompt
