@@ -333,6 +333,8 @@ def normalize_tool_output(output: Any) -> dict:
 def summarize_tool_calls(tool_calls: list[dict]) -> str:
     for tool_call in tool_calls:
         name = tool_call.get("name")
+        output = normalize_tool_output(tool_call.get("output"))
+        
         if name in {"academic_architect", "academic_architect_create_gantt"}:
             return "Đã xây dựng lộ trình học tập Gantt Chart và gợi ý các khóa học phù hợp."
         elif name == "academic_architect_skill_gap":
@@ -344,24 +346,24 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
             return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
         if name == "academic_architect_input_verifier":
             return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
-        if name == "market_scout":
+        elif name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
-        if name == "profile_scanner":
+        elif name == "profile_scanner":
             if output.get("feature") == "profile_confirmation":
                 return output.get("message_vi", "Đã cập nhật trạng thái hồ sơ cá nhân.")
-            if output.get("feature") == "career_alignment":
+            elif output.get("feature") == "career_alignment":
                 return "Đã tổng hợp mức độ phù hợp giữa CV, Holland và MI."
-            if output.get("feature") == "assessment":
+            elif output.get("feature") == "assessment":
                 if output.get("questions"):
                     return f"Đã tạo biểu mẫu {output.get('title', 'assessment')}."
-                if output.get("top_dimensions"):
+                elif output.get("top_dimensions"):
                     return f"Đã chấm điểm {output.get('title', 'assessment')}."
-            if output.get("feature") == "holland_assessment":
+            elif output.get("feature") == "holland_assessment":
                 if output.get("questions"):
                     return "Đã tạo biểu mẫu Holland Test."
-                if output.get("top_code"):
+                elif output.get("top_code"):
                     return "Đã chấm điểm Holland Test và lưu kết quả RIASEC."
-            if output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+            elif output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
                 profile_action = output.get("profile_action") or {}
                 if profile_action.get("message_vi"):
                     return profile_action["message_vi"]
