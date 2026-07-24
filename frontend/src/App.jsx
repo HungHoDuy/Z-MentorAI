@@ -36,6 +36,7 @@ const acceptedCvMimeTypes = new Set([
 
 const acceptedCvExtensions = ['pdf', 'docx'];
 const maxCvFileSizeBytes = 10 * 1024 * 1024;
+const brandMarkSrc = '/assets/brand/z-mentorai-mark.png';
 
 const uiText = {
   vi: {
@@ -189,39 +190,6 @@ const suggestedQuestions = [
     prompt: 'Hãy tổng hợp CV, Holland và MI của tôi để kiểm tra định hướng nghề nghiệp có đang xung đột hay không.'
   }
 ];
-
-function LoginChatTerminal() {
-  return (
-    <aside className="login-terminal" aria-label="Bản xem trước cuộc trò chuyện Z-MentorAI">
-      <div className="terminal-topbar">
-        <div className="terminal-window-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-        <span className="terminal-label">mentor.session</span>
-      </div>
-      <div className="terminal-body">
-        <div className="terminal-line user-line">
-          <span className="terminal-prompt">$ bạn</span>
-          <p>Hãy quét CV của tôi cho vị trí Junior Data Analyst.</p>
-        </div>
-        <div className="terminal-line ai-line">
-          <span className="terminal-prompt">z-mentor</span>
-          <p>Agent Quét Hồ Sơ thấy tín hiệu SQL khá tốt, nhưng CV cần làm rõ tác động dự án và bằng chứng dashboard.</p>
-        </div>
-        <div className="terminal-line ai-line">
-          <span className="terminal-prompt">thị trường</span>
-          <p>Các vị trí đầu vào thường yêu cầu Excel, SQL, BI tools và một bài phân tích trong portfolio.</p>
-        </div>
-        <div className="terminal-command">
-          <span>$</span>
-          <span className="terminal-caret">dựng lộ trình</span>
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 function normalizeToolOutput(output) {
   if (!output) return null;
@@ -1303,24 +1271,6 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfi
   );
 }
 
-function AgentModule({ agentKey, active }) {
-  const info = agentInfo[agentKey];
-  const Icon = info.icon;
-
-  return (
-    <div className={`agent-module ${info.themeClass} ${active ? 'active' : ''}`}>
-      <div className="agent-module-icon">
-        <Icon size={18} />
-      </div>
-      <div>
-        <div className="agent-module-title">{info.label}</div>
-        <div className="agent-module-desc">{info.description}</div>
-      </div>
-      <div className="agent-module-state">{active ? 'Đang chạy' : 'Sẵn sàng'}</div>
-    </div>
-  );
-}
-
 function CvAttachmentChip({ attachment, onRemove, compact = false }) {
   if (!attachment) return null;
 
@@ -1348,39 +1298,29 @@ function CvAttachmentChip({ attachment, onRemove, compact = false }) {
 function LoginScreen({ googleClientId }) {
   return (
     <div className="login-screen">
-      <div className="login-shell">
-        <section className="login-hero">
-          <div className="brand-mark">
-            <Sparkles size={22} />
-            <span>Z-MentorAI</span>
-          </div>
-          <h1>Không gian AI giúp bạn ra quyết định nghề nghiệp.</h1>
-          <p>
-            Đưa CV, mục tiêu và câu hỏi của bạn vào một nơi. Z-MentorAI giữ cuộc trò chuyện tập trung vào quét hồ sơ,
-            phân tích thị trường và lộ trình học tập.
-          </p>
-          <div className="login-proof-grid">
-            <div>
-              <strong>Hồ sơ</strong>
-              <span>Đọc điểm mạnh và tín hiệu còn thiếu</span>
-            </div>
-            <div>
-              <strong>Thị trường</strong>
-              <span>So sánh vai trò và kỳ vọng tuyển dụng</span>
-            </div>
-            <div>
-              <strong>Lộ trình</strong>
-              <span>Biến khoảng trống thành hướng học rõ ràng</span>
-            </div>
-          </div>
-        </section>
+      <div className="login-visual" aria-hidden="true" />
+      <header className="login-brand">
+        <img src={brandMarkSrc} alt="" />
+        <span>
+          <strong>Z-MentorAI</strong>
+          <small>Cố vấn nghề nghiệp AI</small>
+        </span>
+      </header>
 
-        <section className="login-visual-panel">
+      <main className="login-shell">
+        <section className="login-hero">
+          <div className="login-kicker">Hồ sơ rõ ràng. Quyết định có cơ sở.</div>
+          <h1>Hiểu rõ hồ sơ.<br />Chọn đúng bước tiếp theo.</h1>
+          <p>
+            Z-MentorAI kết nối hồ sơ, tín hiệu thị trường và mục tiêu học tập để mỗi quyết định nghề nghiệp
+            đều có cơ sở rõ ràng.
+          </p>
+
           <div className="login-card">
-            <h2>Bắt đầu phiên tư vấn</h2>
-            <p>
-              Đăng nhập bằng Google để tiếp tục các cuộc trò chuyện và lưu ngữ cảnh nghề nghiệp của bạn.
-            </p>
+            <div className="login-card-heading">
+              <span>Bắt đầu phiên tư vấn</span>
+              <small>Thông tin của bạn được giữ theo từng tài khoản.</small>
+            </div>
             <div className="login-actions">
               <div id="google-signin-button" className="google-btn-container"></div>
               {!googleClientId && (
@@ -1388,9 +1328,23 @@ function LoginScreen({ googleClientId }) {
               )}
             </div>
           </div>
-          <LoginChatTerminal />
+
+          <div className="login-capabilities" aria-label="Các năng lực chính">
+            <div>
+              <FileSearch size={18} />
+              <span><strong>Quét hồ sơ</strong><small>Đọc bằng chứng và khoảng trống</small></span>
+            </div>
+            <div>
+              <Compass size={18} />
+              <span><strong>Hiểu thị trường</strong><small>Đối chiếu nhu cầu tuyển dụng</small></span>
+            </div>
+            <div>
+              <GraduationCap size={18} />
+              <span><strong>Dựng lộ trình</strong><small>Chuyển mục tiêu thành hành động</small></span>
+            </div>
+          </div>
         </section>
-      </div>
+      </main>
     </div>
   );
 }
@@ -1416,8 +1370,8 @@ function AccountHeader({ activeAgents, avatarSrc, user, locale, onNavigate, onAv
   return (
     <header className="app-header">
       <button className="brand-section brand-button" onClick={() => onNavigate('chat')} type="button">
-        <span className="brand-logo"><Sparkles size={20} /></span>
-        <span><strong className="brand-title">Z-MentorAI</strong><span className="brand-subtitle">AI Career Mentor</span></span>
+        <span className="brand-logo"><img src={brandMarkSrc} alt="" /></span>
+        <span><strong className="brand-title">Z-MentorAI</strong><span className="brand-subtitle">Cố vấn nghề nghiệp AI</span></span>
       </button>
       <div className="agent-status-bar">
         {Object.keys(agentInfo).slice(0, 3).map((key) => (
@@ -1583,22 +1537,18 @@ function SessionSidebar({ sessions, activeSessionId, isLoading, onCreateNewSessi
   );
 }
 
-function WelcomeState({ user, activeAgents, onSendMessage }) {
+function WelcomeState({ onSendMessage }) {
   return (
     <div className="welcome-container">
+      <img className="welcome-brand-watermark" src={brandMarkSrc} alt="" aria-hidden="true" />
       <div className="welcome-copy">
-        <h2>Hôm nay mình sẽ cùng phân tích bước đi nghề nghiệp nào, {user.name.split(' ')[0]}?</h2>
+        <h2>Hãy bắt đầu cùng Z-MentorAI</h2>
         <p>
           Hãy đặt câu hỏi trực tiếp, đính kèm CV hoặc bắt đầu bằng một gợi ý bên dưới.
         </p>
       </div>
 
-      <div className="agent-module-grid">
-        {Object.keys(agentInfo).map((agentKey) => (
-          <AgentModule key={agentKey} agentKey={agentKey} active={activeAgents.includes(agentKey)} />
-        ))}
-      </div>
-
+      <div className="suggested-heading">Bắt đầu nhanh</div>
       <div className="suggested-questions">
         {suggestedQuestions.map((question) => {
           const info = agentInfo[question.agent];
@@ -1842,7 +1792,7 @@ function ChatWorkspace({
   return (
     <div className="chat-area">
       {messages.length === 0 ? (
-        <WelcomeState user={user} activeAgents={activeAgents} onSendMessage={onSendMessage} />
+        <WelcomeState onSendMessage={onSendMessage} />
       ) : (
         <MessagesFeed
           messages={messages}
