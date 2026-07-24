@@ -127,10 +127,17 @@ const agentInfo = {
     themeClass: 'scout',
     accent: '#a78bfa'
   },
-  academic_architect: {
+  academic_architect_create_gantt: {
     label: 'Lộ Trình Học Tập',
     description: 'Biến khoảng trống kỹ năng thành lộ trình học tập thực tế.',
     icon: GraduationCap,
+    themeClass: 'architect',
+    accent: '#f8c96b'
+  },
+  academic_architect_skill_gap: {
+    label: 'Phân Tích Kỹ Năng',
+    description: 'So sánh kỹ năng hiện tại với yêu cầu công việc thực tế.',
+    icon: FileSearch,
     themeClass: 'architect',
     accent: '#f8c96b'
   },
@@ -170,7 +177,7 @@ const suggestedQuestions = [
     prompt: 'Tôi muốn khảo sát thị trường cho vị trí Python Backend Developer. Hiện tại nhu cầu tuyển dụng, kỳ vọng lương và các framework quan trọng nhất là gì?'
   },
   {
-    agent: 'academic_architect',
+    agent: 'academic_architect_create_gantt',
     title: 'Dựng lộ trình học',
     desc: 'Tạo các bước học để lấp khoảng trống mục tiêu',
     prompt: 'Tôi muốn xây dựng lộ trình học tập.'
@@ -1636,7 +1643,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
           <div key={msg.id} className={`message-wrapper ${msg.role}`}>
             <div className="message-header">{msg.role === 'user' ? 'Bạn' : 'Điều phối viên'}</div>
 
-            {msg.role === 'assistant' && visibleToolCalls.filter(toolCall => toolCall.name !== 'academic_architect').map((toolCall) => (
+            {msg.role === 'assistant' && visibleToolCalls.filter(toolCall => toolCall.name !== 'academic_architect_create_gantt').map((toolCall) => (
               <ToolCallWidget
                 key={toolCall.id}
                 toolName={toolCall.name}
@@ -1662,7 +1669,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                   <>
                     {(() => {
                       const academicToolCall = msg.toolCalls?.find(
-                        (t) => t.name === 'academic_architect' && t.status === 'completed'
+                        (t) => t.name === 'academic_architect_create_gantt' && t.status === 'completed'
                       );
                       const output = academicToolCall ? normalizeToolOutput(academicToolCall.output) : null;
                       const courses = output ? [
@@ -1717,7 +1724,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                     })()}
                     {(() => {
                       const academicToolCall = msg.toolCalls?.find(
-                        (t) => t.name === 'academic_architect' && t.status === 'completed'
+                        (t) => t.name === 'academic_architect_create_gantt' && t.status === 'completed'
                       );
                       if (!academicToolCall) return null;
                       const output = normalizeToolOutput(academicToolCall.output);
