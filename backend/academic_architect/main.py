@@ -817,14 +817,24 @@ async def export_gantt_excel(chart_id: str):
         earliest_start = datetime.date.today()
         latest_end = datetime.date.today() + datetime.timedelta(days=30)
     
-    total_days = (latest_end - earliest_start).days
-    total_weeks = max(1, (total_days // 7) + 1)
+    # Generate 3-day interval buckets
+    timeline_dates = []
+    curr = earliest_start
+    while curr <= latest_end:
+        timeline_dates.append(curr)
+        curr += datetime.timedelta(days=3)
+    
+    # Ensure the last bucket covers the latest_end if it doesn't align perfectly
+    if not timeline_dates or timeline_dates[-1] < latest_end:
+        timeline_dates.append(curr)
+
+    total_buckets = len(timeline_dates)
 
     headers = ["Task ID", "Giai Đoạn (Phase)", "Kỹ Năng Mục Tiêu", "Tên Khóa Học", "Thời Gian (Tuần)", "Ngày Bắt Đầu", "Ngày Kết Thúc", "Trạng Thái", "Đường Dẫn Khóa Học"]
     base_header_len = len(headers)
     
-    for w in range(1, total_weeks + 1):
-        headers.append(f"Tuần {w}")
+    for d in timeline_dates:
+        headers.append(d.strftime("%b %d"))
 
     ws.append([])
     ws.append(headers)
@@ -849,11 +859,11 @@ async def export_gantt_excel(chart_id: str):
         ]
         
         # Add empty cells for the timeline section
-        row_data.extend([""] * total_weeks)
+        row_data.extend([""] * total_buckets)
         ws.append(row_data)
 
-        task_start_week = (task["_parsed_start"] - earliest_start).days // 7
-        task_end_week = (task["_parsed_end"] - earliest_start).days // 7
+        t_start = task["_parsed_start"]
+        t_end = task["_parsed_end"]
 
         for col_num in range(1, len(row_data) + 1):
             cell = ws.cell(row=row_idx, column=col_num)
@@ -866,8 +876,12 @@ async def export_gantt_excel(chart_id: str):
                 else:
                     cell.alignment = Alignment(horizontal="left", vertical="center")
             else:
-                week_idx = col_num - base_header_len - 1
-                if task_start_week <= week_idx <= task_end_week:
+                bucket_idx = col_num - base_header_len - 1
+                b_start = timeline_dates[bucket_idx]
+                b_end = b_start + datetime.timedelta(days=2) # 3 days inclusive
+
+                # Overlap condition: task starts on or before bucket ends AND task ends on or after bucket starts
+                if t_start <= b_end and t_end >= b_start:
                     cell.fill = gantt_fill
 
     for col in ws.columns:
