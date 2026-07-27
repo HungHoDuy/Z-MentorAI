@@ -1004,6 +1004,38 @@ async def proxy_gantt_excel(chart_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        # Fallback for local native testing if docker network is not available
+        if "academic-architect" in academic_url:
+            try:
+                target_url_fallback = f"http://localhost:8003/chart/{chart_id}/excel"
+                req_fallback = client.build_request("GET", target_url_fallback)
+                r = await client.send(req_fallback, stream=True)
+                if r.status_code != 200:
+                    await r.aclose()
+                    await client.aclose()
+                    raise HTTPException(status_code=r.status_code, detail="Failed to fetch excel from Academic Architect")
+                
+                async def stream_content_fallback():
+                    try:
+                        async for chunk in r.aiter_bytes():
+                            yield chunk
+                    finally:
+                        await r.aclose()
+                        await client.aclose()
+
+                filename = f"gantt_roadmap_{chart_id}.xlsx"
+                return StreamingResponse(
+                    stream_content_fallback(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+            except HTTPException:
+                raise
+            except Exception as ex:
+                await client.aclose()
+                logger.error(f"Error proxying Excel download (fallback failed): {ex}")
+                raise HTTPException(status_code=500, detail="Error proxying Gantt Excel")
+                
         await client.aclose()
         logger.error(f"Error proxying Excel download: {e}")
         raise HTTPException(status_code=500, detail="Error proxying Gantt Excel")

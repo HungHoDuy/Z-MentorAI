@@ -121,7 +121,7 @@ def fetch_data_sync(
 
 def get_data_sync(url: str, endpoint: str) -> dict:
     try:
-        response = httpx.get(f"{url}{endpoint}", timeout=10.0)
+        response = httpx.get(f"{url}{endpoint}", timeout=60.0)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as exc:

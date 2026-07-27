@@ -379,10 +379,21 @@ resource "google_cloud_run_v2_service" "academic_architect" {
   depends_on = [google_project_service.apis]
 
   template {
+    scaling {
+      min_instance_count = 1
+    }
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.academic_architect_image}"
       ports {
         container_port = 8080
+      }
+      env {
+        name  = "USE_FIRESTORE"
+        value = "true"
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = "(default)"
       }
     }
   }
@@ -450,6 +461,10 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       env {
         name  = "PROFILE_SCANNER_URL"
         value = google_cloud_run_v2_service.profile_scanner.uri
+      }
+      env {
+        name  = "ACADEMIC_ARCHITECT_URL"
+        value = google_cloud_run_v2_service.academic_architect.uri
       }
       env {
         name  = "USE_FIRESTORE"
