@@ -1,4 +1,4 @@
-﻿import json
+import json
 
 from backend.market_scout.schemas import MarketScoutIntent
 from backend.market_scout.schemas.salary_benchmark.salary import SalarySearchQuery
@@ -96,17 +96,17 @@ def test_understand_unclear_can_use_llm_for_intent_when_enabled() -> None:
     assert result.trend_query.role_mention == "business analyst"
 
 
-def test_understand_ai_replacement_question_as_automation_exposure() -> None:
+def test_understand_ai_replacement_question_as_external_outlook() -> None:
     service = MarketScoutQueryUnderstandingService(
         llm=FakeLlm(
             {
                 "intent": "trend_tracker",
-                "trend_intent": "automation_exposure",
+                "trend_intent": "external_outlook",
                 "role_mention": "ke toan",
                 "location_text": None,
                 "job_category_hint": None,
                 "job_family_hint": None,
-                "requested_signal": "automation_exposure",
+                "requested_signal": "external_outlook",
                 "confidence": "high",
             }
         )
@@ -116,4 +116,5 @@ def test_understand_ai_replacement_question_as_automation_exposure() -> None:
 
     assert result.intent == MarketScoutIntent.TREND_TRACKER
     assert result.trend_query is not None
-    assert result.trend_query.intent == TrendQueryIntent.AUTOMATION_EXPOSURE
+    assert result.trend_query.intent == TrendQueryIntent.EXTERNAL_OUTLOOK
+

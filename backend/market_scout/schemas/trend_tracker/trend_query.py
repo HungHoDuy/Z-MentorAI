@@ -8,7 +8,6 @@ from typing import Any
 class TrendQueryIntent(str, Enum):
     CURRENT_DEMAND = "current_demand"
     CURRENT_SKILL_DEMAND = "current_skill_demand"
-    AUTOMATION_EXPOSURE = "automation_exposure"
     EXTERNAL_OUTLOOK = "external_outlook"
     DEMAND_PRESSURE = "demand_pressure"
 
@@ -35,3 +34,4 @@ class TrendQuery:
     job_category_id: str | None = None
     role_mention: str | None = None
     job_sources: list[dict[str, Any]] = field(default_factory=list)
+

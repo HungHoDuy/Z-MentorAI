@@ -150,8 +150,6 @@ async def _run_agent(agent: MarketScoutAgent, request: MarketScoutRequest) -> Sc
 
 
 def _market_intent(trend_intent: TrendQueryIntent) -> MarketScoutIntent:
-    if trend_intent is TrendQueryIntent.AUTOMATION_EXPOSURE:
-        return MarketScoutIntent.INDUSTRY_DECLINE_RISK
     if trend_intent is TrendQueryIntent.EXTERNAL_OUTLOOK:
         return MarketScoutIntent.JOB_DEMAND_FORECAST
     return MarketScoutIntent.TREND_TRACKER

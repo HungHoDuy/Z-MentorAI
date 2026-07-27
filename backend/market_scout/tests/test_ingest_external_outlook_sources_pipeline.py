@@ -76,6 +76,22 @@ def test_pipeline_continues_when_one_source_fetch_fails() -> None:
     assert result.changed_sources == 1
     assert result.fetched_sources == 2
 
+
+def test_pipeline_extracts_and_writes_evidence_when_enabled() -> None:
+    client = FakeFirestoreClient()
+
+    result = IngestExternalOutlookSourcesPipeline(
+        firestore_client=client,
+        fetcher=lambda url, timeout: b"future jobs content",
+        evidence_extractor=FakeEvidenceExtractor(),
+    ).run(source_configs=[_source_config()], dry_run=False, extract_evidence=True)
+
+    assert result.extracted_evidence_records == 1
+    assert result.written_evidence_records == 1
+    written_ids = [document_id for document_id, data in client.written_documents]
+    assert "evidence-1" in written_ids
+
+
 def _source_config(url: str = "https://example.com/report") -> ExternalOutlookSourceConfig:
     from datetime import date
 
@@ -153,3 +169,25 @@ class FakeBatch:
 
     def commit(self) -> None:
         return None
+
+
+class FakeEvidenceExtractor:
+    def extract(self, *, source, content_text: str):
+        from backend.market_scout.schemas.trend_tracker.trend_external_evidence import TrendEvidence
+
+        return [
+            TrendEvidence(
+                evidence_id="evidence-1",
+                source_id=source.source_id,
+                job_family_ids=["digital_telecom"],
+                job_category_ids=["software_it"],
+                location_ids=["vietnam"],
+                period="2026",
+                direction="increase",
+                exact_claim="AI jobs are mentioned in the source.",
+                metric_value=None,
+                metric_unit=None,
+                citation="Section A",
+                confidence="medium",
+            )
+        ]

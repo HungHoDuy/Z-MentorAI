@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+import re
+import unicodedata
+from typing import Any, Protocol
 
 from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import TrendEvidenceRepository
 from backend.market_scout.repositories.trend_tracker.trend_snapshot_repository import TrendSnapshotRepository
@@ -9,13 +11,17 @@ from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSigna
 from backend.market_scout.schemas.trend_tracker.trend_external_evidence import TrendEvidenceMatch
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryIntent
 from backend.market_scout.schemas.trend_tracker.trend_snapshot_read import TrendSnapshotReadResult
-from backend.market_scout.services.trend_tracker.automation_exposure_service import AutomationExposureService
 from backend.market_scout.services.trend_tracker.current_demand_service import CurrentDemandService
 from backend.market_scout.services.trend_tracker.skill_frequency_service import SkillFrequencyService
 
 
 DEFAULT_MIN_EXTERNAL_RELIABILITY_SCORE = 0.7
 DEFAULT_EXTERNAL_EVIDENCE_LIMIT = 5
+
+
+class ExternalOutlookLiveSearcher(Protocol):
+    def search(self, user_query: str, query: TrendQuery) -> list[TrendEvidenceMatch]:
+        ...
 
 
 class HybridSignalService:
@@ -27,8 +33,8 @@ class HybridSignalService:
         snapshot_repository: TrendSnapshotRepository,
         current_demand_service: CurrentDemandService,
         skill_frequency_service: SkillFrequencyService,
-        automation_exposure_service: AutomationExposureService,
         evidence_repository: TrendEvidenceRepository,
+        live_search_service: ExternalOutlookLiveSearcher | None = None,
         min_external_reliability_score: float = DEFAULT_MIN_EXTERNAL_RELIABILITY_SCORE,
         external_evidence_limit: int = DEFAULT_EXTERNAL_EVIDENCE_LIMIT,
     ) -> None:
@@ -39,8 +45,8 @@ class HybridSignalService:
         self.snapshot_repository = snapshot_repository
         self.current_demand_service = current_demand_service
         self.skill_frequency_service = skill_frequency_service
-        self.automation_exposure_service = automation_exposure_service
         self.evidence_repository = evidence_repository
+        self.live_search_service = live_search_service
         self.min_external_reliability_score = min_external_reliability_score
         self.external_evidence_limit = external_evidence_limit
 
@@ -50,7 +56,11 @@ class HybridSignalService:
         *,
         as_of_date: date | None = None,
         external_published_after: date | None = None,
+        user_query: str | None = None,
     ) -> HybridSignalResult:
+        if query.intent is TrendQueryIntent.EXTERNAL_OUTLOOK:
+            return self._external_outlook(query, external_published_after, user_query)
+
         snapshot_read = self.snapshot_repository.get_latest_for_query(query, as_of_date=as_of_date)
         if snapshot_read is None:
             return self._insufficient(
@@ -69,10 +79,6 @@ class HybridSignalService:
             return self._current_demand(query, snapshot_read, external_published_after)
         if query.intent is TrendQueryIntent.CURRENT_SKILL_DEMAND:
             return self._current_skill_demand(query, snapshot_read)
-        if query.intent is TrendQueryIntent.AUTOMATION_EXPOSURE:
-            return self._automation_exposure(query, snapshot_read)
-        if query.intent is TrendQueryIntent.EXTERNAL_OUTLOOK:
-            return self._external_outlook(query, snapshot_read, external_published_after)
         if query.intent is TrendQueryIntent.DEMAND_PRESSURE:
             return self._out_of_scope(query, snapshot_read)
         raise ValueError(f"Unsupported trend query intent: {query.intent}")
@@ -129,54 +135,27 @@ class HybridSignalService:
             limitations=[*skill_demand.limitations, _single_snapshot_limitation()],
         )
 
-    def _automation_exposure(
-        self,
-        query: TrendQuery,
-        snapshot_read: TrendSnapshotReadResult,
-    ) -> HybridSignalResult:
-        if query.job_category_id is None:
-            return self._insufficient(
-                query,
-                snapshot_read=snapshot_read,
-                reason="Automation exposure requires a canonical job category, not only a broad job family.",
-            )
-
-        exposure = self.automation_exposure_service.evaluate(query.job_category_id)
-        source = []
-        if exposure.source_url:
-            source.append({"url": exposure.source_url, "source_type": "automation_exposure_lookup"})
-        return HybridSignalResult(
-            intent=query.intent.value,
-            signal=exposure.signal,
-            job_family_id=query.job_family_id,
-            job_category_id=query.job_category_id,
-            location_id=query.location_id,
-            snapshot_id=snapshot_read.snapshot_id,
-            period=snapshot_read.period,
-            confidence=exposure.confidence,
-            directional_trend=False,
-            data={
-                "exposure_level": exposure.exposure_level,
-                "risk_reason": exposure.risk_reason,
-                "protected_tasks": list(exposure.protected_tasks),
-                "at_risk_tasks": list(exposure.at_risk_tasks),
-            },
-            sources=source,
-            limitations=[*exposure.limitations, _single_snapshot_limitation()],
-        )
-
     def _external_outlook(
         self,
         query: TrendQuery,
-        snapshot_read: TrendSnapshotReadResult,
         external_published_after: date | None,
+        user_query: str | None,
     ) -> HybridSignalResult:
-        evidence = self._external_evidence(query, external_published_after)
+        evidence = self._external_evidence(query, external_published_after, user_query=user_query)
         if not evidence:
-            return self._insufficient(
-                query,
-                snapshot_read=snapshot_read,
-                reason="No high-reliability external outlook evidence matches this job-family and location scope.",
+            return HybridSignalResult(
+                intent=query.intent.value,
+                signal="insufficient_evidence",
+                job_family_id=query.job_family_id,
+                job_category_id=query.job_category_id,
+                location_id=query.location_id,
+                snapshot_id=None,
+                period=None,
+                confidence="low",
+                directional_trend=False,
+                data={"evidence_count": 0, "claims": []},
+                sources=[],
+                limitations=["No high-reliability external outlook evidence matches this scope."],
             )
         return HybridSignalResult(
             intent=query.intent.value,
@@ -184,15 +163,19 @@ class HybridSignalService:
             job_family_id=query.job_family_id,
             job_category_id=query.job_category_id,
             location_id=query.location_id,
-            snapshot_id=snapshot_read.snapshot_id,
-            period=snapshot_read.period,
+            snapshot_id=None,
+            period=_outlook_period(evidence),
             confidence="medium",
             directional_trend=False,
-            data={"evidence_count": len(evidence), "claims": [_evidence_claim(item) for item in evidence]},
+            data={
+                "evidence_count": len(evidence),
+                "claims": [_evidence_claim(item) for item in evidence],
+                "scope_location_ids": _evidence_locations(evidence),
+            },
             sources=[_evidence_source(item) for item in evidence],
             limitations=[
-                "External evidence is contextual outlook and does not replace the internal current-demand snapshot.",
-                _single_snapshot_limitation(),
+                "External evidence is contextual outlook and does not replace internal current-demand data.",
+                "This is not a guaranteed forecast; it summarizes cited sources currently available to Z-MentorAI.",
             ],
         )
 
@@ -200,15 +183,25 @@ class HybridSignalService:
         self,
         query: TrendQuery,
         published_after: date | None,
+        *,
+        user_query: str | None = None,
     ) -> list[TrendEvidenceMatch]:
-        return self.evidence_repository.list_for_external_outlook(
+        if user_query and self.live_search_service is not None:
+            try:
+                live_evidence = self.live_search_service.search(user_query, query)
+            except Exception:
+                live_evidence = []
+            if live_evidence:
+                return live_evidence
+
+        cached_evidence = self.evidence_repository.list_for_external_outlook(
             job_family_id=query.job_family_id,
             location_id=query.location_id,
             published_after=published_after,
             min_reliability_score=self.min_external_reliability_score,
             limit=self.external_evidence_limit,
         )
-
+        return _select_relevant_cached_evidence(cached_evidence, user_query)
     def _insufficient(
         self,
         query: TrendQuery,
@@ -256,6 +249,90 @@ class HybridSignalService:
         )
 
 
+def _select_relevant_cached_evidence(
+    evidence: list[TrendEvidenceMatch],
+    user_query: str | None,
+) -> list[TrendEvidenceMatch]:
+    if not evidence or not user_query:
+        return evidence
+
+    query_tokens = _meaningful_tokens(user_query)
+    if not query_tokens:
+        return evidence
+
+    scored: list[tuple[int, TrendEvidenceMatch]] = []
+    for item in evidence:
+        evidence_text = " ".join(
+            filter(
+                None,
+                (
+                    item.evidence.exact_claim,
+                    item.evidence.citation,
+                    item.evidence.period,
+                    item.source.source_name,
+                    item.source.publisher,
+                ),
+            )
+        )
+        overlap = len(query_tokens & _meaningful_tokens(evidence_text))
+        if overlap > 0:
+            scored.append((overlap, item))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [item for _, item in scored]
+
+
+def _meaningful_tokens(value: str) -> set[str]:
+    normalized = _normalize_text(value)
+    return {
+        token
+        for token in normalized.split()
+        if len(token) >= 3 and token not in _EXTERNAL_OUTLOOK_STOPWORDS
+    }
+
+
+def _normalize_text(value: str) -> str:
+    text = str(value or "").replace(chr(273), "d").replace(chr(272), "D")
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(character for character in text if unicodedata.category(character) != "Mn")
+    text = text.casefold()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+_EXTERNAL_OUTLOOK_STOPWORDS = {
+    "nam",
+    "nganh",
+    "nghe",
+    "con",
+    "co",
+    "khong",
+    "trong",
+    "thoi",
+    "dai",
+    "hien",
+    "tai",
+    "nay",
+    "gi",
+    "la",
+    "va",
+    "the",
+    "nao",
+    "nhung",
+    "cac",
+    "cho",
+    "toi",
+    "cua",
+    "ve",
+    "duoc",
+    "kha",
+    "nang",
+    "phat",
+    "trien",
+    "2026",
+    "2027",
+}
+
 def _evidence_source(match: TrendEvidenceMatch) -> dict[str, Any]:
     return {
         "source_id": match.source.source_id,
@@ -280,5 +357,24 @@ def _evidence_claim(match: TrendEvidenceMatch) -> dict[str, Any]:
     }
 
 
+def _outlook_period(evidence: list[TrendEvidenceMatch]) -> str | None:
+    periods = [item.evidence.period for item in evidence if item.evidence.period]
+    return ", ".join(dict.fromkeys(periods[:3])) or None
+
+
+def _evidence_locations(evidence: list[TrendEvidenceMatch]) -> list[str]:
+    locations: list[str] = []
+    for item in evidence:
+        for location_id in item.evidence.location_ids:
+            if location_id not in locations:
+                locations.append(location_id)
+    return locations
+
+
 def _single_snapshot_limitation() -> str:
     return "Only one internal weekly snapshot is available; this output is not a directional market trend."
+
+
+
+
+

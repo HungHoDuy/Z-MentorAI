@@ -1,6 +1,6 @@
-# Market Scout Agent
+﻿# Market Scout Agent
 
-Market Scout is the market intelligence agent in z-MentorAI. It answers user questions about salary benchmarks, job market trends, future hiring demand, and roles or industries that may decline because of automation or market changes.
+Market Scout is the market intelligence agent in z-MentorAI. It answers user questions about salary benchmarks, current hiring demand, current skill demand, and external job-market outlook from curated or allowlisted sources.
 
 The agent should return a clear answer with supporting source links from the internal database, vector database, or external web search.
 
@@ -160,7 +160,7 @@ flowchart TD
     F --> H
     G --> H
     H --> I["Evaluate Sources"]
-    I --> J["Analyze Growth / Decline Signals"]
+    I --> J["Analyze Current Demand / External Outlook"]
     J --> K["Build Citations"]
     K --> L["Compose Trend Answer"]
 ```
@@ -391,3 +391,4 @@ Recommended boundaries:
 
 ## Tech stack: Google cloud platform
 - Objectives: build a system light-weight, low-cost 
+

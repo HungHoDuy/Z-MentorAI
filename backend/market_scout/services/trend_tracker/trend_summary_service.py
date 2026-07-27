@@ -53,27 +53,24 @@ def _compose_answer(signal: str, data: dict[str, Any], result: TrendTrackerFlowR
             f"{skill_text}. Đây là current skill requirements, không phải skill growth trend."
         )
 
-    if signal == "automation_exposure":
-        at_risk = _task_text(data.get("at_risk_tasks"))
-        protected = _task_text(data.get("protected_tasks"))
-        level = _display(data.get("exposure_level"))
-        reason = str(data.get("risk_reason") or "Không có diễn giải bổ sung.")
-        return (
-            f"Automation exposure cho {subject} được đánh giá ở mức {level}. {reason} "
-            f"Task có exposure: {at_risk}. Task cần judgment/human accountability: {protected}. "
-            "Đây không phải dự báo role sẽ bị đào thải."
-        )
-
     if signal == "external_outlook":
         claims = data.get("claims") if isinstance(data.get("claims"), list) else []
-        claim_text = " ".join(
-            str(item.get("exact_claim"))
-            for item in claims[:3]
+        claim_lines = [
+            f"- {item.get('exact_claim')}"
+            for item in claims[:4]
             if isinstance(item, dict) and item.get("exact_claim")
-        )
+        ]
+        source_lines = [
+            f"- [{_display(source.get('publisher'))} - {_display(source.get('source_name'))}]({source.get('url')})"
+            for source in result.signal.sources[:5]
+            if isinstance(source, dict) and source.get("url")
+        ]
+        body = "\n".join(claim_lines) or "Chua co claim co the hien thi."
+        source_text = "\n".join(source_lines)
+        suffix = f"\nNguon tham khao:\n{source_text}" if source_text else ""
         return (
-            f"External outlook cho {subject} tại {location}: {claim_text or 'Chưa có claim có thể hiển thị.'} "
-            "Các claim này là external context và không thay thế current-demand snapshot nội bộ."
+            f"Dua tren cac nguon tham khao dang co trong Z-MentorAI, outlook cho {subject} ({period}) co mot so diem chinh:\n"
+            f"{body}{suffix}\nDay la external outlook de tham khao, khong phai du bao chac chan hay du lieu current-demand noi bo."
         )
 
     if signal == "out_of_scope":
@@ -108,3 +105,4 @@ def _task_text(value: Any) -> str:
     if not isinstance(value, list) or not value:
         return "chưa có mapping"
     return ", ".join(str(item) for item in value[:5])
+

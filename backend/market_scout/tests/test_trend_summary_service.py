@@ -40,25 +40,6 @@ def test_external_outlook_summary_only_uses_provided_claim_and_sources() -> None
     assert summary.confidence == "medium"
 
 
-def test_automation_summary_explains_task_exposure_not_job_elimination() -> None:
-    summary = TrendSummaryService().summarize(
-        _result(
-            signal="automation_exposure",
-            data={
-                "exposure_level": "medium",
-                "risk_reason": "Routine work can be assisted.",
-                "at_risk_tasks": ["Documentation drafts"],
-                "protected_tasks": ["Security review"],
-            },
-            confidence="medium",
-        )
-    )
-
-    assert "Documentation drafts" in summary.answer
-    assert "Security review" in summary.answer
-    assert "không phải dự báo role sẽ bị đào thải" in summary.answer
-
-
 def test_insufficient_evidence_summary_surfaces_available_snapshot_metrics() -> None:
     summary = TrendSummaryService().summarize(
         _result(
@@ -101,3 +82,4 @@ def _result(
             limitations=["One snapshot is not a trend."],
         ),
     )
+

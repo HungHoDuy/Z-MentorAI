@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import unicodedata
@@ -16,8 +16,7 @@ INTENT_ALIASES = {
     "hot_trend": TrendQueryIntent.CURRENT_DEMAND,
     "skill_demand": TrendQueryIntent.CURRENT_SKILL_DEMAND,
     "current_skill_demand": TrendQueryIntent.CURRENT_SKILL_DEMAND,
-    "displacement_risk": TrendQueryIntent.AUTOMATION_EXPOSURE,
-    "automation_exposure": TrendQueryIntent.AUTOMATION_EXPOSURE,
+    "displacement_risk": TrendQueryIntent.EXTERNAL_OUTLOOK,
     "external_outlook": TrendQueryIntent.EXTERNAL_OUTLOOK,
     "hiring_outlook": TrendQueryIntent.EXTERNAL_OUTLOOK,
     "supply_gap": TrendQueryIntent.DEMAND_PRESSURE,
@@ -124,7 +123,7 @@ class TrendQueryNormalizer:
 def _text_key(value: str | None) -> str:
     if not value:
         return ""
-    text = str(value).replace("đ", "d").replace("Đ", "D")
+    text = str(value).replace("Ä‘", "d").replace("Ä", "D")
     text = unicodedata.normalize("NFD", text)
     text = "".join(character for character in text if unicodedata.category(character) != "Mn")
     text = text.casefold()
@@ -142,3 +141,4 @@ def _optional_text(value: str | None) -> str | None:
         return None
     text = " ".join(str(value).split())
     return text or None
+

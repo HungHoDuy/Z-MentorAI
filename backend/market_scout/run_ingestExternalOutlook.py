@@ -21,6 +21,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch allowlisted external outlook sources into trend_sources.")
     parser.add_argument("--config", default=str(DEFAULT_EXTERNAL_OUTLOOK_CONFIG_PATH), help="Allowlist JSON path.")
     parser.add_argument("--sources-collection", default=None, help="Target trend source collection.")
+    parser.add_argument("--evidence-collection", default=None, help="Target trend evidence collection.")
+    parser.add_argument("--extract-evidence", action="store_true", help="Use LLM to extract structured evidence claims.")
     parser.add_argument("--timeout-seconds", type=int, default=30, help="HTTP fetch timeout per source.")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and validate without writing Firestore.")
     parser.add_argument("--verbose", action="store_true", help="Enable detailed logs.")
@@ -38,8 +40,13 @@ def main() -> None:
 
     result = IngestExternalOutlookSourcesPipeline(
         source_collection=args.sources_collection,
+        evidence_collection=args.evidence_collection,
         fetch_timeout_seconds=args.timeout_seconds,
-    ).run(source_configs=source_configs, dry_run=args.dry_run)
+    ).run(
+        source_configs=source_configs,
+        dry_run=args.dry_run,
+        extract_evidence=args.extract_evidence,
+    )
 
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from backend.market_scout.pipelines.trend_tracker.ingest_trend_evidence_pipeline import (
+    trend_evidence_to_document,
     trend_source_to_document,
 )
 from backend.market_scout.repositories.salary_benchmark.salary_repository import (
@@ -19,10 +20,14 @@ from backend.market_scout.repositories.salary_benchmark.salary_repository import
     load_env_file,
 )
 from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import (
+    DEFAULT_TREND_EVIDENCE_COLLECTION,
     DEFAULT_TREND_SOURCE_COLLECTION,
     trend_source_from_document,
 )
-from backend.market_scout.schemas.trend_tracker.trend_external_evidence import TrendSource
+from backend.market_scout.schemas.trend_tracker.trend_external_evidence import TrendEvidence, TrendSource
+from backend.market_scout.services.trend_tracker.external_outlook_evidence_extractor import (
+    ExternalOutlookEvidenceExtractor,
+)
 
 
 DEFAULT_EXTERNAL_OUTLOOK_CONFIG_PATH = (
@@ -60,24 +65,32 @@ class ExternalOutlookSourceFetch:
 @dataclass(frozen=True)
 class IngestExternalOutlookSourcesResult:
     source_collection: str
+    evidence_collection: str
     configured_sources: int
     fetched_sources: int
     changed_sources: int
     skipped_unchanged_sources: int
     failed_sources: int
     written_source_records: int
+    extracted_evidence_records: int
+    written_evidence_records: int
+    extracted_by_family: dict[str, int]
     dry_run: bool
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": "success",
             "source_collection": self.source_collection,
+            "evidence_collection": self.evidence_collection,
             "configured_sources": self.configured_sources,
             "fetched_sources": self.fetched_sources,
             "changed_sources": self.changed_sources,
             "skipped_unchanged_sources": self.skipped_unchanged_sources,
             "failed_sources": self.failed_sources,
             "written_source_records": self.written_source_records,
+            "extracted_evidence_records": self.extracted_evidence_records,
+            "written_evidence_records": self.written_evidence_records,
+            "extracted_by_family": dict(self.extracted_by_family),
             "dry_run": self.dry_run,
         }
 
@@ -90,7 +103,9 @@ class IngestExternalOutlookSourcesPipeline:
         *,
         firestore_client: Any | None = None,
         source_collection: str | None = None,
+        evidence_collection: str | None = None,
         fetcher: Callable[[str, int], bytes] | None = None,
+        evidence_extractor: ExternalOutlookEvidenceExtractor | None = None,
         fetch_timeout_seconds: int = DEFAULT_FETCH_TIMEOUT_SECONDS,
     ) -> None:
         load_env_file()
@@ -98,7 +113,11 @@ class IngestExternalOutlookSourcesPipeline:
         self.source_collection = source_collection or env_or_default(
             "MARKET_SCOUT_TREND_SOURCE_COLLECTION", DEFAULT_TREND_SOURCE_COLLECTION
         )
+        self.evidence_collection = evidence_collection or env_or_default(
+            "MARKET_SCOUT_TREND_EVIDENCE_COLLECTION", DEFAULT_TREND_EVIDENCE_COLLECTION
+        )
         self.fetcher = fetcher or fetch_url_bytes
+        self.evidence_extractor = evidence_extractor
         self.fetch_timeout_seconds = fetch_timeout_seconds
 
     def run(
@@ -106,12 +125,15 @@ class IngestExternalOutlookSourcesPipeline:
         *,
         source_configs: list[ExternalOutlookSourceConfig],
         dry_run: bool = False,
+        extract_evidence: bool = False,
     ) -> IngestExternalOutlookSourcesResult:
         if not source_configs:
             raise ValueError("At least one external outlook source must be configured.")
 
         _validate_unique_sources(source_configs)
         fetched: list[ExternalOutlookSourceFetch] = []
+        extracted_evidence: list[TrendEvidence] = []
+        fetched_at = date.today()
         for config in source_configs:
             _validate_source_url(config)
             try:
@@ -132,36 +154,54 @@ class IngestExternalOutlookSourcesPipeline:
             content_hash = _content_hash(content)
             existing_hash = None if dry_run else self._existing_content_hash(config.source_id)
             changed = dry_run or existing_hash != content_hash
-            fetched.append(
-                ExternalOutlookSourceFetch(
-                    config=config,
-                    content_hash=content_hash,
-                    content_bytes=len(content),
-                    changed=changed,
-                    skipped_reason=None if changed else "content_hash_unchanged",
-                )
+            fetch_record = ExternalOutlookSourceFetch(
+                config=config,
+                content_hash=content_hash,
+                content_bytes=len(content),
+                changed=changed,
+                skipped_reason=None if changed else "content_hash_unchanged",
             )
+            fetched.append(fetch_record)
+            if extract_evidence:
+                source = _to_trend_source(config, content_hash=content_hash, fetched_at=fetched_at)
+                extracted_evidence.extend(self._extract_evidence(source=source, content=content))
 
         changed_records = [record for record in fetched if record.changed and record.content_hash]
-        if not dry_run and changed_records:
+        if not dry_run and (changed_records or extracted_evidence):
             batch = self._firestore_client().batch()
-            collection = self._firestore_client().collection(self.source_collection)
-            fetched_at = date.today()
+            source_collection = self._firestore_client().collection(self.source_collection)
+            evidence_collection = self._firestore_client().collection(self.evidence_collection)
             for record in changed_records:
                 source = _to_trend_source(record.config, content_hash=record.content_hash, fetched_at=fetched_at)
-                batch.set(collection.document(source.source_id), trend_source_to_document(source), merge=True)
+                batch.set(source_collection.document(source.source_id), trend_source_to_document(source), merge=True)
+            for evidence in extracted_evidence:
+                batch.set(evidence_collection.document(evidence.evidence_id), trend_evidence_to_document(evidence), merge=True)
             batch.commit()
 
         return IngestExternalOutlookSourcesResult(
             source_collection=self.source_collection,
+            evidence_collection=self.evidence_collection,
             configured_sources=len(source_configs),
             fetched_sources=len(fetched),
             changed_sources=len(changed_records),
             skipped_unchanged_sources=sum(1 for record in fetched if record.skipped_reason == "content_hash_unchanged"),
             failed_sources=sum(1 for record in fetched if record.skipped_reason == "fetch_failed"),
             written_source_records=0 if dry_run else len(changed_records),
+            extracted_evidence_records=len(extracted_evidence),
+            written_evidence_records=0 if dry_run else len(extracted_evidence),
+            extracted_by_family=_count_evidence_by_family(extracted_evidence),
             dry_run=dry_run,
         )
+
+    def _extract_evidence(self, *, source: TrendSource, content: bytes) -> list[TrendEvidence]:
+        try:
+            return (self.evidence_extractor or ExternalOutlookEvidenceExtractor()).extract(
+                source=source,
+                content_text=_decode_content(content),
+            )
+        except Exception as error:  # noqa: BLE001 - extraction errors should not fail source ingestion.
+            LOGGER.warning("Failed to extract external outlook evidence from %s: %s", source.source_id, error)
+            return []
 
     def _existing_content_hash(self, source_id: str) -> str | None:
         snapshot = self._firestore_client().collection(self.source_collection).document(source_id).get()
@@ -200,6 +240,23 @@ def fetch_url_bytes(url: str, timeout_seconds: int) -> bytes:
     )
     with urlopen(request, timeout=timeout_seconds) as response:
         return response.read()
+
+
+def _count_evidence_by_family(evidence_records: list[TrendEvidence]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for evidence in evidence_records:
+        for family_id in evidence.job_family_ids:
+            counts[family_id] = counts.get(family_id, 0) + 1
+    return counts
+
+
+def _decode_content(content: bytes) -> str:
+    for encoding in ("utf-8", "utf-8-sig", "latin-1"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8", errors="ignore")
 
 
 def _source_config_from_mapping(index: int, data: Mapping[str, Any]) -> ExternalOutlookSourceConfig:
