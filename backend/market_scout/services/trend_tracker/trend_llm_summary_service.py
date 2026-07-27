@@ -60,6 +60,7 @@ class TrendLlmSummaryService:
             answer = _response_to_text(response).strip()
             if not _is_complete_answer(answer):
                 raise ValueError("LLM returned an incomplete trend summary.")
+            answer = _append_external_source_links(answer, result)
         except Exception:
             return fallback
 
@@ -112,6 +113,41 @@ def _is_complete_answer(answer: str) -> bool:
     if len(answer) < 40:
         return False
     return re.search(r"[.!?]\s*$", answer) is not None
+
+
+def _append_external_source_links(answer: str, result: TrendTrackerFlowResult) -> str:
+    if result.signal.signal != "external_outlook":
+        return answer
+    sources = result.signal.sources
+    if not sources or any(str(source.get("url") or "") in answer for source in sources if isinstance(source, dict)):
+        return answer
+
+    source_lines = _source_link_lines(sources)
+    if not source_lines:
+        return answer
+    return f"{answer.rstrip()}\n\nNguon tham khao:\n" + "\n".join(source_lines)
+
+
+def _source_link_lines(sources: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    seen_urls: set[str] = set()
+    for source in sources[:5]:
+        if not isinstance(source, dict):
+            continue
+        url = str(source.get("url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        publisher = _display_source_part(source.get("publisher"))
+        source_name = _display_source_part(source.get("source_name") or source.get("citation"))
+        label = " - ".join(part for part in (publisher, source_name) if part)
+        lines.append(f"- [{label or 'Nguon tham khao'}]({url})")
+    return lines
+
+
+def _display_source_part(value: Any) -> str:
+    text = " ".join(str(value or "").replace("_", " ").replace("-", " ").split())
+    return text[:80].strip()
 
 def _response_to_text(response: Any) -> str:
     content = getattr(response, "content", response)

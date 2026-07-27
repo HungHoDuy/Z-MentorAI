@@ -54,7 +54,9 @@ def test_salary_summary_service_invokes_llm_with_benchmark_payload() -> None:
 
     summary = service.summarize("Luong Sales B2B o HCM", make_benchmark())
 
-    assert summary.answer == "Muc luong tham khao khoang 12 - 17 trieu VND/thang."
+    assert summary.answer.startswith("Muc luong tham khao khoang 12 - 17 trieu VND/thang.")
+    assert "Mot so JD lien quan ban co the tham khao:" in summary.answer
+    assert "[ABC - Sales Executive B2B](https://example.com/job): 12 - 17 trieu VND/thang" in summary.answer
     assert summary.model_name == "fake-gemini"
     assert fake_llm.messages is not None
     payload = json.loads(fake_llm.messages[1].content)
@@ -62,3 +64,11 @@ def test_salary_summary_service_invokes_llm_with_benchmark_payload() -> None:
     assert payload["benchmark"]["salary_range_text"] == "12 - 17 trieu VND/thang"
     assert payload["benchmark"]["confidence"] == "high"
     assert payload["instructions"]["do_not_recalculate_salary"] is True
+
+def test_salary_summary_service_does_not_duplicate_job_links() -> None:
+    answer = "Muc luong tham khao. Source: https://example.com/job"
+    service = SalarySummaryService(llm=FakeLLM(answer), model_name="fake-gemini")
+
+    summary = service.summarize("Luong Sales B2B o HCM", make_benchmark())
+
+    assert summary.answer == answer
