@@ -648,6 +648,14 @@ Format bài viết bằng GitHub Markdown đẹp mắt.
             logger.info(f"Saved Gantt chart to Firestore collection '{GANTT_COLLECTION_NAME}' with ID: {chart_id}")
         except Exception as ex:
             logger.error(f"Failed to save Gantt chart in Firestore: {ex}")
+    else:
+        try:
+            db_local = read_gantt_db()
+            db_local[chart_id] = chart_payload
+            write_gantt_db(db_local)
+            logger.info(f"Saved Gantt chart to local JSON with ID: {chart_id}")
+        except Exception as ex:
+            logger.error(f"Failed to save Gantt chart to local JSON: {ex}")
 
     total_duration = (time.perf_counter() - t_start) * 1000.0
     await emit_progress(task_id, "GANTT_ROADMAP_COMPLETE", "COMPLETED", total_duration, f"Gantt roadmap generated and saved successfully. Chart ID: {chart_id}")
@@ -668,7 +676,7 @@ Format bài viết bằng GitHub Markdown đẹp mắt.
 @app.post("/chart/{chart_id}/get-alternatives")
 async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest):
     """Course Swap Step 1: Search top 5 alternative courses in Coursera vector database for a specified task."""
-    db = get_firestore_client()
+    db = get_firestore_client() if USE_FIRESTORE else None
     doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id).get() if USE_FIRESTORE else None
     
     skill_query = request.skill_name or "Chuyên môn"
@@ -682,6 +690,16 @@ async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest
                 skill_query = t.get("skill_name") or skill_query
                 current_course_id = t.get("course_id") or ""
                 break
+    elif not USE_FIRESTORE:
+        db_local = read_gantt_db()
+        if chart_id in db_local:
+            chart_data = db_local[chart_id]
+            tasks = chart_data.get("tasks", [])
+            for t in tasks:
+                if t.get("task_id") == request.task_id:
+                    skill_query = t.get("skill_name") or skill_query
+                    current_course_id = t.get("course_id") or ""
+                    break
 
     # Vector search top 6 courses to exclude the current course
     results, _ = await asyncio.to_thread(perform_vector_search, skill_query, "description", "computer-science", 6)
@@ -699,30 +717,41 @@ async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest
 @app.post("/chart/{chart_id}/swap-course")
 async def swap_course(chart_id: str, request: SwapCourseRequest):
     """Course Swap Step 2: Replace specified task course with selected alternative ID and recalculate Gantt timeline."""
-    if not USE_FIRESTORE:
-        raise HTTPException(status_code=400, detail="Firestore is required for Gantt chart updates.")
+    if USE_FIRESTORE:
+        db = get_firestore_client()
+        doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
+        chart_data = doc.to_dict() or {}
+    else:
+        db_local = read_gantt_db()
+        if chart_id not in db_local:
+            raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
+        chart_data = db_local[chart_id]
 
-    db = get_firestore_client()
-    doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id)
-    doc = doc_ref.get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
-
-    chart_data = doc.to_dict() or {}
     tasks = chart_data.get("tasks", [])
 
-    # Fetch selected course details from Coursera catalog
-    col_ref = db.collection(COLLECTION_NAME)
-    course_doc = col_ref.document(request.selected_course_id).get()
-    
     selected_name = "Alternative Course"
     selected_url = ""
 
-    if course_doc.exists:
-        c_data = course_doc.to_dict() or {}
-        selected_name = c_data.get("name") or selected_name
-        slug = c_data.get("slug")
-        selected_url = f"https://www.coursera.org/learn/{slug}" if slug else ""
+    if USE_FIRESTORE:
+        # Fetch selected course details from Coursera catalog
+        col_ref = db.collection(COLLECTION_NAME)
+        course_doc = col_ref.document(request.selected_course_id).get()
+        if course_doc.exists:
+            c_data = course_doc.to_dict() or {}
+            selected_name = c_data.get("name") or selected_name
+            slug = c_data.get("slug")
+            selected_url = f"https://www.coursera.org/learn/{slug}" if slug else ""
+    else:
+        # If no firestore, do a quick vector search to get the details
+        results, _ = await asyncio.to_thread(perform_vector_search, request.selected_course_id, "name", "computer-science", 10)
+        for c in results:
+            if c["course_id"] == request.selected_course_id:
+                selected_name = c.get("name") or selected_name
+                selected_url = c.get("url") or ""
+                break
 
     # Find and update task
     task_found = False
@@ -758,19 +787,36 @@ async def swap_course(chart_id: str, request: SwapCourseRequest):
         "gantt_chart": {"tasks": tasks}
     }
 
+GANTT_DB_PATH = os.path.join(os.path.dirname(__file__), "gantt_db.json")
+
+def read_gantt_db() -> dict:
+    if not os.path.exists(GANTT_DB_PATH):
+        return {}
+    try:
+        with open(GANTT_DB_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def write_gantt_db(db: dict):
+    with open(GANTT_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(db, f, indent=2, ensure_ascii=False)
+
 # --- Endpoint 5: Backend Excel Generation (/chart/{chart_id}/excel) ---
 @app.get("/chart/{chart_id}/excel")
 async def export_gantt_excel(chart_id: str):
     """Generate and stream an openpyxl Excel (.xlsx) workbook for the specified Gantt roadmap."""
-    if not USE_FIRESTORE:
-        raise HTTPException(status_code=400, detail="Firestore is required for Excel export.")
-
-    db = get_firestore_client()
-    doc = db.collection(GANTT_COLLECTION_NAME).document(chart_id).get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
-
-    chart_data = doc.to_dict() or {}
+    if USE_FIRESTORE:
+        db = get_firestore_client()
+        doc = db.collection(GANTT_COLLECTION_NAME).document(chart_id).get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
+        chart_data = doc.to_dict() or {}
+    else:
+        db_local = read_gantt_db()
+        if chart_id not in db_local:
+            raise HTTPException(status_code=404, detail=f"Gantt chart '{chart_id}' not found.")
+        chart_data = db_local[chart_id]
     tasks = chart_data.get("tasks", [])
     career_goal = chart_data.get("career_goal", "Lộ Trình Học Tập")
 

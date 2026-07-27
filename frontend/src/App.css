@@ -2320,6 +2320,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
 }
 
 .calendar-sync-btn:hover {
@@ -2467,6 +2468,7 @@
   color: #475569;
   cursor: pointer;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .calendar-cancel-btn:hover {
