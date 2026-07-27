@@ -193,7 +193,7 @@ class MarketScoutAgent:
             )
             flow_start = perf_counter()
             trend_flow = self.trend_flow or TrendTrackerFlow()
-            flow_result = trend_flow.run(trend_input)
+            flow_result = _run_trend_flow(trend_flow, trend_input, request.user_query)
             _log_event(
                 "market_scout_step",
                 agent="market_scout",
@@ -286,6 +286,7 @@ class MarketScoutAgent:
             "job_category_hint": getattr(trend_query, "job_category_hint", None),
             "job_family_hint": getattr(trend_query, "job_family_hint", None),
         }
+        extracted.update(_external_outlook_scope_defaults(user_query, extracted))
         return {
             key: value
             for key, value in extracted.items()
@@ -351,6 +352,12 @@ class MarketScoutAgent:
         )
 
 
+def _run_trend_flow(trend_flow: Any, trend_input: TrendQueryInput, user_query: str) -> Any:
+    if "user_query" in inspect.signature(trend_flow.run).parameters:
+        return trend_flow.run(trend_input, user_query=user_query)
+    return trend_flow.run(trend_input)
+
+
 async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
@@ -376,7 +383,7 @@ def _trend_intent_or_default(value: Any, market_intent: MarketScoutIntent) -> Tr
         except ValueError:
             pass
     if market_intent is MarketScoutIntent.INDUSTRY_DECLINE_RISK:
-        return TrendQueryIntent.AUTOMATION_EXPOSURE
+        return TrendQueryIntent.EXTERNAL_OUTLOOK
     if market_intent is MarketScoutIntent.JOB_DEMAND_FORECAST:
         return TrendQueryIntent.EXTERNAL_OUTLOOK
     return TrendQueryIntent.CURRENT_DEMAND
@@ -384,6 +391,25 @@ def _trend_intent_or_default(value: Any, market_intent: MarketScoutIntent) -> Tr
 
 def _trend_intent_from_query(query: str) -> str | None:
     normalized = _query_key(query)
+    if any(keyword in normalized for keyword in ("nganh nao", "nghe nao", "cong viec nao", "job nao")):
+        return TrendQueryIntent.EXTERNAL_OUTLOOK.value
+    if any(
+        keyword in normalized
+        for keyword in (
+            "2026",
+            "2027",
+            "tuong lai",
+            "du bao",
+            "forecast",
+            "outlook",
+            "trien vong",
+            "xu huong",
+            "phat trien",
+            "vai nam toi",
+            "con phat trien",
+        )
+    ):
+        return TrendQueryIntent.EXTERNAL_OUTLOOK.value
     if any(keyword in normalized for keyword in ("skill", "ky nang", "yeu cau")):
         return TrendQueryIntent.CURRENT_SKILL_DEMAND.value
     return None
@@ -394,6 +420,21 @@ def _query_key(value: Any) -> str:
     text = unicodedata.normalize("NFD", text)
     text = "".join(character for character in text if unicodedata.category(character) != "Mn")
     return text.casefold()
+
+
+def _external_outlook_scope_defaults(user_query: str, entities: dict[str, Any]) -> dict[str, Any]:
+    if entities.get("trend_intent") != TrendQueryIntent.EXTERNAL_OUTLOOK.value:
+        return {}
+    normalized = _query_key(user_query)
+    defaults: dict[str, Any] = {}
+    if not entities.get("job_family_id") and not entities.get("resolved_job_family_id"):
+        if any(keyword in normalized for keyword in ("it", "cntt", "cong nghe", "phan mem", "software", "ai", "data")):
+            defaults["job_family_id"] = "digital_telecom"
+        elif any(keyword in normalized for keyword in ("sale", "sales", "kinh doanh", "ban hang", "marketing", "ecommerce", "thuong mai")):
+            defaults["job_family_id"] = "commercial"
+    if not entities.get("location_id") and not entities.get("location") and not entities.get("location_text"):
+        defaults["location_id"] = "vietnam"
+    return defaults
 
 
 def _job_sources_or_empty(value: Any) -> list[dict[str, Any]]:
@@ -469,4 +510,18 @@ _TREND_KEYWORDS = (
     "viec lam",
     "co tuyen dung",
     "co dang tuyen",
+    "2026",
+    "2027",
+    "tuong lai",
+    "du bao",
+    "outlook",
+    "trien vong",
+    "xu huong",
+    "phat trien",
+    "vai nam toi",
+    "con phat trien",
 )
+
+
+
+

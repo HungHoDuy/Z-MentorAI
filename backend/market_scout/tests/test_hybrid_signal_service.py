@@ -1,6 +1,5 @@
 from datetime import date
 
-from backend.market_scout.schemas.trend_tracker.automation_risk import AutomationExposureSignal
 from backend.market_scout.schemas.trend_tracker.current_skill_demand import CurrentSkillDemandSignal, SkillFrequency
 from backend.market_scout.schemas.trend_tracker.job_family_trend_snapshot import JobFamilyTrendSnapshot
 from backend.market_scout.schemas.trend_tracker.trend_external_evidence import (
@@ -40,25 +39,6 @@ class FakeSkillFrequencyService:
         )
 
 
-class FakeAutomationExposureService:
-    def __init__(self) -> None:
-        self.called = False
-
-    def evaluate(self, job_category_id: str) -> AutomationExposureSignal:
-        self.called = True
-        return AutomationExposureSignal(
-            signal="automation_exposure",
-            job_category_id=job_category_id,
-            exposure_level="medium",
-            risk_reason="Routine tasks can be assisted.",
-            protected_tasks=["Judgment"],
-            at_risk_tasks=["Routine entry"],
-            confidence="medium",
-            source_url="https://example.com/automation",
-            limitations=["Global evidence."],
-        )
-
-
 class FakeEvidenceRepository:
     def __init__(self, evidence: list[TrendEvidenceMatch]) -> None:
         self.evidence = evidence
@@ -69,17 +49,28 @@ class FakeEvidenceRepository:
         return self.evidence
 
 
+class FakeLiveSearchService:
+    def __init__(self, evidence: list[TrendEvidenceMatch], *, raises: bool = False) -> None:
+        self.evidence = evidence
+        self.raises = raises
+        self.calls: list[dict[str, object]] = []
+
+    def search(self, user_query: str, query: TrendQuery) -> list[TrendEvidenceMatch]:
+        self.calls.append({"user_query": user_query, "query": query})
+        if self.raises:
+            raise TimeoutError("live search timed out")
+        return self.evidence
+
+
 def test_insufficient_internal_sample_stops_all_downstream_signals() -> None:
     skills = FakeSkillFrequencyService()
-    automation = FakeAutomationExposureService()
     evidence = FakeEvidenceRepository([_evidence_match()])
-    result = _service(_snapshot_read(active_jobs=9, companies=3), skills, automation, evidence).evaluate(_query())
+    result = _service(_snapshot_read(active_jobs=9, companies=3), skills, evidence).evaluate(_query())
 
     assert result.signal == "insufficient_evidence"
     assert result.confidence == "low"
     assert not result.directional_trend
     assert not skills.called
-    assert not automation.called
     assert evidence.calls == 0
 
 
@@ -87,7 +78,6 @@ def test_current_demand_is_low_confidence_without_external_evidence() -> None:
     result = _service(
         _snapshot_read(active_jobs=28, companies=19),
         FakeSkillFrequencyService(),
-        FakeAutomationExposureService(),
         FakeEvidenceRepository([]),
     ).evaluate(_query())
 
@@ -101,7 +91,6 @@ def test_current_demand_becomes_medium_confidence_with_matching_external_evidenc
     result = _service(
         _snapshot_read(active_jobs=28, companies=19),
         FakeSkillFrequencyService(),
-        FakeAutomationExposureService(),
         FakeEvidenceRepository([_evidence_match()]),
     ).evaluate(_query())
 
@@ -116,7 +105,6 @@ def test_current_skill_demand_remains_internal_only_low_confidence() -> None:
     result = _service(
         _snapshot_read(active_jobs=28, companies=19),
         skills,
-        FakeAutomationExposureService(),
         FakeEvidenceRepository([_evidence_match()]),
     ).evaluate(_query(intent=TrendQueryIntent.CURRENT_SKILL_DEMAND))
 
@@ -126,30 +114,10 @@ def test_current_skill_demand_remains_internal_only_low_confidence() -> None:
     assert skills.called
 
 
-def test_automation_exposure_requires_category_and_returns_task_signal() -> None:
-    automation = FakeAutomationExposureService()
-    service = _service(
-        _snapshot_read(active_jobs=28, companies=19),
-        FakeSkillFrequencyService(),
-        automation,
-        FakeEvidenceRepository([]),
-    )
-
-    missing_category = service.evaluate(_query(intent=TrendQueryIntent.AUTOMATION_EXPOSURE, category=None))
-    available = service.evaluate(_query(intent=TrendQueryIntent.AUTOMATION_EXPOSURE, category="software_it"))
-
-    assert missing_category.signal == "insufficient_evidence"
-    assert available.signal == "automation_exposure"
-    assert available.confidence == "medium"
-    assert available.data["at_risk_tasks"] == ["Routine entry"]
-    assert automation.called
-
-
 def test_external_outlook_returns_cited_claims_without_directional_internal_trend() -> None:
     result = _service(
         _snapshot_read(active_jobs=28, companies=19),
         FakeSkillFrequencyService(),
-        FakeAutomationExposureService(),
         FakeEvidenceRepository([_evidence_match()]),
     ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK))
 
@@ -159,18 +127,101 @@ def test_external_outlook_returns_cited_claims_without_directional_internal_tren
     assert not result.directional_trend
 
 
+def test_external_outlook_does_not_require_internal_snapshot() -> None:
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        FakeEvidenceRepository([_evidence_match()]),
+    ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK))
+
+    assert result.signal == "external_outlook"
+    assert result.snapshot_id is None
+    assert result.data["evidence_count"] == 1
+    assert result.sources[0]["url"] == "https://example.com/report"
+
+
+def test_external_outlook_uses_live_search_when_cache_is_empty() -> None:
+    live_search = FakeLiveSearchService([_evidence_match()])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        FakeEvidenceRepository([]),
+        live_search=live_search,
+    ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
+
+    assert result.signal == "external_outlook"
+    assert result.data["evidence_count"] == 1
+    assert live_search.calls[0]["user_query"] == "Sales marketing 2026 outlook"
+
+
+def test_external_outlook_uses_live_search_when_cached_evidence_is_not_relevant() -> None:
+    live_search = FakeLiveSearchService([_evidence_match(claim="Marketing roles need customer and digital skills.")])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        FakeEvidenceRepository([_evidence_match(claim="AI and software skills remain important.")]),
+        live_search=live_search,
+    ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
+
+    assert result.signal == "external_outlook"
+    assert result.data["claims"][0]["exact_claim"] == "Marketing roles need customer and digital skills."
+    assert live_search.calls[0]["user_query"] == "Sales marketing 2026 outlook"
+
+def test_external_outlook_prefers_live_search_before_cached_evidence() -> None:
+    live_search = FakeLiveSearchService([_evidence_match(claim="Live search claim.")])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        FakeEvidenceRepository([_evidence_match(claim="Cached claim.")]),
+        live_search=live_search,
+    ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
+
+    assert result.signal == "external_outlook"
+    assert result.data["claims"][0]["exact_claim"] == "Live search claim."
+    assert live_search.calls[0]["user_query"] == "Sales marketing 2026 outlook"
+
+
+def test_external_outlook_falls_back_to_cached_evidence_when_live_search_is_empty() -> None:
+    live_search = FakeLiveSearchService([])
+    evidence = FakeEvidenceRepository([_evidence_match(claim="Sales marketing cached outlook.")])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        evidence,
+        live_search=live_search,
+    ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
+
+    assert result.signal == "external_outlook"
+    assert result.data["claims"][0]["exact_claim"] == "Sales marketing cached outlook."
+    assert evidence.calls == 1
+
+
+def test_external_outlook_falls_back_to_cached_evidence_when_live_search_times_out() -> None:
+    live_search = FakeLiveSearchService([], raises=True)
+    evidence = FakeEvidenceRepository([_evidence_match(claim="Sales marketing cached outlook.")])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        evidence,
+        live_search=live_search,
+    ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
+
+    assert result.signal == "external_outlook"
+    assert result.data["claims"][0]["exact_claim"] == "Sales marketing cached outlook."
+    assert evidence.calls == 1
+
 def _service(
-    snapshot_read: TrendSnapshotReadResult,
+    snapshot_read: TrendSnapshotReadResult | None,
     skills: FakeSkillFrequencyService,
-    automation: FakeAutomationExposureService,
     evidence: FakeEvidenceRepository,
+    live_search: FakeLiveSearchService | None = None,
 ) -> HybridSignalService:
     return HybridSignalService(
         snapshot_repository=FakeSnapshotRepository(snapshot_read),
         current_demand_service=CurrentDemandService(),
         skill_frequency_service=skills,
-        automation_exposure_service=automation,
         evidence_repository=evidence,
+        live_search_service=live_search,
     )
 
 
@@ -211,7 +262,7 @@ def _snapshot_read(*, active_jobs: int, companies: int) -> TrendSnapshotReadResu
     )
 
 
-def _evidence_match() -> TrendEvidenceMatch:
+def _evidence_match(*, claim: str = "A reviewed external outlook claim.") -> TrendEvidenceMatch:
     return TrendEvidenceMatch(
         source=TrendSource(
             source_id="report-q2",
@@ -235,10 +286,19 @@ def _evidence_match() -> TrendEvidenceMatch:
             location_ids=["ha-noi"],
             period="2026-Q2",
             direction="increase",
-            exact_claim="A reviewed external outlook claim.",
+            exact_claim=claim,
             metric_value=18,
             metric_unit="percent_qoq",
             citation="Page 12",
             confidence="medium",
         ),
     )
+
+
+
+
+
+
+
+
+

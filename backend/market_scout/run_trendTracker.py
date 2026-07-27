@@ -27,9 +27,10 @@ def main() -> None:
         "location_id": args.location_id,
         "location": args.location,
     }
+    intent_hint = _market_intent(args.trend_intent) if args.trend_intent else None
     request = MarketScoutRequest(
         user_query=args.query or "Trend Tracker structured test request.",
-        intent_hint=_market_intent(args.trend_intent),
+        intent_hint=intent_hint,
         entities_hint={key: value for key, value in entities.items() if value is not None},
     )
     response = asyncio.run(MarketScoutAgent().run(request))
@@ -38,7 +39,7 @@ def main() -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one structured Trend Tracker query.")
-    parser.add_argument("--trend-intent", choices=[intent.value for intent in TrendQueryIntent], default="current_demand")
+    parser.add_argument("--trend-intent", choices=[intent.value for intent in TrendQueryIntent], default=None)
     parser.add_argument("--job-family-id", default=None)
     parser.add_argument("--job-category-id", default=None)
     parser.add_argument("--job-category", default=None)
@@ -49,8 +50,6 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _market_intent(trend_intent: str) -> MarketScoutIntent:
-    if trend_intent == TrendQueryIntent.AUTOMATION_EXPOSURE.value:
-        return MarketScoutIntent.INDUSTRY_DECLINE_RISK
     if trend_intent == TrendQueryIntent.EXTERNAL_OUTLOOK.value:
         return MarketScoutIntent.JOB_DEMAND_FORECAST
     return MarketScoutIntent.TREND_TRACKER
@@ -58,3 +57,4 @@ def _market_intent(trend_intent: str) -> MarketScoutIntent:
 
 if __name__ == "__main__":
     main()
+

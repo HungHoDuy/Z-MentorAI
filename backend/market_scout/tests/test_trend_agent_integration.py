@@ -3,6 +3,7 @@ import asyncio
 from backend.market_scout.agent import MarketScoutAgent
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlowResult
 from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest
+from backend.market_scout.schemas.market_scout_query_understanding import MarketScoutQueryUnderstanding
 from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryInput, TrendQueryIntent
 from backend.market_scout.services.trend_tracker.trend_entity_extractor_service import TrendEntityExtractorService
@@ -33,13 +34,17 @@ class FakeRoleResolutionResult:
     matches = []
 
 
+class FakeQueryUnderstandingService:
+    def understand(self, user_query: str) -> MarketScoutQueryUnderstanding:
+        return MarketScoutQueryUnderstanding(intent=MarketScoutIntent.TREND_TRACKER, confidence="low")
+
 class FakeTrendSummaryService:
     def summarize(self, result: TrendTrackerFlowResult):
         return TrendSummaryService().summarize(result)
 
 def test_agent_routes_structured_trend_request_through_flow_and_summary() -> None:
     trend_flow = FakeTrendFlow(_trend_result())
-    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService(), query_understanding_service=FakeQueryUnderstandingService())
     request = MarketScoutRequest(
         user_query="Nhu cau tuyen dung phan mem tai Ha Noi ra sao?",
         intent_hint=MarketScoutIntent.TREND_TRACKER,
@@ -66,9 +71,9 @@ def test_agent_routes_structured_trend_request_through_flow_and_summary() -> Non
     assert response.sources[0]["url"] == "https://example.com/report"
 
 
-def test_agent_maps_decline_risk_to_automation_exposure_by_default() -> None:
+def test_agent_maps_decline_risk_to_external_outlook_by_default() -> None:
     trend_flow = FakeTrendFlow(_trend_result())
-    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService(), query_understanding_service=FakeQueryUnderstandingService())
 
     asyncio.run(
         agent.run(
@@ -80,14 +85,14 @@ def test_agent_maps_decline_risk_to_automation_exposure_by_default() -> None:
         )
     )
 
-    assert trend_flow.inputs[0].intent == TrendQueryIntent.AUTOMATION_EXPOSURE
+    assert trend_flow.inputs[0].intent == TrendQueryIntent.EXTERNAL_OUTLOOK
 
 
 
 
 def test_agent_maps_legacy_market_scout_industry_to_trend_category_and_location() -> None:
     trend_flow = FakeTrendFlow(_trend_result())
-    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService(), query_understanding_service=FakeQueryUnderstandingService())
 
     asyncio.run(
         agent.run(
@@ -112,6 +117,7 @@ def test_agent_resolves_legacy_target_role_with_role_fact_search() -> None:
         trend_flow=trend_flow,
         response_composer=FakeTrendSummaryService(),
         trend_entity_extractor=TrendEntityExtractorService(role_search_service=FakeRoleSearchService()),
+        query_understanding_service=FakeQueryUnderstandingService(),
     )
 
     asyncio.run(
@@ -129,6 +135,7 @@ def test_agent_resolves_legacy_target_role_with_role_fact_search() -> None:
         job_family_id="digital_telecom",
         job_category_id="software_it",
         location_id="ha-noi",
+        role_mention="backend engineer",
     )
 
 
@@ -136,7 +143,7 @@ def test_agent_resolves_legacy_target_role_with_role_fact_search() -> None:
 
 def test_agent_uses_resolved_role_category_and_family_for_trend_query() -> None:
     trend_flow = FakeTrendFlow(_trend_result())
-    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService(), query_understanding_service=FakeQueryUnderstandingService())
 
     asyncio.run(
         agent.run(
@@ -161,7 +168,7 @@ def test_agent_uses_resolved_role_category_and_family_for_trend_query() -> None:
 
 def test_agent_extracts_job_family_and_location_from_user_query() -> None:
     trend_flow = FakeTrendFlow(_trend_result())
-    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService(), query_understanding_service=FakeQueryUnderstandingService())
 
     asyncio.run(
         agent.run(
@@ -181,7 +188,7 @@ def test_agent_extracts_job_family_and_location_from_user_query() -> None:
 
 def test_agent_extracts_job_category_and_location_from_user_query() -> None:
     trend_flow = FakeTrendFlow(_trend_result())
-    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService())
+    agent = MarketScoutAgent(trend_flow=trend_flow, response_composer=FakeTrendSummaryService(), query_understanding_service=FakeQueryUnderstandingService())
 
     asyncio.run(
         agent.run(
@@ -221,4 +228,10 @@ def _trend_result() -> TrendTrackerFlowResult:
             limitations=["One snapshot is not a trend."],
         ),
     )
+
+
+
+
+
+
 

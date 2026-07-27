@@ -180,6 +180,20 @@ def test_market_scout_agent_classifies_skill_questions_as_trend_tracker() -> Non
     assert _trend_intent_from_query(query) == TrendQueryIntent.CURRENT_SKILL_DEMAND.value
 
 
+
+def test_market_scout_agent_classifies_external_outlook_question_as_trend_tracker() -> None:
+    query = "Sales va marketing nam 2026 con trien vong khong?"
+
+    assert _classify_intent(query) is MarketScoutIntent.TREND_TRACKER
+    assert _trend_intent_from_query(query) == TrendQueryIntent.EXTERNAL_OUTLOOK.value
+
+
+def test_market_scout_agent_classifies_future_development_question_as_external_outlook() -> None:
+    query = "Software AI Data trong vai nam toi co con phat trien khong?"
+
+    assert _classify_intent(query) is MarketScoutIntent.TREND_TRACKER
+    assert _trend_intent_from_query(query) == TrendQueryIntent.EXTERNAL_OUTLOOK.value
+
 def _make_flow_result() -> SalaryBenchmarkFlowResult:
     benchmark = SalaryBenchmarkResult(
         job_title="Sales B2B",

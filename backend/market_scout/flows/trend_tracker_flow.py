@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+import inspect
 import json
 import logging
 from time import perf_counter
 from typing import Any
 
-from backend.market_scout.repositories.trend_tracker.automation_risk_repository import AutomationRiskRepository
 from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import TrendEvidenceRepository
 from backend.market_scout.repositories.trend_tracker.trend_job_fact_repository import TrendJobFactRepository
 from backend.market_scout.repositories.trend_tracker.trend_snapshot_repository import TrendSnapshotRepository
 from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryInput, TrendQueryIntent
-from backend.market_scout.services.trend_tracker.automation_exposure_service import AutomationExposureService
 from backend.market_scout.services.trend_tracker.current_demand_service import CurrentDemandService
+from backend.market_scout.services.trend_tracker.external_outlook_live_search_service import ExternalOutlookLiveSearchService
 from backend.market_scout.services.trend_tracker.hybrid_signal_service import HybridSignalService
 from backend.market_scout.services.trend_tracker.role_fact_search_service import RoleFactSearchService
 from backend.market_scout.services.trend_tracker.semantic_role_fact_searcher import SemanticRoleFactSearcher
@@ -89,6 +89,7 @@ class TrendTrackerFlow:
         *,
         as_of_date: date | None = None,
         external_published_after: date | None = None,
+        user_query: str | None = None,
     ) -> TrendTrackerFlowResult:
         normalize_start = perf_counter()
         query = self.query_normalizer.normalize(query_input)
@@ -106,10 +107,12 @@ class TrendTrackerFlow:
             signal = self._evaluate_role_current_demand(query)
             step_name = "trend_role_current_demand_evaluate"
         else:
-            signal = self.hybrid_signal_service.evaluate(
+            signal = _evaluate_hybrid_signal(
+                self.hybrid_signal_service,
                 query,
                 as_of_date=as_of_date,
                 external_published_after=external_published_after,
+                user_query=user_query,
             )
             step_name = "trend_hybrid_signal_evaluate"
         _log_step(
@@ -166,6 +169,23 @@ class TrendTrackerFlow:
             return []
 
 
+def _evaluate_hybrid_signal(
+    service: Any,
+    query: TrendQuery,
+    *,
+    as_of_date: date | None,
+    external_published_after: date | None,
+    user_query: str | None,
+) -> HybridSignalResult:
+    kwargs: dict[str, Any] = {
+        "as_of_date": as_of_date,
+        "external_published_after": external_published_after,
+    }
+    if "user_query" in inspect.signature(service.evaluate).parameters:
+        kwargs["user_query"] = user_query
+    return service.evaluate(query, **kwargs)
+
+
 def _job_sources_from_signal(signal: HybridSignalResult) -> list[dict[str, Any]]:
     source_jobs = signal.data.get("source_jobs") if isinstance(signal.data, dict) else None
     if not isinstance(source_jobs, list):
@@ -179,8 +199,10 @@ def _build_hybrid_signal_service() -> HybridSignalService:
         snapshot_repository=snapshot_repository,
         current_demand_service=CurrentDemandService(),
         skill_frequency_service=SkillFrequencyService(fact_repository=fact_repository),
-        automation_exposure_service=AutomationExposureService(
-            risk_repository=AutomationRiskRepository(),
-        ),
         evidence_repository=TrendEvidenceRepository(),
+        live_search_service=ExternalOutlookLiveSearchService(),
     )
+
+
+
+

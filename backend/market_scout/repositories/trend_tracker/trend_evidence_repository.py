@@ -44,7 +44,25 @@ class TrendEvidenceRepository:
         self,
         *,
         job_family_id: str,
-        location_id: str,
+        location_id: str | None,
+        published_after: date | None = None,
+        min_reliability_score: float = 0.7,
+        limit: int = 10,
+    ) -> list[TrendEvidenceMatch]:
+        location_ids = _external_location_scope(location_id)
+        return self.list_for_external_outlook_scope(
+            job_family_id=job_family_id,
+            location_ids=location_ids,
+            published_after=published_after,
+            min_reliability_score=min_reliability_score,
+            limit=limit,
+        )
+
+    def list_for_external_outlook_scope(
+        self,
+        *,
+        job_family_id: str,
+        location_ids: list[str],
         published_after: date | None = None,
         min_reliability_score: float = 0.7,
         limit: int = 10,
@@ -76,7 +94,7 @@ class TrendEvidenceRepository:
         return select_external_outlook_evidence(
             candidates,
             job_family_id=job_family_id,
-            location_id=location_id,
+            location_ids=location_ids,
             published_after=published_after,
             min_reliability_score=min_reliability_score,
             limit=limit,
@@ -93,7 +111,7 @@ def select_external_outlook_evidence(
     candidates: list[TrendEvidenceMatch],
     *,
     job_family_id: str,
-    location_id: str,
+    location_ids: list[str],
     published_after: date | None,
     min_reliability_score: float,
     limit: int,
@@ -102,8 +120,8 @@ def select_external_outlook_evidence(
         candidate
         for candidate in candidates
         if job_family_id in candidate.evidence.job_family_ids
-        and location_id in candidate.evidence.location_ids
-        and location_id in candidate.source.scope_location_ids
+        and any(location_id in candidate.evidence.location_ids for location_id in location_ids)
+        and any(location_id in candidate.source.scope_location_ids for location_id in location_ids)
         and candidate.source.reliability_score >= min_reliability_score
         and (published_after is None or candidate.source.published_at >= published_after)
     ]
@@ -116,6 +134,12 @@ def select_external_outlook_evidence(
         reverse=True,
     )
     return matches[:limit]
+
+
+def _external_location_scope(location_id: str | None) -> list[str]:
+    if not location_id or location_id in {"vietnam", "all"}:
+        return ["vietnam", "global"]
+    return list(dict.fromkeys([location_id, "vietnam", "global"]))
 
 
 def trend_source_from_document(document_id: str, data: Mapping[str, Any]) -> TrendSource | None:

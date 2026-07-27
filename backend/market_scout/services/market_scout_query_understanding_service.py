@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -159,14 +159,38 @@ def _classify_intent(query: str) -> MarketScoutIntent:
 
 def _fallback_trend_intent(query: str) -> TrendQueryIntent:
     normalized = _text_key(query)
+    if _is_broad_external_outlook_question(normalized):
+        return TrendQueryIntent.EXTERNAL_OUTLOOK
     if any(keyword in normalized for keyword in ("automation", "tu dong hoa", "ai thay the", "thay the", "bi thay the", "mat viec", "ai")):
-        return TrendQueryIntent.AUTOMATION_EXPOSURE
+        return TrendQueryIntent.EXTERNAL_OUTLOOK
     if any(keyword in normalized for keyword in ("skill", "ky nang", "yeu cau")):
         return TrendQueryIntent.CURRENT_SKILL_DEMAND
-    if any(keyword in normalized for keyword in ("outlook", "forecast", "du bao", "tuong lai")):
+    if any(
+        keyword in normalized
+        for keyword in (
+            "outlook",
+            "forecast",
+            "du bao",
+            "tuong lai",
+            "2026",
+            "2027",
+            "xu huong",
+            "trien vong",
+            "phat trien",
+            "vai nam toi",
+            "con phat trien",
+        )
+    ):
         return TrendQueryIntent.EXTERNAL_OUTLOOK
     return TrendQueryIntent.CURRENT_DEMAND
 
+
+def _is_broad_external_outlook_question(normalized: str) -> bool:
+    if any(keyword in normalized for keyword in ("nganh nao", "nghe nao", "cong viec nao", "job nao")):
+        return True
+    if any(keyword in normalized for keyword in ("xu huong", "trien vong", "du bao", "tuong lai", "2026", "2027")):
+        return True
+    return False
 
 def _trend_intent(value: Any) -> TrendQueryIntent:
     text = _optional_text(value)
@@ -284,4 +308,6 @@ _TREND_KEYWORDS = (
     "tu dong hoa",
     "mat viec",
 )
+
+
 
