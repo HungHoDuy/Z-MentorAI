@@ -75,14 +75,14 @@ class SalarySummaryService:
             answer = _response_to_text(response).strip()
             if answer:
                 return SalarySummaryResult(
-                    answer=answer,
+                    answer=_append_salary_source_links(answer, benchmark),
                     model_name=self.model_name,
                 )
         except Exception:
             pass
 
         return SalarySummaryResult(
-            answer=_deterministic_salary_answer(benchmark),
+            answer=_append_salary_source_links(_deterministic_salary_answer(benchmark), benchmark),
             model_name=f"{self.model_name}:fallback",
         )
 
@@ -122,8 +122,60 @@ class SalarySummaryService:
 
 
 
+
+def _append_salary_source_links(answer: str, benchmark: SalaryBenchmarkResult) -> str:
+    sources = list(benchmark.sources or [])
+    if not sources:
+        return answer
+    if any(source.job_url and source.job_url in answer for source in sources):
+        return answer
+
+    lines = _salary_source_link_lines(sources)
+    if not lines:
+        return answer
+    return f"{answer.rstrip()}\n\nMot so JD lien quan ban co the tham khao:\n" + "\n".join(lines)
+
+
+def _salary_source_link_lines(sources: list[Any]) -> list[str]:
+    lines: list[str] = []
+    seen_urls: set[str] = set()
+    for source in sources[:5]:
+        url = str(getattr(source, "job_url", "") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        label = _short_salary_source_label(getattr(source, "company", None), getattr(source, "job_title", None))
+        salary_text = _source_salary_text(source)
+        suffix = f": {salary_text}" if salary_text else ""
+        lines.append(f"- [{label}]({url}){suffix}")
+    return lines
+
+
+def _short_salary_source_label(company: Any, job_title: Any) -> str:
+    company_text = _compact_text(company, fallback="Cong ty")
+    title_text = _compact_text(job_title, fallback="JD lien quan")
+    label = f"{company_text} - {title_text}"
+    words = label.split()
+    if len(words) <= 14:
+        return label
+    return " ".join(words[:14]).rstrip(" -")
+
+
+def _source_salary_text(source: Any) -> str | None:
+    salary_min = getattr(source, "salary_min_vnd", None)
+    salary_max = getattr(source, "salary_max_vnd", None)
+    if salary_min is None and salary_max is None:
+        return None
+    return f"{_format_vnd_million(int(salary_min or 0))} - {_format_vnd_million(int(salary_max or 0))} trieu VND/thang"
+
+
+def _compact_text(value: Any, *, fallback: str) -> str:
+    text = " ".join(str(value or "").replace("_", " ").replace("-", " ").split())
+    return text or fallback
+
 def _load_system_prompt(prompt_file: Path = SYSTEM_PROMPT_FILE) -> str:
     return prompt_file.read_text(encoding="utf-8")
+
 def _salary_range_text(benchmark: SalaryBenchmarkResult) -> str | None:
     if benchmark.salary_range is None:
         return None
