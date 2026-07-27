@@ -101,6 +101,7 @@ class TrendLlmSummaryService:
                 "do_not_claim_directional_trend_when_directional_trend_is_false": True,
                 "preserve_limitations": True,
                 "keep_answer_concise_and_user_friendly": True,
+                "external_outlook_must_include_markdown_source_links": True,
             },
         }
 
