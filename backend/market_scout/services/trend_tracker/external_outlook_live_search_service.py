@@ -129,9 +129,9 @@ def _trend_source_from_search_result(
 ) -> TrendSource:
     return TrendSource(
         source_id=f"{config.source_id}__live__{_short_hash(result.url)}",
-        source_name=config.source_name,
+        source_name=result.title or config.source_name,
         publisher=config.publisher,
-        source_type=config.source_type,
+        source_type="allowlisted_web_result",
         published_at=config.published_at,
         fetched_at=date.today(),
         reliability_score=config.reliability_score,

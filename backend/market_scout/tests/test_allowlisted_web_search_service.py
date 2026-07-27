@@ -48,6 +48,32 @@ def test_search_uses_tavily_allowlist_and_filters_returned_domains() -> None:
     assert http_post.calls[0]["headers"]["Authorization"] == "Bearer test-key"
 
 
+
+def test_search_allows_other_pages_on_configured_domain() -> None:
+    http_post = FakeTavilyPost(
+        {
+            "results": [
+                {
+                    "title": "TopDev AI hiring trends",
+                    "url": "https://topdev.vn/blog/ai-hiring-trends-vietnam",
+                    "content": "AI hiring in Vietnam.",
+                    "score": 0.88,
+                }
+            ]
+        }
+    )
+    service = AllowlistedWebSearchService(
+        api_key="test-key",
+        source_configs=[_source_config("topdev", "https://topdev.vn/vietnam-tech-talents-report-topdev-2024")],
+        http_post=http_post,
+    )
+
+    results = service.search("AI hiring Vietnam", limit=5)
+
+    assert len(results) == 1
+    assert results[0].url == "https://topdev.vn/blog/ai-hiring-trends-vietnam"
+    assert results[0].title == "TopDev AI hiring trends"
+    assert results[0].source_id == "topdev"
 def test_search_deduplicates_urls() -> None:
     source = _source_config("manpower", "https://www.manpower.com.vn/nb/insights/meos/2026")
     service = AllowlistedWebSearchService(
