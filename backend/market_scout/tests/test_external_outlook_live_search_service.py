@@ -56,6 +56,8 @@ def test_live_search_extracts_and_returns_matching_evidence() -> None:
     assert len(matches) == 1
     assert matches[0].source.url == "https://topdev.vn/vietnam-tech-talents-report-topdev-2024"
     assert matches[0].source.source_id.startswith("topdev__live__")
+    assert matches[0].source.source_name == "Vietnam IT outlook"
+    assert matches[0].source.source_type == "allowlisted_web_result"
     assert matches[0].evidence.exact_claim == "AI and software hiring remains relevant."
     assert searcher.calls[0]["query"] == "AI Vietnam 2026 outlook"
     assert extractor.calls[0]["scopes"] == ("it",)
