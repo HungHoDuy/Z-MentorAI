@@ -21,6 +21,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Scrape CareerViet job details from Firestore todo links.")
     parser.add_argument("--todo-collection", default="todo_careerviet")
     parser.add_argument("--dest-collection", default="careerviet_jobs")
+    parser.add_argument("--batch-id", default=None, help="Only scrape todo docs from this weekly batch id.")
     parser.add_argument("--scope", default=None, help="Only scrape todo docs with this scope value.")
     parser.add_argument("--limit", type=int, default=None, help="Max number of remaining jobs to scrape.")
     parser.add_argument("--workers", type=int, default=3)
@@ -54,18 +55,23 @@ def main():
     print(f"Loading todo list from Firestore '{src_collection_name}'...")
     try:
         todo_query = db.collection(src_collection_name)
-        if args.scope:
+        if args.batch_id:
+            todo_query = todo_query.where("batch_id", "==", args.batch_id)
+        elif args.scope:
             todo_query = todo_query.where("scope", "==", args.scope)
         todo_docs = todo_query.stream()
         todo_list = []
         for doc in todo_docs:
             data = doc.to_dict()
+            if args.scope and args.batch_id and data.get("scope") != args.scope:
+                continue
             if "job_id" in data and "href" in data:
                 todo_list.append({
                     "job_id": data["job_id"],
                     "title": data.get("title", f"Job {data['job_id']}"),
                     "href": data["href"],
                     "scope": data.get("scope"),
+                    "batch_id": data.get("batch_id") or args.batch_id,
                 })
         print(f"Loaded {len(todo_list)} total jobs to crawl from Firestore.")
     except Exception as e:
@@ -144,12 +150,18 @@ def main():
                         detail["job_id"] = job_id
                         detail["source"] = "careerviet"
                         detail["scope"] = job_info.get("scope")
+                        detail["batch_id"] = job_info.get("batch_id") or args.batch_id
                         detail["crawled_at"] = datetime.now(timezone.utc).isoformat()
                         detail["source_job_id"] = job_id
                         
                         # Save to Firestore
                         try:
                             db.collection(dest_collection_name).document(job_id).set(detail, merge=True)
+                            db.collection(src_collection_name).document(job_id).set({
+                                "status": "scraped",
+                                "scraped_at": detail["crawled_at"],
+                                "dest_collection": dest_collection_name,
+                            }, merge=True)
                         except Exception as fs_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore for {title}: {fs_err}")
 
@@ -170,11 +182,17 @@ def main():
                                 detail["job_id"] = job_id
                                 detail["source"] = "careerviet"
                                 detail["scope"] = job_info.get("scope")
+                                detail["batch_id"] = job_info.get("batch_id") or args.batch_id
                                 detail["crawled_at"] = datetime.now(timezone.utc).isoformat()
                                 detail["source_job_id"] = job_id
                                 
                                 try:
                                     db.collection(dest_collection_name).document(job_id).set(detail, merge=True)
+                                    db.collection(src_collection_name).document(job_id).set({
+                                        "status": "scraped",
+                                        "scraped_at": detail["crawled_at"],
+                                        "dest_collection": dest_collection_name,
+                                    }, merge=True)
                                 except Exception as fs_err:
                                     tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore on retry: {fs_err}")
 

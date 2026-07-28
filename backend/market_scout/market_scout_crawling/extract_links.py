@@ -48,6 +48,8 @@ SCOPE_KEYWORDS = {
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract CareerViet job links into Firestore.")
     parser.add_argument("--todo-collection", default="todo_careerviet")
+    parser.add_argument("--batch-id", default=None, help="Weekly crawl batch id, for example 2026W31.")
+    parser.add_argument("--max-links", type=int, default=None, help="Stop after adding this many new unique links.")
     parser.add_argument("--scope", choices=("it", "sales", "it-sales", "all"), default="it-sales")
     parser.add_argument("--start-page", type=int, default=1)
     parser.add_argument("--max-pages", type=int, default=50)
@@ -119,6 +121,7 @@ def main():
     empty_pages = set()
     completed_pages = set()
     stop_extraction = False
+    total_new_links = 0
     scope_keywords = keywords_for_scope(args.scope, args.keyword)
 
     def check_stop_condition():
@@ -134,7 +137,7 @@ def main():
         return False
 
     def worker_thread(thread_id):
-        nonlocal current_page, stop_extraction
+        nonlocal current_page, stop_extraction, total_new_links
         
         crawler = CareerVietCrawler()
         try:
@@ -146,6 +149,9 @@ def main():
         try:
             while not stop_extraction:
                 with page_lock:
+                    if args.max_links is not None and total_new_links >= args.max_links:
+                        stop_extraction = True
+                        break
                     if current_page > last_page:
                         stop_extraction = True
                         break
@@ -190,9 +196,16 @@ def main():
                                         "title": title,
                                         "source": "careerviet",
                                         "scope": args.scope,
+                                        "batch_id": args.batch_id,
+                                        "status": "pending",
                                         "discovered_at": datetime.now(timezone.utc).isoformat(),
                                     }, merge=True)
                                     new_links_count += 1
+                                    with seen_ids_lock:
+                                        total_new_links += 1
+                                        if args.max_links is not None and total_new_links >= args.max_links:
+                                            stop_extraction = True
+                                            break
                                 except Exception as fs_err:
                                     print(f"[Worker-{thread_id}] Error saving job {job_id} to Firestore: {fs_err}")
                     
@@ -210,7 +223,7 @@ def main():
     threads = []
     print(
         f"Starting {num_workers} extraction threads: pages={args.start_page}-{last_page}, "
-        f"scope={args.scope}, keyword_filter={bool(scope_keywords)}"
+        f"scope={args.scope}, batch_id={args.batch_id}, max_links={args.max_links}, keyword_filter={bool(scope_keywords)}"
     )
     for i in range(num_workers):
         t = threading.Thread(target=worker_thread, args=(i+1,), name=f"ExtractWorker-{i+1}")
@@ -231,7 +244,7 @@ def main():
     for t in threads:
         t.join(timeout=5.0)
 
-    print(f"\nLink Extraction Finished. Total unique links in Firestore: {len(seen_ids)}")
+    print(f"\nLink Extraction Finished. Total unique links in Firestore: {len(seen_ids)}. New links added this run: {total_new_links}")
 
 if __name__ == "__main__":
     main()
