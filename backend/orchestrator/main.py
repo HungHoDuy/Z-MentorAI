@@ -1093,7 +1093,7 @@ def get_system_message(user_id: str) -> SystemMessage:
         "4. When the user confirms the inputs (e.g. clicks 'Xác nhận'), you MUST FIRST call `academic_architect_skill_gap` to get the skill gap analysis. "
         "5. Show the missing skills to the user. Ask them to confirm if they agree with these missing skills before building the roadmap. "
         "6. Once they approve the missing skills, call `academic_architect_create_gantt` with the career_goal and lacking_skills array to generate the Gantt roadmap and chart_id. "
-        "7. If the user asks to swap a course, call `academic_architect_get_alternatives` with the chart_id and task_id. After they pick one, call `academic_architect_swap_course`. "
+        "7. If the user asks to swap a course, call `academic_architect_get_alternatives` with the chart_id, task_id, and user_id. After they pick one, call `academic_architect_swap_course` with the selected_course_id and user_id. "
         f"Today's date is {current_date}. "
         "When calling academic_architect_create_gantt, structure your final response in Vietnamese exactly with these sections:\n"
         "1. **Khoảng trống kỹ năng**: Summarize the lacking skills.\n"
