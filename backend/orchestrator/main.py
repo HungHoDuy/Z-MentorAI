@@ -480,13 +480,25 @@ def build_history_messages(session: Optional[dict]) -> list:
 
     for msg in session.get("messages", []):
         content = message_content_to_text(msg.get("content")).strip()
-        if not content:
-            continue
+        role = msg.get("role")
 
-        if msg.get("role") == "user":
-            history_messages.append(HumanMessage(content=content))
-        elif msg.get("role") == "assistant":
-            history_messages.append(AIMessage(content=content))
+        if role == "user":
+            if content:
+                history_messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            tool_calls = msg.get("tool_calls", [])
+            tool_summary = ""
+            for tc in tool_calls:
+                name = tc.get("name")
+                out = tc.get("output", {})
+                if isinstance(out, dict) and name == "academic_architect_create_gantt":
+                    chart_id = out.get("chart_id")
+                    if chart_id:
+                        tool_summary += f"\n[System Note: Tool {name} succeeded. The generated chart_id is {chart_id}]"
+            
+            final_content = (content + tool_summary).strip()
+            if final_content:
+                history_messages.append(AIMessage(content=final_content))
 
     return history_messages
 
