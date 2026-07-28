@@ -28,7 +28,14 @@ class ScoutRequestBody(BaseModel):
 
 
 class SalaryBenchmarkRequest(BaseModel):
-    user_query: str = Field(min_length=1)
+    user_query: str = Field(default="Muc luong thi truong", min_length=1)
+    user_context: dict[str, Any] = Field(default_factory=dict)
+    entities_hint: dict[str, Any] | None = None
+    job_title: str | None = None
+    location: str | None = None
+    experience_years: int | None = None
+    seniority: str | None = None
+    profile_context: dict[str, Any] | None = None
 
 
 class TrendTrackerRequest(BaseModel):
@@ -93,11 +100,25 @@ async def salary_benchmark(
     body: SalaryBenchmarkRequest,
     agent: MarketScoutAgent = Depends(get_market_scout_agent),
 ) -> ScoutResponseBody:
+    user_context = dict(body.user_context or {})
+    if body.job_title:
+        user_context.setdefault("job_title", body.job_title)
+    if body.location:
+        user_context.setdefault("location", body.location)
+    if body.experience_years is not None:
+        user_context.setdefault("experience_years", body.experience_years)
+    if body.seniority:
+        user_context.setdefault("seniority", body.seniority)
+    if body.profile_context:
+        user_context.setdefault("profile_analysis", body.profile_context)
+
     return await _run_agent(
         agent,
         MarketScoutRequest(
             user_query=body.user_query,
             intent_hint=MarketScoutIntent.SALARY_BENCHMARK,
+            user_context=user_context,
+            entities_hint=body.entities_hint,
         ),
     )
 

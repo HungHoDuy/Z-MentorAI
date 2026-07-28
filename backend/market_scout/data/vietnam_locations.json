@@ -56,7 +56,7 @@
   {"location_id":"thanh-hoa","canonical_name":"Thanh Hóa","aliases":[]},
   {"location_id":"thua-thien-hue","canonical_name":"Thừa Thiên Huế","aliases":["hue"]},
   {"location_id":"tien-giang","canonical_name":"Tiền Giang","aliases":[]},
-  {"location_id":"ho-chi-minh","canonical_name":"Hồ Chí Minh","aliases":["hcm","tphcm","tp hcm","tp ho chi minh","sai gon","saigon"]},
+  {"location_id":"ho-chi-minh","canonical_name":"Hồ Chí Minh","aliases":["hcm","tphcm","tp hcm","tp ho chi minh","sai gon","saigon", "sg", "sài gòn", "SG", "Tp.HCM", "ho chi minh"]},
   {"location_id":"tra-vinh","canonical_name":"Trà Vinh","aliases":[]},
   {"location_id":"tuyen-quang","canonical_name":"Tuyên Quang","aliases":[]},
   {"location_id":"vinh-long","canonical_name":"Vĩnh Long","aliases":[]},

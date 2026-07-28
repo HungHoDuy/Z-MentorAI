@@ -39,3 +39,30 @@ def test_scout_accepts_empty_target_role_for_industry_query() -> None:
     assert response.status_code == 200
     assert fake_agent.requests[0].user_query == "nganh y te job nao dang co nhu cau lon?"
     assert fake_agent.requests[0].entities_hint == {"industry": "y te"}
+
+
+def test_salary_benchmark_accepts_cv_context_fields() -> None:
+    fake_agent = FakeAgent()
+    app.dependency_overrides[get_market_scout_agent] = lambda: fake_agent
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/salary-benchmark",
+            json={
+                "user_query": "Voi CV nay luong bao nhieu?",
+                "job_title": "Data Analyst",
+                "location": "Ha Noi",
+                "experience_years": 3,
+                "seniority": "middle",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    req = fake_agent.requests[0]
+    assert req.user_query == "Voi CV nay luong bao nhieu?"
+    assert req.user_context["job_title"] == "Data Analyst"
+    assert req.user_context["location"] == "Ha Noi"
+    assert req.user_context["experience_years"] == 3
+    assert req.user_context["seniority"] == "middle"

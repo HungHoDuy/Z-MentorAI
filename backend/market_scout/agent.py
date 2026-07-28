@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import re
 from time import perf_counter
 from typing import Any
 import unicodedata
@@ -83,9 +84,10 @@ class MarketScoutAgent:
 
         if intent == MarketScoutIntent.SALARY_BENCHMARK:
             salary_flow = self.salary_flow or SalaryBenchmarkFlow()
+            salary_query = _salary_query_with_context(request)
             flow_start = perf_counter()
             result = salary_flow.run(
-                request.user_query,
+                salary_query,
                 top_k=self.default_top_k,
                 fetch_k=self.default_fetch_k,
             )
@@ -95,7 +97,7 @@ class MarketScoutAgent:
                 sub_agent="salary_benchmark",
                 step="salary_flow_total",
                 duration_ms=_duration_ms(flow_start),
-                user_query=_short_query(request.user_query),
+                user_query=_short_query(salary_query),
             )
             response = self._compose_salary_response(result)
             _log_event(
@@ -104,7 +106,7 @@ class MarketScoutAgent:
                 sub_agent="salary_benchmark",
                 confidence=response.confidence,
                 duration_ms=_duration_ms(request_start),
-                user_query=_short_query(request.user_query),
+                user_query=_short_query(salary_query),
             )
             return response
 
@@ -465,6 +467,143 @@ _TREND_ENTITY_FIELDS = {
     "job_sources",
 }
 
+
+def _salary_query_with_context(request: MarketScoutRequest) -> str:
+    context = _salary_context_candidates(request)
+    job_title = _first_context_text(
+        context,
+        (
+            "job_title",
+            "target_role",
+            "role",
+            "current_role",
+            "target_role_hint",
+            "career_goal",
+        ),
+    )
+    location = _first_context_text(
+        context,
+        (
+            "location",
+            "location_text",
+            "preferred_location",
+            "location_name",
+        ),
+    )
+    experience_years = _experience_years_from_context(context)
+
+    additions: list[str] = []
+    if job_title and job_title.casefold() not in request.user_query.casefold():
+        additions.append(f"vi tri {job_title}")
+    if location and location.casefold() not in request.user_query.casefold():
+        additions.append(f"tai {location}")
+    if experience_years is not None and not _query_mentions_experience(request.user_query):
+        additions.append(f"voi {experience_years} nam kinh nghiem")
+
+    if not additions:
+        return request.user_query
+    return f"{request.user_query.strip()} ({'; '.join(additions)})."
+
+
+def _salary_context_candidates(request: MarketScoutRequest) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for value in (request.entities_hint, request.user_context):
+        if isinstance(value, dict):
+            candidates.append(value)
+            for key in (
+                "salary",
+                "profile",
+                "profile_analysis",
+                "structured_profile",
+                "cv_profile",
+                "cv_context",
+            ):
+                nested = value.get(key)
+                if isinstance(nested, dict):
+                    candidates.append(nested)
+    for candidate in list(candidates):
+        structured = candidate.get("structured_profile")
+        if isinstance(structured, dict):
+            candidates.append(structured)
+    return candidates
+
+
+def _first_context_text(contexts: list[dict[str, Any]], keys: tuple[str, ...]) -> str | None:
+    for context in contexts:
+        for key in keys:
+            value = context.get(key)
+            if isinstance(value, str):
+                text = " ".join(value.split())
+                if text:
+                    return text
+    return None
+
+
+def _experience_years_from_context(contexts: list[dict[str, Any]]) -> int | None:
+    for context in contexts:
+        for key in (
+            "experience_years",
+            "years_of_experience",
+            "total_experience_years",
+            "min_experience",
+        ):
+            value = _int_or_none(context.get(key))
+            if value is not None:
+                return value
+
+    seniority = _first_context_text(contexts, ("seniority", "level", "career_level"))
+    mapped = _experience_years_from_seniority(seniority)
+    if mapped is not None:
+        return mapped
+
+    for context in contexts:
+        for key in ("experience", "experience_level"):
+            text = _first_number_text(context.get(key))
+            if text is not None:
+                return text
+    return None
+
+
+def _experience_years_from_seniority(value: str | None) -> int | None:
+    if not value:
+        return None
+    normalized = _query_key(value)
+    if any(keyword in normalized for keyword in ("intern", "thuc tap", "fresher", "entry")):
+        return 1
+    if any(keyword in normalized for keyword in ("junior", "jr")):
+        return 2
+    if any(keyword in normalized for keyword in ("middle", "mid", "intermediate")):
+        return 4
+    if any(keyword in normalized for keyword in ("senior", "sr")):
+        return 6
+    if any(keyword in normalized for keyword in ("lead", "principal", "manager")):
+        return 8
+    return None
+
+
+def _query_mentions_experience(query: str) -> bool:
+    normalized = _query_key(query)
+    return bool(re.search(r"\b\d{1,2}\s*(nam|year|years|yr|yrs)\b", normalized)) or "kinh nghiem" in normalized
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_number_text(value: Any) -> int | None:
+    if value is None:
+        return None
+    text = str(value)
+    match = re.search(r"\d{1,2}", text)
+    if not match:
+        return None
+    return int(match.group(0))
+
 def _salary_limitations(result: SalaryBenchmarkFlowResult) -> list[str]:
     benchmark = result.benchmark
     limitations: list[str] = []
@@ -486,11 +625,8 @@ _SALARY_KEYWORDS = (
     "wage",
     "benchmark",
     "luong",
-    "lương",
     "muc luong",
-    "mức lương",
     "thu nhap",
-    "thu nhập",
 )
 
 _TREND_KEYWORDS = (

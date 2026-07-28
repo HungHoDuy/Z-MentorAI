@@ -6,7 +6,7 @@ from typing import Any
 from backend.market_scout.agent import MarketScoutAgent, _classify_intent, _trend_intent_from_query
 from backend.market_scout.flows.salary_benchmark_flow import SalaryBenchmarkFlowResult
 from backend.market_scout.flows.trend_tracker_flow import TrendTrackerFlowResult
-from backend.market_scout.schemas import MarketScoutIntent
+from backend.market_scout.schemas import MarketScoutIntent, MarketScoutRequest
 from backend.market_scout.schemas.market_scout_query_understanding import (
     MarketScoutQueryUnderstanding,
     TrendQueryUnderstanding,
@@ -174,7 +174,7 @@ def test_market_scout_agent_classifies_hiring_volume_question_as_trend_tracker()
 
 
 def test_market_scout_agent_classifies_skill_questions_as_trend_tracker() -> None:
-    query = "Ngành kinh doanh bán hàng tại Hồ Chí Minh đang cần kỹ năng gì?"
+    query = "Nganh kinh doanh ban hang tai Ho Chi Minh dang can ky nang gi?"
 
     assert _classify_intent(query) is MarketScoutIntent.TREND_TRACKER
     assert _trend_intent_from_query(query) == TrendQueryIntent.CURRENT_SKILL_DEMAND.value
@@ -225,3 +225,28 @@ def _make_flow_result() -> SalaryBenchmarkFlowResult:
         benchmark=benchmark,
         summary=summary,
     )
+
+def test_market_scout_agent_uses_cv_context_for_salary_query() -> None:
+    flow_result = _make_flow_result()
+    salary_flow = FakeSalaryFlow(flow_result)
+    agent = MarketScoutAgent(salary_flow=salary_flow, default_top_k=5, default_fetch_k=10)
+
+    response = asyncio.run(
+        agent.run(
+            MarketScoutRequest(
+                user_query="Voi CV nay thi thi truong tra muc luong bao nhieu?",
+                intent_hint=MarketScoutIntent.SALARY_BENCHMARK,
+                user_context={
+                    "profile_analysis": {"target_role": "Business Analyst"},
+                    "location": "Ha Noi",
+                    "seniority": "junior",
+                },
+            )
+        )
+    )
+
+    enriched_query = salary_flow.calls[0][0]
+    assert response.intent == MarketScoutIntent.SALARY_BENCHMARK
+    assert "vi tri Business Analyst" in enriched_query
+    assert "tai Ha Noi" in enriched_query
+    assert "2 nam kinh nghiem" in enriched_query
