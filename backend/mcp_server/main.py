@@ -192,11 +192,17 @@ def market_scout(
     industry: str = "",
     target_role: str = "",
     intent_hint: str = "",
+    job_title: str = "",
+    location: str = "",
+    experience_years: str = "",
+    seniority: str = "",
+    profile_context_json: str = "",
 ) -> dict:
     """Use this tool for job market trends, hiring demand, automation exposure, and general market outlook.
     Always pass the user's original question in user_query.
     For role-level hiring demand questions, user_query is enough; do not ask the user for job category or job family.
     Optional industry and target_role are only hints when they are already known.
+    If salary is asked after CV scanning, pass job_title, location, experience_years/seniority, or profile_context_json from Profile Scanner output.
     For salary or compensation questions, prefer the salary_benchmark tool.
     If using this tool for salary, pass the original user question in user_query and intent_hint="salary_benchmark"."""
     sub_agent = intent_hint.strip() or ("salary_benchmark" if _looks_like_salary_query(user_query) else "trend_tracker")
@@ -207,11 +213,24 @@ def market_scout(
         user_query=_short_text(user_query),
         industry=industry,
         target_role=target_role,
+        job_title=job_title,
+        location=location,
+        experience_years=experience_years,
+        seniority=seniority,
+    )
+    user_context = _build_salary_user_context(
+        job_title=job_title or target_role,
+        location=location,
+        experience_years=experience_years,
+        seniority=seniority,
+        profile_context_json=profile_context_json,
     )
     payload = {
         "industry": industry,
         "target_role": target_role,
     }
+    if user_context:
+        payload["user_context"] = user_context
     if user_query.strip():
         payload["user_query"] = user_query.strip()
     if intent_hint.strip():
@@ -222,6 +241,48 @@ def market_scout(
     return fetch_data_sync(MARKET_SCOUT_URL, "/scout", payload)
 
 
+
+def _build_salary_user_context(
+    *,
+    job_title: str = "",
+    location: str = "",
+    experience_years: str = "",
+    seniority: str = "",
+    profile_context_json: str = "",
+) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    profile_context = _json_object_or_empty(profile_context_json)
+    if profile_context:
+        context["profile_analysis"] = profile_context
+    if job_title.strip():
+        context["job_title"] = job_title.strip()
+    if location.strip():
+        context["location"] = location.strip()
+    parsed_experience = _int_string_or_none(experience_years)
+    if parsed_experience is not None:
+        context["experience_years"] = parsed_experience
+    if seniority.strip():
+        context["seniority"] = seniority.strip()
+    return context
+
+
+def _json_object_or_empty(value: str) -> dict[str, Any]:
+    if not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _int_string_or_none(value: str) -> int | None:
+    if not str(value or "").strip():
+        return None
+    try:
+        return int(float(str(value).strip()))
+    except ValueError:
+        return None
 def _looks_like_salary_query(query: str) -> bool:
     normalized = _normalize_ascii(query)
     salary_keywords = (
@@ -247,13 +308,39 @@ def _normalize_ascii(value: str) -> str:
 
 
 @mcp.tool()
-def salary_benchmark(user_query: str) -> dict:
+def salary_benchmark(
+    user_query: str,
+    job_title: str = "",
+    location: str = "",
+    experience_years: str = "",
+    seniority: str = "",
+    profile_context_json: str = "",
+) -> dict:
     """Use this tool when the user asks about salary, compensation, income, wage, pay, or salary benchmark.
-    Always pass the original user question as user_query."""
-    _log_event("mcp_tool_call", agent="market_scout", sub_agent="salary_benchmark", user_query=_short_text(user_query))
-    return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", {
-        "user_query": user_query,
-    })
+    Always pass the original user question as user_query.
+    If the user asks salary based on an uploaded/scanned CV, first call profile_scanner, then pass the extracted target_role/job title, location, and experience/seniority here."""
+    user_context = _build_salary_user_context(
+        job_title=job_title,
+        location=location,
+        experience_years=experience_years,
+        seniority=seniority,
+        profile_context_json=profile_context_json,
+    )
+    _log_event(
+        "mcp_tool_call",
+        agent="market_scout",
+        sub_agent="salary_benchmark",
+        user_query=_short_text(user_query),
+        job_title=job_title,
+        location=location,
+        experience_years=experience_years,
+        seniority=seniority,
+        has_profile_context=bool(user_context),
+    )
+    payload = {"user_query": user_query}
+    if user_context:
+        payload["user_context"] = user_context
+    return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", payload)
 
 
 @mcp.tool()
