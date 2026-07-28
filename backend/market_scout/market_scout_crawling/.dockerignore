@@ -1,0 +1,8 @@
+﻿__pycache__/
+*.ipynb
+downloaded_model_artifacts/
+*.png
+*.jpg
+*.csv
+*.xlsx
+.pytest_cache/

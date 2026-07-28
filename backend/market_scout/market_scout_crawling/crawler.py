@@ -1,7 +1,10 @@
+import os
 import time
 import re
 import logging
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.common.by import By
@@ -25,7 +28,16 @@ class CareerVietCrawler:
         self.driver = None
 
     def init_driver(self, headless: bool = True):
-        """Initializes the Edge WebDriver."""
+        """Initializes a WebDriver.
+
+        Local development defaults to Edge for backwards compatibility.
+        Cloud Run Jobs should set CRAWLER_BROWSER=chrome and use the crawler Dockerfile.
+        """
+        browser = os.getenv("CRAWLER_BROWSER", "edge").strip().lower()
+        if browser == "chrome":
+            self._init_chrome_driver(headless=headless)
+            return
+
         logger.info("Initializing Microsoft Edge WebDriver...")
         options = Options()
         # Edge configurations
