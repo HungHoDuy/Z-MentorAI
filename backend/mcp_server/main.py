@@ -389,23 +389,25 @@ def academic_architect_create_gantt(career_goal: str, lacking_skills: list[str],
     })
 
 @mcp.tool()
-def academic_architect_get_alternatives(chart_id: str, task_id: str, skill_name: str = "") -> dict:
+def academic_architect_get_alternatives(chart_id: str, task_id: str, skill_name: str = "", user_id: str = "") -> dict:
     """Course Swap Step 1: Find top 5 alternative courses in Coursera database for a task."""
-    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="get_alternatives", chart_id=chart_id, task_id=task_id)
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="get_alternatives", chart_id=chart_id, task_id=task_id, user_id=user_id)
     return fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/chart/{chart_id}/get-alternatives", {
         "chart_id": chart_id,
         "task_id": task_id,
         "skill_name": skill_name,
+        "user_id": user_id,
     })
 
 @mcp.tool()
-def academic_architect_swap_course(chart_id: str, task_id: str, selected_course_id: str) -> dict:
+def academic_architect_swap_course(chart_id: str, task_id: str, selected_course_id: str, user_id: str = "") -> dict:
     """Course Swap Step 2: Swap a task course with selected alternative ID and update Gantt timeline."""
-    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="swap_course", chart_id=chart_id, task_id=task_id)
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="swap_course", chart_id=chart_id, task_id=task_id, user_id=user_id)
     return fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/chart/{chart_id}/swap-course", {
         "chart_id": chart_id,
         "task_id": task_id,
         "selected_course_id": selected_course_id,
+        "user_id": user_id,
     })
 
 @mcp.tool()
