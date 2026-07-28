@@ -50,6 +50,7 @@ def parse_args():
     parser.add_argument("--todo-collection", default="todo_careerviet")
     parser.add_argument("--batch-id", default=None, help="Weekly crawl batch id, for example 2026W31.")
     parser.add_argument("--max-links", type=int, default=None, help="Stop after adding this many new unique links.")
+    parser.add_argument("--allow-empty", action="store_true", help="Exit 0 even if no new links are written.")
     parser.add_argument("--scope", choices=("it", "sales", "it-sales", "all"), default="it-sales")
     parser.add_argument("--start-page", type=int, default=1)
     parser.add_argument("--max-pages", type=int, default=50)
@@ -101,7 +102,7 @@ def main():
         collection_name = args.todo_collection
     except Exception as e:
         print(f"Error initializing Firestore client: {e}")
-        return
+        raise SystemExit(1) from e
 
     seen_ids = set()
     try:
@@ -110,7 +111,8 @@ def main():
         seen_ids = {doc.id for doc in docs}
         print(f"Loaded {len(seen_ids)} existing links from Firestore.")
     except Exception as e:
-        print(f"Error loading existing links from Firestore: {e}. Starting fresh.")
+        print(f"Error loading existing links from Firestore: {e}")
+        raise SystemExit(1) from e
 
     # Threading variables
     page_lock = threading.Lock()
@@ -245,6 +247,9 @@ def main():
         t.join(timeout=5.0)
 
     print(f"\nLink Extraction Finished. Total unique links in Firestore: {len(seen_ids)}. New links added this run: {total_new_links}")
+    if total_new_links == 0 and not args.allow_empty:
+        print("No new CareerViet links were written. Failing job so Cloud Run does not report a false success.")
+        raise SystemExit(2)
 
 if __name__ == "__main__":
     main()

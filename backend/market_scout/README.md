@@ -428,6 +428,81 @@ Unit tests:
 & F:\Z-MentorAI\venv\Scripts\python.exe -m pytest backend/market_scout/tests
 ```
 
+
+
+## Weekly CareerViet Crawl Job 1
+
+Job 1 tu dong lay job moi tu CareerViet va luu raw data vao Firestore theo weekly batch.
+
+Source folder:
+
+```text
+backend/market_scout/market_scout_crawling/
+```
+
+Runtime command chinh:
+
+```text
+run_weekly_careerviet_crawl.py
+```
+
+Flow:
+
+```text
+CareerViet listing pages
+-> extract_links.py
+-> todo_careerviet_weekly_YYYYWww
+-> scrape_details.py
+-> careerviet_jobs_weekly_YYYYWww
+```
+
+Local dry-sized run example:
+
+```powershell
+cd F:\Z-MentorAI\Z-MentorAIackend\market_scout\market_scout_crawling
+
+& F:\Z-MentorAIenv\Scripts\python.exe .un_weekly_careerviet_crawl.py `
+  --batch-id 2026W31 `
+  --scope it-sales `
+  --start-page 1 `
+  --max-pages 5 `
+  --max-jobs 20 `
+  --workers 1
+```
+
+Production weekly run should use 100-200 jobs:
+
+```powershell
+& F:\Z-MentorAIenv\Scripts\python.exe .un_weekly_careerviet_crawl.py `
+  --scope it-sales `
+  --max-pages 10 `
+  --max-jobs 200 `
+  --workers 2
+```
+
+Cloud Run Job image uses:
+
+```text
+backend/market_scout/market_scout_crawling/Dockerfile
+```
+
+The crawler Docker image installs Chromium and sets:
+
+```text
+CRAWLER_BROWSER=chrome
+CHROME_BIN=/usr/bin/chromium
+CHROMEDRIVER_PATH=/usr/bin/chromedriver
+```
+
+Cloud collections are batch-scoped by default:
+
+```text
+todo_careerviet_weekly_YYYYWww
+careerviet_jobs_weekly_YYYYWww
+```
+
+Each raw record includes `batch_id`, `scope`, `source`, `crawled_at`, and `source_job_id` so later jobs can process the right batch and avoid duplicates.
+
 ## Current Limitations
 
 - Salary aggregation hien van la deterministic aggregation sau retrieval; weighted percentile la huong can enhance tiep.
