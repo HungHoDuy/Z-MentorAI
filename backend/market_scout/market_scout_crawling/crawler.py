@@ -75,6 +75,36 @@ class CareerVietCrawler:
             "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         })
 
+    def _init_chrome_driver(self, headless: bool = True):
+        logger.info("Initializing Chrome WebDriver...")
+        options = ChromeOptions()
+        options.add_argument("--start-maximized")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-notifications")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        if headless:
+            options.add_argument("--headless=new")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
+        options.add_experimental_option("prefs", {"profile.default_content_setting_values.geolocation": 2})
+
+        binary_location = os.getenv("CHROME_BIN")
+        if binary_location:
+            options.binary_location = binary_location
+
+        chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
+        if chromedriver_path:
+            self.driver = webdriver.Chrome(service=ChromeService(chromedriver_path), options=options)
+        else:
+            self.driver = webdriver.Chrome(options=options)
+
+        self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        })
+
     def close(self):
         if self.driver:
             logger.info("Closing WebDriver...")

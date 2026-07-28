@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--scope", default=None, help="Only scrape todo docs with this scope value.")
     parser.add_argument("--limit", type=int, default=None, help="Max number of remaining jobs to scrape.")
     parser.add_argument("--workers", type=int, default=3)
+    parser.add_argument("--allow-empty", action="store_true", help="Exit 0 even if no details are written.")
     return parser.parse_args()
 
 def main():
@@ -49,7 +50,7 @@ def main():
         dest_collection_name = args.dest_collection
     except Exception as e:
         print(f"Error initializing Firestore client: {e}")
-        return
+        raise SystemExit(1) from e
 
     # 2. Load todo list from Firestore
     print(f"Loading todo list from Firestore '{src_collection_name}'...")
@@ -76,11 +77,13 @@ def main():
         print(f"Loaded {len(todo_list)} total jobs to crawl from Firestore.")
     except Exception as e:
         print(f"Error reading todo list from Firestore: {e}")
-        return
+        raise SystemExit(1) from e
 
     if not todo_list:
-        print("No jobs found to crawl in Firestore collection 'todo_careerviet'.")
-        return
+        print(f"No jobs found to crawl in Firestore collection {src_collection_name!r}.")
+        if args.allow_empty:
+            return
+        raise SystemExit(2)
 
     # 3. Load already scraped jobs from Firestore to support resume
     scraped_ids = set()
@@ -109,12 +112,13 @@ def main():
         job_queue.put(job)
         
     stop_workers = False
+    saved_detail_count = 0
     
     # 6. Initialize tqdm progress bar
     pbar = tqdm(total=len(remaining_jobs), desc="Scraping progress", unit="job")
     
     def worker_thread():
-        nonlocal stop_workers
+        nonlocal stop_workers, saved_detail_count
         
         crawler = CareerVietCrawler()
         try:
@@ -162,6 +166,8 @@ def main():
                                 "scraped_at": detail["crawled_at"],
                                 "dest_collection": dest_collection_name,
                             }, merge=True)
+                            with file_lock:
+                                saved_detail_count += 1
                         except Exception as fs_err:
                             tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore for {title}: {fs_err}")
 
@@ -193,6 +199,8 @@ def main():
                                         "scraped_at": detail["crawled_at"],
                                         "dest_collection": dest_collection_name,
                                     }, merge=True)
+                                    with file_lock:
+                                        saved_detail_count += 1
                                 except Exception as fs_err:
                                     tqdm.write(f"\n[Worker-{threading.current_thread().name}] Failed to save to Firestore on retry: {fs_err}")
 
@@ -242,7 +250,10 @@ def main():
         t.join(timeout=5.0)
         
     pbar.close()
-    print(f"\nDone. Successfully scraped and saved to Firestore.")
+    print(f"\nDone. Saved {saved_detail_count} job details to Firestore collection {dest_collection_name}.")
+    if remaining_jobs and saved_detail_count == 0 and not args.allow_empty:
+        print("No CareerViet job details were written. Failing job so Cloud Run does not report a false success.")
+        raise SystemExit(3)
 
 if __name__ == "__main__":
     main()

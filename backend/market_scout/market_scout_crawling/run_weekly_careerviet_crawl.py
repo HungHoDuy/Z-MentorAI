@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-link-extraction", action="store_true")
     parser.add_argument("--skip-detail-scrape", action="store_true")
     parser.add_argument("--keyword", action="append", default=[])
+    parser.add_argument("--allow-empty", action="store_true", help="Exit 0 when no links/details are written.")
     return parser.parse_args()
 
 
@@ -78,6 +79,8 @@ def main() -> None:
         ]
         for keyword in args.keyword:
             extract_command.extend(["--keyword", keyword])
+        if args.allow_empty:
+            extract_command.append("--allow-empty")
         run_command(extract_command, script_dir)
 
     if not args.skip_detail_scrape:
@@ -97,6 +100,8 @@ def main() -> None:
             "--workers",
             str(args.workers),
         ]
+        if args.allow_empty:
+            scrape_command.append("--allow-empty")
         run_command(scrape_command, script_dir)
 
     print(
