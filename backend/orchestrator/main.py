@@ -276,14 +276,14 @@ def get_profile_workspace(user_id: str) -> dict:
 if USE_VERTEX_AI:
     from langchain_google_vertexai import ChatVertexAI
     llm = ChatVertexAI(
-        model_name="gemini-3.5-flash",
+        model_name="gemini-2.5-flash",
         location="asia-southeast1",
         temperature=0.7
     )
-    print("Using Vertex AI model gemini-3.5-flash in region asia-southeast1")
+    print("Using Vertex AI model gemini-2.5-flash in region asia-southeast1")
 else:
     from langchain_google_genai import ChatGoogleGenerativeAI
-    llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash", temperature=0.7)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
     print("Using Gemini API Key-based ChatGoogleGenerativeAI")
 
 def message_content_to_text(content: Any) -> str:
@@ -480,13 +480,25 @@ def build_history_messages(session: Optional[dict]) -> list:
 
     for msg in session.get("messages", []):
         content = message_content_to_text(msg.get("content")).strip()
-        if not content:
-            continue
+        role = msg.get("role")
 
-        if msg.get("role") == "user":
-            history_messages.append(HumanMessage(content=content))
-        elif msg.get("role") == "assistant":
-            history_messages.append(AIMessage(content=content))
+        if role == "user":
+            if content:
+                history_messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            tool_calls = msg.get("tool_calls", [])
+            tool_summary = ""
+            for tc in tool_calls:
+                name = tc.get("name")
+                out = tc.get("output", {})
+                if isinstance(out, dict) and name == "academic_architect_create_gantt":
+                    chart_id = out.get("chart_id")
+                    if chart_id:
+                        tool_summary += f"\n[System Note: Tool {name} succeeded. The generated chart_id is {chart_id}]"
+            
+            final_content = (content + tool_summary).strip()
+            if final_content:
+                history_messages.append(AIMessage(content=final_content))
 
     return history_messages
 
