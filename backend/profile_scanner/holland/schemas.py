@@ -15,6 +15,9 @@ class HollandQuestion(BaseModel):
 class HollandQuestionsResponse(BaseModel):
     status: str
     feature: str = "holland_assessment"
+    assessment_version: str
+    question_set_hash: str
+    attempt_id: str
     scale: dict
     questions: list[HollandQuestion]
 
@@ -31,6 +34,8 @@ class HollandAnswer(BaseModel):
 class HollandScoreRequest(BaseModel):
     user_id: str
     answers: list[HollandAnswer]
+    session_id: Optional[str] = None
+    attempt_id: Optional[str] = None
     source: str = "chat"
 
 
@@ -38,10 +43,17 @@ class HollandScoreResponse(BaseModel):
     status: str
     feature: str = "holland_assessment"
     assessment_id: str
+    assessment_version: str
+    question_set_hash: str
     user_id: str
+    session_id: Optional[str] = None
+    attempt_id: Optional[str] = None
     scores: dict[str, float]
     raw_scores: dict[str, int]
     top_code: str
+    tied_top_dimensions: list[str] = Field(default_factory=list)
+    score_margin: float | None = None
+    tie_break_policy: str = "definition_order"
     interpretation_vi: str
     answered_count: int
     missing_question_ids: list[str]

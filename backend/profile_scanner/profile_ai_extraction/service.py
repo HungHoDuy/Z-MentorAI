@@ -17,20 +17,14 @@ def get_profile_extraction_llm():
     if not settings.profile_ai_extraction_enabled:
         return None
 
-    if settings.use_vertex_ai:
-        from langchain_google_vertexai import ChatVertexAI
-
-        return ChatVertexAI(
-            model_name=settings.profile_ai_model_name,
-            location=settings.vertex_ai_location,
-            temperature=0,
-        )
-
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(
         model=settings.profile_ai_model_name,
         temperature=0,
+        vertexai=settings.use_vertex_ai,
+        project=settings.google_cloud_project if settings.use_vertex_ai else None,
+        location=settings.vertex_ai_location if settings.use_vertex_ai else None,
     )
 
 
@@ -66,6 +60,10 @@ def build_extraction_prompt(parsed_text: str, target_role: str | None, message: 
         "You are Profile Scanner's CV structure extractor. "
         "Extract only facts directly supported by the CV text. "
         "Do not invent employers, degrees, dates, skills, scores, or career advice. "
+        "For skills, return concise canonical technology or competency names, merge aliases, "
+        "preserve standard acronyms, and exclude sentence fragments or generic terms such as API, cloud, software, and web. "
+        "Only return a soft skill when the CV explicitly states or demonstrates it. "
+        "Use empty strings or empty arrays for unavailable fields; do not return null. "
         "Return one valid JSON object only, without markdown."
     )
     user_prompt = {
@@ -73,6 +71,13 @@ def build_extraction_prompt(parsed_text: str, target_role: str | None, message: 
         "target_role_from_user": target_role or "",
         "user_message": message or "",
         "output_schema": {
+            "full_name": "string",
+            "email": "string",
+            "phone": "string",
+            "location": "string",
+            "linkedin_url": "string",
+            "github_url": "string",
+            "portfolio_url": "string",
             "target_role_hint": "string",
             "headline": "string",
             "summary": "string",

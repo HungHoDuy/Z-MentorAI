@@ -100,6 +100,16 @@ resource "google_storage_bucket" "profile_scanner_cv_bucket" {
   versioning {
     enabled = true
   }
+
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
 }
 
 resource "google_storage_bucket_iam_member" "profile_scanner_cv_bucket_object_user" {
@@ -145,6 +155,66 @@ resource "google_firestore_index" "holland_assessments_by_user_created_at" {
   depends_on = [google_project_service.apis]
 }
 
+# Firestore composite index required by:
+# profile_scanner_assessments.where(user_id == X).where(assessment_type == Y).order_by(created_at desc).limit(1)
+resource "google_firestore_index" "profile_scanner_assessments_by_user_type_created_at" {
+  project     = var.project_id
+  database    = "(default)"
+  collection  = "profile_scanner_assessments"
+  query_scope = "COLLECTION"
+
+  fields {
+    field_path = "user_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "assessment_type"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Latest CV lookup when the user supplies a target role after the upload turn.
+resource "google_firestore_index" "profile_scanner_cv_documents_by_user_uploaded_at" {
+  project     = var.project_id
+  database    = "(default)"
+  collection  = "profile_scanner_cv_documents"
+  query_scope = "COLLECTION"
+
+  fields {
+    field_path = "user_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "uploaded_at"
+    order      = "DESCENDING"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Expired benchmark cache pointers are removed automatically. Immutable benchmark
+# snapshots remain available for score reproducibility and audit.
+resource "google_firestore_field" "profile_scanner_benchmark_cache_ttl" {
+  project    = var.project_id
+  database   = "(default)"
+  collection = "profile_scanner_benchmark_cache"
+  field      = "expires_at"
+
+  ttl_config {}
+  index_config {}
+
+  depends_on = [google_project_service.apis]
+}
+
 # 5. Cloud Run Services (V2)
 
 # A. Profile Scanner Agent
@@ -163,6 +233,7 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
   ]
 
   template {
+    timeout         = "600s"
     service_account = google_service_account.profile_scanner_sa.email
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.profile_scanner_image}"
@@ -182,12 +253,28 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
         value = "profile_scanner_holland_assessments"
       }
       env {
+        name  = "ASSESSMENTS_COLLECTION_NAME"
+        value = "profile_scanner_assessments"
+      }
+      env {
         name  = "CV_STORAGE_BUCKET"
         value = google_storage_bucket.profile_scanner_cv_bucket.name
       }
       env {
         name  = "CV_DOCUMENTS_COLLECTION"
         value = "profile_scanner_cv_documents"
+      }
+      env {
+        name  = "PROFILE_SCANNER_PROFILES_COLLECTION"
+        value = "profile_scanner_profiles"
+      }
+      env {
+        name  = "PROFILE_SCANNER_PROFILE_VERSIONS_COLLECTION"
+        value = "profile_scanner_profile_versions"
+      }
+      env {
+        name  = "PROFILE_SCANNER_ALIGNMENT_COLLECTION"
+        value = "profile_scanner_alignment_results"
       }
       env {
         name  = "CV_MAX_FILE_SIZE_BYTES"
@@ -221,6 +308,46 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
         name  = "PROFILE_AI_MODEL_NAME"
         value = "gemini-2.5-flash"
       }
+      env {
+        name  = "DYNAMIC_BENCHMARK_ENABLED"
+        value = "true"
+      }
+      env {
+        name  = "BENCHMARK_SNAPSHOTS_COLLECTION"
+        value = "profile_scanner_benchmark_snapshots"
+      }
+      env {
+        name  = "BENCHMARK_CACHE_COLLECTION"
+        value = "profile_scanner_benchmark_cache"
+      }
+      env {
+        name  = "BENCHMARK_JOB_FACTS_COLLECTION"
+        value = "trend_job_facts_v2"
+      }
+      env {
+        name  = "BENCHMARK_EMBEDDING_COLLECTION"
+        value = "job_mapping_embedding"
+      }
+      env {
+        name  = "BENCHMARK_EMBEDDING_MODEL"
+        value = "text-multilingual-embedding-002"
+      }
+      env {
+        name  = "BENCHMARK_EMBEDDING_LOCATION"
+        value = "us-central1"
+      }
+      env {
+        name  = "BENCHMARK_MARKET_WINDOW_DAYS"
+        value = "365"
+      }
+      env {
+        name  = "BENCHMARK_CACHE_DAYS"
+        value = "7"
+      }
+      env {
+        name  = "BENCHMARK_DEFAULT_LOCATION"
+        value = "vietnam"
+      }
     }
   }
 }
@@ -252,10 +379,21 @@ resource "google_cloud_run_v2_service" "academic_architect" {
   depends_on = [google_project_service.apis]
 
   template {
+    scaling {
+      min_instance_count = 1
+    }
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.academic_architect_image}"
       ports {
         container_port = 8080
+      }
+      env {
+        name  = "USE_FIRESTORE"
+        value = "true"
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = "(default)"
       }
     }
   }
@@ -270,6 +408,7 @@ resource "google_cloud_run_v2_service" "mcp_server" {
   depends_on = [google_project_service.apis]
 
   template {
+    timeout = "600s"
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.mcp_server_image}"
       ports {
@@ -278,6 +417,10 @@ resource "google_cloud_run_v2_service" "mcp_server" {
       env {
         name  = "PROFILE_SCANNER_URL"
         value = google_cloud_run_v2_service.profile_scanner.uri
+      }
+      env {
+        name  = "PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS"
+        value = "540"
       }
       env {
         name  = "MARKET_SCOUT_URL"
@@ -304,6 +447,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   ]
 
   template {
+    timeout         = "600s"
     service_account = google_service_account.orchestrator_sa.email
     containers {
       image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.name}/${var.orchestrator_image}"
@@ -317,6 +461,10 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       env {
         name  = "PROFILE_SCANNER_URL"
         value = google_cloud_run_v2_service.profile_scanner.uri
+      }
+      env {
+        name  = "ACADEMIC_ARCHITECT_URL"
+        value = google_cloud_run_v2_service.academic_architect.uri
       }
       env {
         name  = "USE_FIRESTORE"

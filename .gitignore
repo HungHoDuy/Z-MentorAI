@@ -30,6 +30,7 @@ frontend-dev*.log
 backend/orchestrator/users_db.json
 backend/orchestrator/chat_history_db.json
 backend/profile_scanner/holland_results_db.json
+backend/profile_scanner/assessment_results_db.json
 
 # Secrets
 backend/client_secret_*.json

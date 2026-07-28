@@ -1,6 +1,9 @@
 from holland.schemas import HollandQuestion
 
 
+HOLLAND_ASSESSMENT_VERSION = "holland-v2"
+
+
 HOLLAND_SCALE = {
     "1": "Rất không giống tôi",
     "2": "Không giống tôi",

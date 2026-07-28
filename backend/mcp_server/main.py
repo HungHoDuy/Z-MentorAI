@@ -14,6 +14,9 @@ mcp = FastMCP("Agent MCP Server")
 PROFILE_SCANNER_URL = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
 MARKET_SCOUT_URL = os.getenv("MARKET_SCOUT_URL", "http://market-scout:8080")
 ACADEMIC_ARCHITECT_URL = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080")
+PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS = float(
+    os.getenv("PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS", "540")
+)
 def _log_event(event: str, **fields: Any) -> None:
     payload = {"event": event, **fields}
     logger.info(json.dumps(payload, ensure_ascii=False, default=str))
@@ -86,10 +89,19 @@ def _upstream_error_payload(
         })
     return payload
 
-def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
+def fetch_data_sync(
+    url: str,
+    endpoint: str,
+    payload: dict,
+    timeout_seconds: float = 180.0,
+) -> dict:
     start = perf_counter()
     try:
-        response = httpx.post(f"{url}{endpoint}", json=payload, timeout=180.0)
+        response = httpx.post(
+            f"{url}{endpoint}",
+            json=payload,
+            timeout=timeout_seconds,
+        )
         response.raise_for_status()
         data = response.json()
         duration_ms = round((perf_counter() - start) * 1000, 2)
@@ -109,7 +121,7 @@ def fetch_data_sync(url: str, endpoint: str, payload: dict) -> dict:
 
 def get_data_sync(url: str, endpoint: str) -> dict:
     try:
-        response = httpx.get(f"{url}{endpoint}", timeout=10.0)
+        response = httpx.get(f"{url}{endpoint}", timeout=60.0)
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as exc:
@@ -127,21 +139,53 @@ def profile_scanner(
     background_info: str = "",
     task: str = "scan_profile",
     answers_json: str = "",
-    cv_document_id: str = ""
+    cv_document_id: str = "",
+    assessment_type: str = "",
+    attempt_id: str = "",
+    decision: str = "",
+    target_role: str = ""
 ) -> dict:
-    """Use this Profile Scanner agent tool for CV/profile scanning and Holland/RIASEC career-interest assessment.
+    """Use this Profile Scanner agent tool for CV/profile scanning and career/profile assessments.
 
     Supported task values:
-    - scan_profile: scan a previously uploaded CV document when cv_document_id is provided.
+    - scan_profile: scan a CV by cv_document_id, or the user's latest CV when no id is available; pass target_role when explicit.
     - holland_start: start the Holland/RIASEC test and return the question bank.
     - holland_score: score and save completed Holland/RIASEC answers.
+    - assessment_start: start a supported assessment, for example assessment_type="multiple_intelligences".
+    - assessment_score: score and save a supported assessment.
+    - profile_confirm: accept, update, overwrite, or reject a CV profile proposal.
+    - career_alignment: synthesize canonical CV profile, Holland, and MI results.
 
-    For holland_score, answers_json must be a JSON array like:
+    For scoring tasks, answers_json must be a JSON array like:
     [{"question_id":"R1","score":5},{"question_id":"I1","score":4}]
     Scores are integers from 1 to 5.
     """
     normalized_task = task.strip().lower()
-    sub_agent = "holland_test" if normalized_task in {"holland", "holland_start", "riasec", "riasec_start", "holland_score", "riasec_score"} or answers_json.strip() else "scan_cv"
+    normalized_assessment_type = (assessment_type or "").strip().lower()
+    is_assessment_task = normalized_task in {
+        "mi",
+        "mi_start",
+        "multiple_intelligences",
+        "multiple_intelligences_start",
+        "assessment_start",
+        "mi_score",
+        "multiple_intelligences_score",
+        "assessment_score",
+    }
+    is_holland_task = normalized_task in {
+        "holland",
+        "holland_start",
+        "riasec",
+        "riasec_start",
+        "holland_score",
+        "riasec_score",
+    }
+    if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
+        sub_agent = "career_alignment"
+    elif normalized_task in {"profile_confirm", "confirm_profile"}:
+        sub_agent = "canonical_profile"
+    else:
+        sub_agent = "assessment" if is_assessment_task else "holland_test" if is_holland_task or answers_json.strip() else "scan_cv"
     _log_event(
         "mcp_tool_call",
         agent="profile_scanner",
@@ -149,8 +193,68 @@ def profile_scanner(
         user_id=user_id,
         user_query=_short_text(background_info),
         task=normalized_task,
+        assessment_type=normalized_assessment_type,
         has_cv_document=bool(cv_document_id),
     )
+
+    if normalized_task in {"profile_confirm", "confirm_profile"}:
+        if not cv_document_id or decision not in {"accept", "update", "overwrite", "reject"}:
+            return {
+                "status": "error",
+                "feature": "profile_confirmation",
+                "error": "cv_document_id and a valid decision are required.",
+            }
+        return fetch_data_sync(PROFILE_SCANNER_URL, "/profiles/confirm", {
+            "user_id": user_id,
+            "cv_document_id": cv_document_id,
+            "decision": decision,
+        })
+
+    if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
+        return fetch_data_sync(PROFILE_SCANNER_URL, f"/alignment/synthesize/{user_id}", {})
+
+    if normalized_task in {
+        "mi",
+        "mi_start",
+        "multiple_intelligences",
+        "multiple_intelligences_start",
+        "assessment_start",
+    }:
+        target_assessment = normalized_assessment_type or "multiple_intelligences"
+        return get_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/start/{user_id}")
+
+    if normalized_task in {
+        "mi_score",
+        "multiple_intelligences_score",
+        "assessment_score",
+    }:
+        target_assessment = normalized_assessment_type or "multiple_intelligences"
+        if not answers_json.strip():
+            return {
+                "status": "error",
+                "feature": "assessment",
+                "assessment_type": target_assessment,
+                "error": "answers_json is required when task is assessment_score.",
+                "expected_format": [{"question_id": "M1", "score": 5}]
+            }
+
+        try:
+            answers = json.loads(answers_json)
+        except json.JSONDecodeError as exc:
+            return {
+                "status": "error",
+                "feature": "assessment",
+                "assessment_type": target_assessment,
+                "error": f"answers_json must be valid JSON: {exc}",
+                "expected_format": [{"question_id": "M1", "score": 5}]
+            }
+
+        return fetch_data_sync(PROFILE_SCANNER_URL, f"/assessments/{target_assessment}/score", {
+            "user_id": user_id,
+            "answers": answers,
+            "attempt_id": attempt_id or None,
+            "source": "orchestrator_chat"
+        })
 
     if normalized_task in {"holland", "holland_start", "riasec", "riasec_start"}:
         return get_data_sync(PROFILE_SCANNER_URL, f"/holland/start/{user_id}")
@@ -177,14 +281,21 @@ def profile_scanner(
         return fetch_data_sync(PROFILE_SCANNER_URL, "/holland/score", {
             "user_id": user_id,
             "answers": answers,
+            "attempt_id": attempt_id or None,
             "source": "orchestrator_chat"
         })
 
-    return fetch_data_sync(PROFILE_SCANNER_URL, "/scan", {
-        "user_id": user_id,
-        "background_info": background_info,
-        "cv_document_id": cv_document_id
-    })
+    return fetch_data_sync(
+        PROFILE_SCANNER_URL,
+        "/scan",
+        {
+            "user_id": user_id,
+            "background_info": background_info,
+            "cv_document_id": cv_document_id,
+            "target_role": target_role,
+        },
+        timeout_seconds=PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS,
+    )
 
 @mcp.tool()
 def market_scout(
@@ -343,23 +454,85 @@ def salary_benchmark(
     return fetch_data_sync(MARKET_SCOUT_URL, "/salary-benchmark", payload)
 
 
-@mcp.tool()
-def academic_architect(career_goal: str, user_id: str = "", current_skills: str = "") -> dict:
-    """Use this tool to create a roadmap to achieve a certain job description or career goal.
-    It will perform a skill gap analysis using the user's scanned CV and recommend courses and jobs.
 
-    Args:
-        career_goal: the user's target career goal (e.g. 'Data Analyst', 'Frontend Engineer')
-        user_id: the current user's User ID (Google ID) to lookup their scanned CV
-        current_skills: optional comma-separated current skills, if CV is not available
-    """
-    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="roadmap", user_query=_short_text(career_goal), user_id=user_id)
-    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/architect", {
+@mcp.tool()
+def academic_architect_skill_gap(career_goal: str, user_id: str = "", current_skills: str = "") -> dict:
+    """Use Case 1: Analyze skill gaps against real job market postings for a career goal."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="skill_gap", user_query=_short_text(career_goal), user_id=user_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/skill-gap", {
         "career_goal": career_goal,
         "current_skills": current_skills,
         "user_id": user_id,
     })
 
+@mcp.tool()
+def academic_architect_create_gantt(career_goal: str, lacking_skills: list[str], user_id: str = "") -> dict:
+    """Use Case 2: Build structured Gantt chart roadmap & narrative text based on approved lacking skills."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="create_gantt", user_query=_short_text(career_goal), user_id=user_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, "/create-gantt", {
+        "career_goal": career_goal,
+        "lacking_skills": lacking_skills,
+        "user_id": user_id,
+    })
+
+@mcp.tool()
+def academic_architect_get_alternatives(chart_id: str, task_id: str, skill_name: str = "") -> dict:
+    """Course Swap Step 1: Find top 5 alternative courses in Coursera database for a task."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="get_alternatives", chart_id=chart_id, task_id=task_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/chart/{chart_id}/get-alternatives", {
+        "chart_id": chart_id,
+        "task_id": task_id,
+        "skill_name": skill_name,
+    })
+
+@mcp.tool()
+def academic_architect_swap_course(chart_id: str, task_id: str, selected_course_id: str) -> dict:
+    """Course Swap Step 2: Swap a task course with selected alternative ID and update Gantt timeline."""
+    _log_event("mcp_tool_call", agent="academic_architect", sub_agent="swap_course", chart_id=chart_id, task_id=task_id)
+    return fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/chart/{chart_id}/swap-course", {
+        "chart_id": chart_id,
+        "task_id": task_id,
+        "selected_course_id": selected_course_id,
+    })
+
+@mcp.tool()
+def academic_architect_input_verifier(
+    career_goal: str,
+    user_id: str,
+    current_skills: str = "",
+    action: str = "verify"
+) -> dict:
+    """Use this tool to present the inputs (career goal and current skills) to the user for validation.
+    It will load/save skills from/to the backend and return the inputs for confirmation.
+    
+    Args:
+        career_goal: the user's target career goal (e.g. 'Data Analyst', 'Frontend Engineer')
+        user_id: the current user's User ID (Google ID)
+        current_skills: optional comma-separated list of skills to set/update. If empty, it loads current skills from backend.
+        action: 'verify' to display inputs, 'update' to update skills in database, or 'confirm' when user confirms.
+    """
+    if action == "update" or (action == "verify" and current_skills.strip()):
+        skills_list = [s.strip() for s in current_skills.split(",") if s.strip()]
+        res = fetch_data_sync(ACADEMIC_ARCHITECT_URL, f"/skills/{user_id}", {"skills": skills_list})
+        return {
+            "status": "success",
+            "feature": "academic_architect_confirm",
+            "career_goal": career_goal,
+            "current_skills": skills_list,
+            "action": action
+        }
+    
+    # Otherwise verify / load
+    res = get_data_sync(ACADEMIC_ARCHITECT_URL, f"/skills/{user_id}")
+    skills_list = res.get("skills", [])
+    
+    return {
+        "status": "success",
+        "feature": "academic_architect_confirm",
+        "career_goal": career_goal,
+        "current_skills": skills_list,
+        "action": action
+    }
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8080"))

@@ -61,5 +61,5 @@ variable "profile_scanner_cv_bucket_name" {
 variable "document_ai_location" {
   type        = string
   description = "Document AI processor location used by Profile Scanner OCR fallback."
-  default     = "us"
+  default     = "asia-southeast1"
 }

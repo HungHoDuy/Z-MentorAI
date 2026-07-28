@@ -11,12 +11,16 @@ import {
   FileSearch,
   GraduationCap,
   LogOut,
+  Lock,
+  Moon,
   MessageSquare,
   Network,
   Paperclip,
   Plus,
   Send,
   Sparkles,
+  Settings,
+  Sun,
   Terminal,
   Trash2,
   Upload,
@@ -32,6 +36,72 @@ const acceptedCvMimeTypes = new Set([
 
 const acceptedCvExtensions = ['pdf', 'docx'];
 const maxCvFileSizeBytes = 10 * 1024 * 1024;
+const brandMarkSrc = '/assets/brand/z-mentorai-mark.png';
+
+const uiText = {
+  vi: {
+    profile: 'Thông tin cá nhân', settings: 'Cài đặt', logout: 'Đăng xuất',
+    personalTitle: 'Hồ sơ cá nhân', personalDesc: 'Thông tin dùng để các agent hiểu đúng bối cảnh nghề nghiệp của bạn.',
+    fullName: 'Họ và tên', email: 'Email tài khoản', phone: 'Số điện thoại', location: 'Địa điểm',
+    targetRole: 'Vị trí mục tiêu', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio',
+    save: 'Lưu thay đổi', saving: 'Đang lưu...', saved: 'Đã lưu thông tin.', currentCv: 'Hồ sơ CV hiện tại',
+    noCv: 'Bạn chưa xác nhận CV nào làm hồ sơ hiện tại.', uploadDate: 'Ngày tải lên', version: 'Phiên bản hồ sơ',
+    language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', settingsDesc: 'Tùy chỉnh cách Z-MentorAI hiển thị trên thiết bị này.',
+    backChat: 'Quay lại trò chuyện', assessmentResult: 'Kết quả bài đánh giá', answered: 'câu đã trả lời', learningTips: 'Gợi ý học tập'
+  },
+  en: {
+    profile: 'Personal profile', settings: 'Settings', logout: 'Sign out',
+    personalTitle: 'Personal profile', personalDesc: 'Information that helps agents understand your career context.',
+    fullName: 'Full name', email: 'Account email', phone: 'Phone', location: 'Location',
+    targetRole: 'Target role', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio',
+    save: 'Save changes', saving: 'Saving...', saved: 'Profile saved.', currentCv: 'Current CV profile',
+    noCv: 'You have not confirmed a CV as your current profile.', uploadDate: 'Uploaded', version: 'Profile version',
+    language: 'Language', appearance: 'Appearance', light: 'Light', dark: 'Dark', settingsDesc: 'Customize how Z-MentorAI appears on this device.',
+    backChat: 'Back to chat', assessmentResult: 'Assessment result', answered: 'answered', learningTips: 'Learning suggestions'
+  }
+};
+
+const scoreDimensionLabels = {
+  vi: { role_skill_fit: 'Mức độ phù hợp kỹ năng', experience_evidence: 'Kinh nghiệm và bằng chứng', education_certification: 'Học vấn và chứng chỉ', career_readiness: 'Mức độ sẵn sàng nghề nghiệp', cv_clarity: 'Độ rõ ràng và khả năng đọc ATS' },
+  en: { role_skill_fit: 'Role skill fit', experience_evidence: 'Experience and evidence', education_certification: 'Education and certification', career_readiness: 'Career-readiness signals', cv_clarity: 'CV clarity and ATS completeness' }
+};
+
+function getCvScoreCopy(grade, locale) {
+  const normalizedGrade = String(grade || '').toUpperCase();
+  const copy = {
+    vi: {
+      strong: 'Hồ sơ thể hiện mức độ sẵn sàng cao cho vị trí này. Hãy xem từng tiêu chí và duy trì các điểm mạnh nổi bật.',
+      good: 'Hồ sơ có nền tảng phù hợp. Bạn có thể cải thiện thêm bằng cách làm rõ bằng chứng kỹ năng và tác động công việc.',
+      developing: 'Hồ sơ đã có nền tảng ban đầu nhưng còn thiếu một số bằng chứng quan trọng cho vị trí này.',
+      early: 'Hồ sơ chưa thể hiện đủ bằng chứng phù hợp. Hãy ưu tiên kỹ năng cốt lõi, dự án thực tế và kết quả đo lường được.',
+      pending: 'Hệ thống đã đọc CV nhưng chưa có đủ dữ liệu để chấm điểm.'
+    },
+    en: {
+      strong: 'Your CV shows strong readiness for this role. Review each category and continue building on the strongest evidence.',
+      good: 'Your CV has a relevant foundation. Make your skill evidence and work impact more explicit to improve it further.',
+      developing: 'Your CV has an initial foundation but still lacks important evidence for this role.',
+      early: 'Your CV does not yet show enough relevant evidence. Prioritize core skills, practical projects, and measurable outcomes.',
+      pending: 'The CV was processed, but there is not enough information to calculate a score.'
+    }
+  };
+  const localeCopy = copy[locale] || copy.vi;
+  if (['S', 'A'].includes(normalizedGrade)) return localeCopy.strong;
+  if (normalizedGrade === 'B') return localeCopy.good;
+  if (normalizedGrade === 'C') return localeCopy.developing;
+  if (['D', 'E'].includes(normalizedGrade)) return localeCopy.early;
+  return localeCopy.pending;
+}
+
+function localizeRecommendation(text, locale) {
+  if (locale === 'en' || !text) return text;
+  const dimensionEntries = Object.entries(scoreDimensionLabels.en);
+  const matchedDimension = dimensionEntries.find(([, label]) => text.toLowerCase().includes(label.toLowerCase()));
+  const label = matchedDimension ? scoreDimensionLabels.vi[matchedDimension[0]] : '';
+  if (text.startsWith('Improve ') && label) return `Cải thiện ${label.toLowerCase()}: bổ sung bằng chứng cụ thể và có thể kiểm chứng trong CV.`;
+  if (text.includes('No quantified achievement')) return 'Bổ sung thành tựu có số liệu hoặc tác động đo lường được.';
+  if (text.includes('No email detected')) return 'Bổ sung email liên hệ rõ ràng trong CV.';
+  return text;
+}
 
 function formatFileSize(bytes) {
   if (!bytes) return '0 KB';
@@ -58,9 +128,23 @@ const agentInfo = {
     themeClass: 'scout',
     accent: '#a78bfa'
   },
-  academic_architect: {
+  academic_architect_create_gantt: {
     label: 'Lộ Trình Học Tập',
     description: 'Biến khoảng trống kỹ năng thành lộ trình học tập thực tế.',
+    icon: GraduationCap,
+    themeClass: 'architect',
+    accent: '#f8c96b'
+  },
+  academic_architect_skill_gap: {
+    label: 'Phân Tích Kỹ Năng',
+    description: 'So sánh kỹ năng hiện tại với yêu cầu công việc thực tế.',
+    icon: FileSearch,
+    themeClass: 'architect',
+    accent: '#f8c96b'
+  },
+  academic_architect_input_verifier: {
+    label: 'Xác Nhận Đầu Vào',
+    description: 'Kiểm tra kỹ năng và mục tiêu trước khi lập lộ trình.',
     icon: GraduationCap,
     themeClass: 'architect',
     accent: '#f8c96b'
@@ -80,6 +164,13 @@ const suggestedQuestions = [
     desc: 'Kiểm tra nhóm RIASEC và gợi ý hướng nghề phù hợp',
     prompt: 'Tôi muốn làm Holland Test / RIASEC để xem nhóm nghề nghiệp nào phù hợp với tôi.'
   },
+
+  {
+    agent: 'profile_scanner',
+    title: 'MI Test',
+    desc: 'Khám phá nhóm năng lực và kiểu học nổi trội',
+    prompt: 'Tôi muốn làm MI Test / Multiple Intelligences để xem nhóm năng lực và kiểu học nào phù hợp với tôi.'
+  },
   {
     agent: 'market_scout',
     title: 'Khảo sát thị trường',
@@ -87,51 +178,18 @@ const suggestedQuestions = [
     prompt: 'Tôi muốn khảo sát thị trường cho vị trí Python Backend Developer. Hiện tại nhu cầu tuyển dụng, kỳ vọng lương và các framework quan trọng nhất là gì?'
   },
   {
-    agent: 'academic_architect',
+    agent: 'academic_architect_create_gantt',
     title: 'Dựng lộ trình học',
     desc: 'Tạo các bước học để lấp khoảng trống mục tiêu',
-    prompt: 'Tôi muốn trở thành Cloud DevOps Engineer. Kỹ năng hiện tại của tôi là quản trị Linux và Python scripting cơ bản. Hãy dựng cho tôi một lộ trình khóa học và kỹ năng cần bổ sung.'
+    prompt: 'Tôi muốn xây dựng lộ trình học tập.'
   },
   {
     agent: 'profile_scanner',
     title: 'Tư vấn tổng hợp',
-    desc: 'Kích hoạt tất cả agent để kiểm tra định hướng từ đầu đến cuối',
-    prompt: 'Hãy đánh giá hồ sơ của tôi cho vị trí Entry-Level Data Analyst. Kinh nghiệm hiện tại của tôi gồm truy vấn SQL và dựng mô hình Excel. Hãy quét nền tảng, khảo sát thị trường và thiết kế lộ trình học cho tôi.'
+    desc: 'Đối chiếu CV, Holland và MI để kiểm tra định hướng',
+    prompt: 'Hãy tổng hợp CV, Holland và MI của tôi để kiểm tra định hướng nghề nghiệp có đang xung đột hay không.'
   }
 ];
-
-function LoginChatTerminal() {
-  return (
-    <aside className="login-terminal" aria-label="Bản xem trước cuộc trò chuyện Z-MentorAI">
-      <div className="terminal-topbar">
-        <div className="terminal-window-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-        <span className="terminal-label">mentor.session</span>
-      </div>
-      <div className="terminal-body">
-        <div className="terminal-line user-line">
-          <span className="terminal-prompt">$ bạn</span>
-          <p>Hãy quét CV của tôi cho vị trí Junior Data Analyst.</p>
-        </div>
-        <div className="terminal-line ai-line">
-          <span className="terminal-prompt">z-mentor</span>
-          <p>Agent Quét Hồ Sơ thấy tín hiệu SQL khá tốt, nhưng CV cần làm rõ tác động dự án và bằng chứng dashboard.</p>
-        </div>
-        <div className="terminal-line ai-line">
-          <span className="terminal-prompt">thị trường</span>
-          <p>Các vị trí đầu vào thường yêu cầu Excel, SQL, BI tools và một bài phân tích trong portfolio.</p>
-        </div>
-        <div className="terminal-command">
-          <span>$</span>
-          <span className="terminal-caret">dựng lộ trình</span>
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 function normalizeToolOutput(output) {
   if (!output) return null;
@@ -170,25 +228,36 @@ function normalizeStoredToolCalls(toolCalls = []) {
 function hasHollandInteractiveToolCall(toolCalls = []) {
   return toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    return output?.feature === 'holland_assessment'
-      && (output?.questions || output?.top_code);
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    const hasProfileAction = output?.feature === 'profile_scan'
+      && Array.isArray(output?.profile_action?.options)
+      && output.profile_action.options.length > 0;
+    return (isAssessmentOutput
+      && (output?.questions || output?.top_code || output?.top_dimensions || output?.result_code))
+      || hasProfileAction
+      || output?.feature === 'profile_confirmation'
+      || output?.feature === 'career_alignment';
   });
 }
 
 function getVisibleToolCalls(toolCalls = []) {
   const hasSuccessfulHollandResult = toolCalls.some((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    return output?.feature === 'holland_assessment' && output?.top_code;
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    return isAssessmentOutput && (output?.top_code || output?.top_dimensions || output?.result_code);
   });
 
   if (!hasSuccessfulHollandResult) return toolCalls;
 
   return toolCalls.filter((toolCall) => {
     const output = normalizeToolOutput(toolCall.output);
-    const isSupersededHollandError = output?.feature === 'holland_assessment'
+    const isAssessmentOutput = output?.feature === 'holland_assessment' || output?.feature === 'assessment';
+    const isSupersededHollandError = isAssessmentOutput
       && (output?.status === 'error' || output?.error)
       && !output?.questions
-      && !output?.top_code;
+      && !output?.top_code
+      && !output?.top_dimensions
+      && !output?.result_code;
     return !isSupersededHollandError;
   });
 }
@@ -202,9 +271,56 @@ const riasecLabels = {
   C: 'Conventional - Quy củ'
 };
 
-function HollandResultCard({ result }) {
+const multipleIntelligenceLabels = {
+  linguistic: 'Ngôn ngữ',
+  logical_math: 'Logic / Toán học',
+  spatial: 'Không gian / Hình ảnh',
+  bodily_kinesthetic: 'Vận động / Thực hành',
+  musical: 'Âm nhạc / Nhịp điệu',
+  interpersonal: 'Giao tiếp / Thấu hiểu người khác',
+  intrapersonal: 'Tự nhận thức',
+  naturalistic: 'Thiên nhiên / Phân loại hệ thống'
+};
+
+const localizedRiasecLabels = {
+  vi: { R: 'Thực tế', I: 'Nghiên cứu', A: 'Nghệ thuật', S: 'Xã hội', E: 'Dẫn dắt', C: 'Quy củ' },
+  en: { R: 'Realistic', I: 'Investigative', A: 'Artistic', S: 'Social', E: 'Enterprising', C: 'Conventional' }
+};
+void riasecLabels;
+void multipleIntelligenceLabels;
+
+const localizedMiLabels = {
+  vi: { linguistic: 'Ngôn ngữ', logical_math: 'Logic / Toán học', spatial: 'Không gian / Hình ảnh', bodily_kinesthetic: 'Vận động / Thực hành', musical: 'Âm nhạc / Nhịp điệu', interpersonal: 'Giao tiếp / Thấu hiểu người khác', intrapersonal: 'Tự nhận thức', naturalistic: 'Thiên nhiên / Phân loại hệ thống' },
+  en: { linguistic: 'Linguistic', logical_math: 'Logical / Mathematical', spatial: 'Spatial / Visual', bodily_kinesthetic: 'Bodily / Kinesthetic', musical: 'Musical / Rhythmic', interpersonal: 'Interpersonal', intrapersonal: 'Intrapersonal', naturalistic: 'Naturalistic' }
+};
+
+function getAssessmentDisplayConfig(result, locale = 'vi') {
+  if (result?.feature === 'assessment') {
+    return {
+      eyebrow: `Kết quả ${result.title || 'Assessment'}`,
+      title: result.result_code || result.top_dimensions?.join(' / ') || result.title || 'Đang cập nhật',
+      labels: localizedMiLabels[locale],
+      answerUnit: 'câu đã trả lời'
+    };
+  }
+
+  return {
+    eyebrow: 'Kết quả Holland Test',
+    title: result?.top_code || 'Đang cập nhật',
+    labels: localizedRiasecLabels[locale],
+    answerUnit: 'câu đã trả lời'
+  };
+}
+
+function HollandResultCard({ result, locale = 'vi' }) {
   const scores = result?.scores || {};
-  const topCode = result?.top_code || 'Đang cập nhật';
+  const displayConfig = getAssessmentDisplayConfig(result, locale);
+  const displayTitle = result?.feature === 'assessment'
+    ? (result?.top_dimensions || []).map((key) => localizedMiLabels[locale][key] || key).join(' / ')
+    : result?.top_code;
+  const displayEyebrow = result?.feature === 'assessment'
+    ? uiText[locale].assessmentResult
+    : (locale === 'vi' ? 'Kết quả Holland Test' : 'Holland Test result');
   const answeredCount = result?.answered_count;
   const hasScores = Object.keys(scores).length > 0;
 
@@ -212,27 +328,26 @@ function HollandResultCard({ result }) {
     <div className="holland-result-card">
       <div className="holland-result-header">
         <div>
-          <div className="holland-eyebrow">Kết quả Holland Test</div>
-          <h3>{topCode}</h3>
+          <div className="holland-eyebrow">{displayEyebrow}</div>
+          <h3>{displayTitle || displayConfig.title}</h3>
           <p>{result?.interpretation_vi || 'Agent đã ghi nhận kết quả bài test của bạn.'}</p>
         </div>
         {answeredCount && (
           <div className="holland-result-count">
             <strong>{answeredCount}</strong>
-            <span>câu đã trả lời</span>
+            <span>{uiText[locale].answered}</span>
           </div>
         )}
       </div>
 
       {hasScores && (
-        <div className="holland-score-list" aria-label="Điểm RIASEC">
-          {Object.entries(riasecLabels).map(([code, label]) => {
+        <div className="holland-score-list" aria-label="Điểm assessment">
+          {Object.entries(displayConfig.labels).map(([code, label]) => {
             const score = Number(scores[code] || 0);
             const percent = Math.round(score * 100);
             return (
               <div className="holland-score-row" key={code}>
                 <div className="holland-score-meta">
-                  <span>{code}</span>
                   <strong>{label}</strong>
                   <em>{percent}%</em>
                 </div>
@@ -244,38 +359,99 @@ function HollandResultCard({ result }) {
           })}
         </div>
       )}
+
+      {Array.isArray(result?.recommendations_vi) && result.recommendations_vi.length > 0 && (
+        <div className="profile-scan-grid">
+          <div>
+            <span className="profile-scan-section-title">Gợi ý học tập</span>
+            <ul className="profile-recommendations">
+              {result.recommendations_vi.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProfileScanResultCard({ result }) {
-  const grade = result?.grade || 'E';
+function ProfileConfirmationActions({ action, onSendMessage }) {
+  const [submitting, setSubmitting] = useState('');
+  const [completed, setCompleted] = useState(false);
+  const [error, setError] = useState('');
+  const options = Array.isArray(action?.options) ? action.options : [];
+
+  if (!options.length) {
+    return action?.message_vi ? (
+      <div className="profile-action-status"><CheckCircle2 size={16} />{action.message_vi}</div>
+    ) : null;
+  }
+
+  const handleDecision = async (option) => {
+    if (submitting || completed) return;
+    const displayText = option.decision === 'reject'
+      ? 'Không, hãy giữ nguyên hồ sơ cá nhân hiện tại.'
+      : `${option.label_vi} từ CV vừa tải lên.`;
+    const backendText = [
+      displayText,
+      `Call profile_scanner immediately with task="profile_confirm", cv_document_id="${action.cv_document_id}", and decision="${option.decision}".`,
+      'Do not ask for confirmation again and do not change the decision.'
+    ].join('\n');
+    setSubmitting(option.decision);
+    setError('');
+    const ok = await onSendMessage({ displayText, backendText });
+    setSubmitting('');
+    if (ok) setCompleted(true);
+    else setError('Chưa cập nhật được hồ sơ. Vui lòng kiểm tra kết nối và thử lại.');
+  };
+
+  return (
+    <div className="profile-confirmation-panel">
+      <div>
+        <span className="profile-scan-section-title">Xác nhận hồ sơ cá nhân</span>
+        <p>{action.message_vi}</p>
+      </div>
+      <div className="profile-confirmation-actions">
+        {options.map((option, index) => (
+          <button
+            key={option.decision}
+            className={index === 0 ? 'primary' : 'secondary'}
+            disabled={Boolean(submitting) || completed}
+            onClick={() => handleDecision(option)}
+            type="button"
+          >
+            {submitting === option.decision ? 'Đang xử lý...' : option.label_vi}
+          </button>
+        ))}
+      </div>
+      {completed && <div className="profile-action-status"><CheckCircle2 size={16} />Đã gửi lựa chọn.</div>}
+      {error && <div className="holland-form-error">{error}</div>}
+    </div>
+  );
+}
+
+function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
+  const hasGrade = Boolean(result?.grade) && result?.total_score !== null && result?.total_score !== undefined;
+  const grade = result?.grade || 'N/A';
   const dimensions = Array.isArray(result?.score_dimensions) ? result.score_dimensions : [];
   const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
-  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  const recommendations = Array.isArray(result?.recommendations) ? result.recommendations.map((item) => localizeRecommendation(item, locale)) : [];
   const strengths = Array.isArray(result?.strengths) ? result.strengths : [];
+  const resultSummary = getCvScoreCopy(grade, locale);
 
   return (
     <div className="profile-scan-card">
       <div className="profile-scan-header">
-        <div className={`profile-rank-mark rank-${grade.toLowerCase()}`}>
+        <div className={`profile-rank-mark rank-${grade.toLowerCase().replace('/', '-')}`}>
           <span>{grade}</span>
         </div>
         <div className="profile-scan-title">
-          <div className="profile-scan-eyebrow">CV Benchmark</div>
+          <div className="profile-scan-eyebrow">{locale === 'vi' ? 'Kết quả đánh giá CV' : 'CV assessment result'}</div>
           <h3>{result?.target_role || 'Profile Scanner'}</h3>
-          <p>{result?.message_vi || 'Profile Scanner đã hoàn tất phân tích CV.'}</p>
-          <div className="profile-analysis-mode">
-            {result?.ai_extraction_used ? (
-              <span>Gemini-assisted extraction · confidence {Math.round(Number(result?.ai_extraction_confidence || 0) * 100)}%</span>
-            ) : (
-              <span>Heuristic fallback analysis</span>
-            )}
-          </div>
+          <p>{resultSummary}</p>
         </div>
         <div className="profile-total-score">
-          <strong>{Math.round(Number(result?.total_score || 0))}</strong>
-          <span>/100</span>
+          <strong>{hasGrade ? Math.round(Number(result.total_score)) : '--'}</strong>
+          <span>{hasGrade ? '/100' : 'chưa chấm'}</span>
         </div>
       </div>
 
@@ -286,8 +462,8 @@ function ProfileScanResultCard({ result }) {
             return (
               <div className="profile-dimension-row" key={dimension.key || dimension.label}>
                 <div className="profile-dimension-meta">
-                  <strong>{dimension.label}</strong>
-                  <span>{score}/100 · {Math.round(Number(dimension.weight || 0) * 100)}%</span>
+                  <strong>{scoreDimensionLabels[locale][dimension.key] || dimension.label}</strong>
+                  <span>{score}/100</span>
                 </div>
                 <div className="profile-dimension-track">
                   <div className="profile-dimension-fill" style={{ width: `${score}%` }} />
@@ -300,20 +476,55 @@ function ProfileScanResultCard({ result }) {
 
       <div className="profile-scan-grid">
         <div>
-          <span className="profile-scan-section-title">Kỹ năng phát hiện</span>
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Kỹ năng nổi bật' : 'Highlighted skills'}</span>
           <div className="profile-skill-cloud">
             {skills.slice(0, 12).map((skill) => <span key={skill}>{skill}</span>)}
             {!skills.length && <em>Chưa phát hiện kỹ năng rõ ràng.</em>}
           </div>
         </div>
         <div>
-          <span className="profile-scan-section-title">Gợi ý cải thiện</span>
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Ưu tiên cải thiện' : 'Improvement priorities'}</span>
           <ul className="profile-recommendations">
             {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
             {!recommendations.length && strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
           </ul>
         </div>
       </div>
+      {result?.profile_action && (
+        <ProfileConfirmationActions action={result.profile_action} onSendMessage={onSendMessage} />
+      )}
+    </div>
+  );
+}
+
+function CareerAlignmentCard({ result }) {
+  const stateLabels = {
+    aligned: 'Định hướng phù hợp',
+    interest_conflict: 'Xung đột về hứng thú',
+    readiness_gap: 'Thiếu bằng chứng sẵn sàng',
+    exploration_advised: 'Nên khám phá thêm',
+    mixed_or_uncertain: 'Chưa đủ rõ ràng',
+    insufficient_data: 'Thiếu dữ liệu'
+  };
+  const recommendations = Array.isArray(result?.recommendations_vi) ? result.recommendations_vi : [];
+  return (
+    <div className="career-alignment-card">
+      <div className="career-alignment-header">
+        <div>
+          <span className="profile-scan-eyebrow">Career Alignment · {result?.rule_version}</span>
+          <h3>{stateLabels[result?.alignment_state] || stateLabels.insufficient_data}</h3>
+          <p>{result?.target_role || 'Chưa xác định target role'}</p>
+        </div>
+        {result?.career_alignment_score !== null && result?.career_alignment_score !== undefined && (
+          <div className="profile-total-score"><strong>{Math.round(result.career_alignment_score)}</strong><span>/100</span></div>
+        )}
+      </div>
+      <div className="alignment-metrics">
+        <span>CV readiness <strong>{result?.cv_readiness_score ?? '--'}</strong></span>
+        <span>Holland alignment <strong>{result?.holland_alignment_score ?? '--'}</strong></span>
+        <span>Conflict <strong>{result?.conflict_severity || 'unknown'}</strong></span>
+      </div>
+      {recommendations.length > 0 && <ul className="profile-recommendations">{recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
     </div>
   );
 }
@@ -365,6 +576,12 @@ function HollandTestForm({ output, onSendMessage }) {
   const [submitError, setSubmitError] = useState('');
   const questions = output?.questions || [];
   const latestResult = output?.latest_result;
+  const isGenericAssessment = output?.feature === 'assessment';
+  const assessmentType = output?.assessment_type || 'holland_riasec';
+  const assessmentTitle = output?.title || 'Holland Test';
+  const assessmentEyebrow = output?.eyebrow_vi || 'Bài đánh giá RIASEC';
+  const assessmentDescription = output?.description_vi || 'Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.';
+  const attemptId = output?.attempt_id || '';
   const answeredCount = Object.keys(answers).length;
   const isComplete = answeredCount === questions.length;
 
@@ -376,13 +593,22 @@ function HollandTestForm({ output, onSendMessage }) {
       question_id: question.id,
       score: answers[question.id]
     }));
-    const displayText = `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
-    const backendText = [
-      'Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score" và answers_json sau:',
-      '```json',
-      JSON.stringify(payload, null, 2),
-      '```'
-    ].join('\n');
+    const displayText = isGenericAssessment
+      ? `Mình đã hoàn thành ${assessmentTitle} với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả vào hồ sơ của mình.`
+      : `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
+    const backendText = isGenericAssessment
+      ? [
+        `Mình đã hoàn thành ${assessmentTitle}. Hãy chấm điểm bằng profile_scanner tool với task="assessment_score", assessment_type="${assessmentType}", attempt_id="${attemptId}" và answers_json sau:`,
+        '```json',
+        JSON.stringify(payload, null, 2),
+        '```'
+      ].join('\n')
+      : [
+        `Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score", attempt_id="${attemptId}" và answers_json sau:`,
+        '```json',
+        JSON.stringify(payload, null, 2),
+        '```'
+      ].join('\n');
     setSubmitting(true);
     setSubmitError('');
     const ok = await onSendMessage({
@@ -401,9 +627,9 @@ function HollandTestForm({ output, onSendMessage }) {
     <div className="holland-form">
       <div className="holland-form-header">
         <div>
-          <div className="holland-eyebrow">Bài đánh giá RIASEC</div>
-          <h3>Holland Test</h3>
-          <p>Chọn mức độ giống bạn từ 1 đến 5. Kết quả sẽ được agent chấm điểm và lưu vào hồ sơ định hướng nghề nghiệp.</p>
+          <div className="holland-eyebrow">{assessmentEyebrow}</div>
+          <h3>{assessmentTitle}</h3>
+          <p>{assessmentDescription}</p>
         </div>
         <div className="holland-progress">
           <strong>{answeredCount}/{questions.length}</strong>
@@ -414,15 +640,15 @@ function HollandTestForm({ output, onSendMessage }) {
       {latestResult && (
         <div className="holland-latest">
           <span>Kết quả gần nhất</span>
-          <strong>{latestResult.top_code}</strong>
+          <strong>{latestResult.top_code || latestResult.result_code || latestResult.top_dimensions?.join(' / ')}</strong>
           <small>{latestResult.interpretation_vi}</small>
         </div>
       )}
 
       <div className="holland-scale">
-        <span>1 - Rất không giống</span>
-        <span>3 - Trung lập</span>
-        <span>5 - Rất giống</span>
+        <span>1 - {output?.scale?.['1'] || 'Rất không giống'}</span>
+        <span>3 - {output?.scale?.['3'] || 'Trung lập'}</span>
+        <span>5 - {output?.scale?.['5'] || 'Rất giống'}</span>
       </div>
 
       <div className="holland-question-list">
@@ -460,24 +686,99 @@ function HollandTestForm({ output, onSendMessage }) {
   );
 }
 
-function AcademicPlanWidget({ output, user, backendUrl }) {
-  const plan = output.academic_plan || '';
+function AcademicArchitectInputConfirmWidget({ output, onSendMessage }) {
+  const normalized = normalizeToolOutput(output) || {};
+  const careerGoal = normalized.career_goal || '';
+  const skills = normalized.current_skills || [];
+  const [newSkill, setNewSkill] = useState('');
+
+  const handleAddSkill = () => {
+    if (!newSkill.trim()) return;
+    onSendMessage(`thêm kỹ năng ${newSkill.trim()}`);
+    setNewSkill('');
+  };
+
+  const handleRemoveSkill = (skill) => {
+    onSendMessage(`xóa kỹ năng ${skill}`);
+  };
+
+  const handleConfirm = () => {
+    onSendMessage("Xác nhận và dựng lộ trình học tập");
+  };
+
+  return (
+    <div className="academic-confirm-widget">
+      <div className="confirm-widget-header">
+        <h4>Xác nhận thông tin lộ trình học tập</h4>
+        <p>Vui lòng kiểm tra mục tiêu nghề nghiệp và các kỹ năng của bạn trước khi chúng tôi tạo lộ trình.</p>
+      </div>
+      
+      <div className="confirm-field">
+        <span className="field-label">Mục tiêu nghề nghiệp:</span>
+        <strong className="field-value">{careerGoal || 'Chưa xác định'}</strong>
+      </div>
+      
+      <div className="confirm-field">
+        <span className="field-label">Kỹ năng hiện tại của bạn:</span>
+        <div className="confirm-skills-list">
+          {skills.map((skill) => (
+            <span key={skill} className="skill-confirm-tag">
+              {skill}
+              <button 
+                type="button" 
+                className="skill-remove-btn" 
+                onClick={() => handleRemoveSkill(skill)}
+                title="Xóa kỹ năng này"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {skills.length === 0 && <em style={{ fontSize: '0.85em', color: 'var(--text-muted)' }}>Chưa có kỹ năng nào. Bạn có thể thêm ở dưới.</em>}
+        </div>
+      </div>
+      
+      <div className="confirm-actions-bar">
+        <div className="add-skill-inline">
+          <input 
+            type="text" 
+            placeholder="Thêm kỹ năng mới..." 
+            value={newSkill} 
+            onChange={(e) => setNewSkill(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddSkill();
+              }
+            }}
+          />
+          <button type="button" onClick={handleAddSkill}>Thêm</button>
+        </div>
+        <button type="button" className="confirm-generate-btn" onClick={handleConfirm}>
+          Xác nhận & Dựng lộ trình
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CalendarSyncWidget({ output, user, backendUrl }) {
   const courses = output.courses || [];
   const lackingSkills = output.lacking_skills || [];
   const careerGoal = output.career_goal || 'Lộ trình học tập';
 
-  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
+  const [calendarStatus, setCalendarStatus] = useState('idle'); // 'idle' | 'generating' | 'preview' | 'success' | 'error'
   const [calendarMessage, setCalendarMessage] = useState('');
+  const [proposedEvents, setProposedEvents] = useState([]);
 
-  const handleAddToCalendar = async () => {
-    if (!user || calendarStatus === 'loading') return;
+  const handleGenerateSchedule = async () => {
+    if (!user || calendarStatus === 'generating') return;
     if (courses.length === 0) return;
-    
-    const courseToSchedule = courses[0];
 
-    setCalendarStatus('loading');
+    setCalendarStatus('generating');
+    setCalendarMessage('');
     try {
-      const res = await fetch(`${backendUrl}/calendar/append`, {
+      const res = await fetch(`${backendUrl}/calendar/generate-schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -486,172 +787,394 @@ function AcademicPlanWidget({ output, user, backendUrl }) {
         body: JSON.stringify({
           career_goal: careerGoal,
           lacking_skills: lackingSkills,
-          courses: [{ 
-            name: courseToSchedule.name, 
-            url: courseToSchedule.url,
-            duration: courseToSchedule.duration || '15 giờ',
-            workload: courseToSchedule.workload || ''
-          }]
+          courses: courses.map(c => ({ 
+            name: c.name, 
+            url: c.url,
+            duration: c.duration || '15 giờ',
+            workload: c.workload || ''
+          }))
         })
       });
-      if (!res.ok) throw new Error('Không thể đồng bộ lịch học');
+      if (!res.ok) throw new Error('Không thể tạo lịch học dự kiến');
       const data = await res.json();
-      setCalendarStatus('success');
-      setCalendarMessage(data.message || 'Đã đồng bộ thành công!');
+      setProposedEvents(data.events || []);
+      setCalendarStatus('preview');
     } catch (err) {
       console.error(err);
       setCalendarStatus('error');
-      setCalendarMessage('Đồng bộ lịch thất bại. Vui lòng thử lại sau.');
+      setCalendarMessage('Không thể tạo lịch học dự kiến. Vui lòng thử lại sau.');
     }
   };
 
+  const expandRecurrentEvents = (events) => {
+    const expanded = [];
+    
+    for (const event of events) {
+      const startDt = new Date(event.start.dateTime);
+      const endDt = new Date(event.end.dateTime);
+      const durationMs = endDt.getTime() - startDt.getTime();
+      
+      let recurrenceRule = null;
+      if (event.recurrence && event.recurrence[0]) {
+        recurrenceRule = event.recurrence[0];
+      }
+      
+      if (!recurrenceRule) {
+        expanded.push({
+          summary: event.summary,
+          description: event.description,
+          startDate: startDt,
+          endDate: endDt
+        });
+        continue;
+      }
+      
+      const parts = recurrenceRule.replace("RRULE:", "").split(";");
+      const ruleObj = {};
+      for (const part of parts) {
+        const [key, val] = part.split("=");
+        if (key && val) {
+          ruleObj[key] = val;
+        }
+      }
+      
+      const freq = ruleObj.FREQ;
+      const count = parseInt(ruleObj.COUNT) || 1;
+      
+      if (freq === 'DAILY') {
+        let currentDate = new Date(startDt);
+        for (let i = 0; i < count; i++) {
+          const occurrenceStart = new Date(currentDate);
+          const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+          expanded.push({
+            summary: event.summary,
+            description: event.description,
+            startDate: occurrenceStart,
+            endDate: occurrenceEnd
+          });
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      } else if (freq === 'WEEKLY') {
+        const byDay = ruleObj.BYDAY ? ruleObj.BYDAY.split(",") : [];
+        const dayMap = { 'SU': 0, 'MO': 1, 'TU': 2, 'WE': 3, 'TH': 4, 'FR': 5, 'SA': 6 };
+        const targetDays = byDay.map(d => dayMap[d]);
+        
+        let currentDate = new Date(startDt);
+        let occurrencesGenerated = 0;
+        const maxAttempts = 1000;
+        let attempts = 0;
+        
+        while (occurrencesGenerated < count && attempts < maxAttempts) {
+          attempts++;
+          const currentDayOfWeek = currentDate.getDay();
+          if (targetDays.length === 0 || targetDays.includes(currentDayOfWeek)) {
+            const occurrenceStart = new Date(currentDate);
+            const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+            expanded.push({
+              summary: event.summary,
+              description: event.description,
+              startDate: occurrenceStart,
+              endDate: occurrenceEnd
+            });
+            occurrencesGenerated++;
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      } else {
+        expanded.push({
+          summary: event.summary,
+          description: event.description,
+          startDate: startDt,
+          endDate: endDt
+        });
+      }
+    }
+    
+    return expanded;
+  };
+
+  const handleExportToCSV = () => {
+    if (proposedEvents.length === 0) return;
+
+    try {
+      const expandedEvents = expandRecurrentEvents(proposedEvents);
+      
+      const headers = ['Subject', 'Start Date', 'Start Time', 'End Date', 'End Time', 'All Day Event', 'Description'];
+      
+      const rows = expandedEvents.map(event => {
+        const sDate = event.startDate;
+        const eDate = event.endDate;
+        
+        const pad = (num) => String(num).padStart(2, '0');
+        const formatDate = (d) => `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`;
+        
+        const formatTime = (d) => {
+          let hours = d.getHours();
+          const minutes = pad(d.getMinutes());
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12;
+          hours = hours ? hours : 12;
+          return `${pad(hours)}:${minutes} ${ampm}`;
+        };
+        
+        const subject = event.summary;
+        const startDate = formatDate(sDate);
+        const startTime = formatTime(sDate);
+        const endDate = formatDate(eDate);
+        const endTime = formatTime(eDate);
+        const allDayEvent = 'False';
+        const description = event.description || '';
+        
+        const escapeCsv = (str) => {
+          const clean = str.replace(/"/g, '""');
+          return `"${clean}"`;
+        };
+        
+        return [
+          escapeCsv(subject),
+          escapeCsv(startDate),
+          escapeCsv(startTime),
+          escapeCsv(endDate),
+          escapeCsv(endTime),
+          escapeCsv(allDayEvent),
+          escapeCsv(description)
+        ].join(',');
+      });
+      
+      const csvContent = "\ufeff" + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      const filename = `Lịch_Học_Tập_${careerGoal.replace(/\s+/g, '_')}.csv`;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setCalendarStatus('success');
+      setCalendarMessage('Đã tải xuống file CSV lịch thành công! Bạn có thể nhập file này vào Google Calendar (Cài đặt -> Nhập & xuất -> Chọn file từ máy tính) để thêm toàn bộ lộ trình học.');
+    } catch (err) {
+      console.error(err);
+      setCalendarStatus('error');
+      setCalendarMessage('Không thể tạo và tải xuống file CSV. Vui lòng thử lại sau.');
+    }
+  };
+
+  const handleCancelPreview = () => {
+    setCalendarStatus('idle');
+    setProposedEvents([]);
+    setCalendarMessage('');
+  };
+
+  const handleEventChange = (index, field, value) => {
+    const updated = [...proposedEvents];
+    const ev = { ...updated[index] };
+
+    if (field === 'summary') {
+      ev.summary = value;
+    } else if (field === 'description') {
+      ev.description = value;
+    } else if (field === 'startDate') {
+      const startRest = ev.start.dateTime.substring(10);
+      const endRest = ev.end.dateTime.substring(10);
+      ev.start = { ...ev.start, dateTime: value + startRest };
+      ev.end = { ...ev.end, dateTime: value + endRest };
+    } else if (field === 'pattern') {
+      let count = 1;
+      if (ev.recurrence && ev.recurrence[0]) {
+        const match = ev.recurrence[0].match(/COUNT=(\d+)/);
+        if (match) {
+          count = parseInt(match[1]);
+        }
+      }
+      if (value === 'weekly') {
+        ev.recurrence = [`RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=${count}`];
+      } else if (value === 'daily') {
+        ev.recurrence = [`RRULE:FREQ=DAILY;COUNT=${count}`];
+      } else {
+        ev.recurrence = [];
+      }
+    } else if (field === 'count') {
+      const countVal = parseInt(value) || 1;
+      if (ev.recurrence && ev.recurrence[0]) {
+        const parts = ev.recurrence[0].split(';');
+        const newParts = parts.map(p => {
+          if (p.startsWith('COUNT=')) {
+            return `COUNT=${countVal}`;
+          }
+          return p;
+        });
+        if (!newParts.some(p => p.startsWith('COUNT='))) {
+          newParts.push(`COUNT=${countVal}`);
+        }
+        ev.recurrence = [newParts.join(';')];
+      }
+    }
+    
+    updated[index] = ev;
+    setProposedEvents(updated);
+  };
+
   return (
-    <div className="academic-plan-widget">
-      <div className="academic-plan-markdown">
-        <ReactMarkdown>{plan}</ReactMarkdown>
+    <div className="calendar-sync-card">
+      <div className="calendar-card-header">
+        <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
+        <h4>Lập kế hoạch học tập</h4>
       </div>
       
-      {courses.length > 0 && (
-        <div className="academic-plan-courses">
-          <h4 className="courses-section-title">Khóa học tiêu biểu đề xuất</h4>
-          <div className="course-cards-grid single-course">
-            {courses.slice(0, 1).map((course) => {
-              const scorePct = Math.round((course.score || 0) * 100);
-              const certs = course.certificates || [];
-              const isSpec = certs.some(c => String(c).toLowerCase().includes('specialization'));
-              const partnersList = (course.partners || [])
-                .map(p => typeof p === 'object' ? p.name : p)
-                .join(', ');
-                 
-              return (
-                <div 
-                  key={course.course_id}
-                  className="course-card selected featured-course"
-                  style={{ position: 'relative' }}
-                >
-                  <div className="course-card-top">
-                    <span className="course-provider">{partnersList || 'Coursera'}</span>
-                    <span className="course-score-badge">{scorePct}% phù hợp</span>
-                  </div>
-                  
-                  <h5 className="course-name">
-                    🎓 {course.name}
-                  </h5>
-                  <p className="course-desc-snippet">
-                    {course.description 
-                      ? (course.description.length > 250 ? `${course.description.substring(0, 250)}...` : course.description)
-                      : 'Không có mô tả chi tiết.'}
-                  </p>
-                  
-                  <div className="course-card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span className="course-type-tag">
-                        {isSpec ? 'Specialization' : 'Course'}
-                      </span>
-                      {course.workload ? (
-                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
-                          💼 {course.workload}
-                        </span>
-                      ) : (
-                        <span className="course-duration-tag" style={{ fontSize: '0.85em', opacity: 0.9 }}>
-                          ⏱️ {course.duration || '15 giờ'}
-                        </span>
-                      )}
-                    </div>
-                    <a 
-                      href={course.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="course-action-link"
-                    >
-                      Xem trên Coursera →
-                    </a>
-                  </div>
-                </div>
-              );
-            })}
+      {calendarStatus === 'idle' && (
+        <>
+          <p className="calendar-card-desc">
+            Tải xuống Gantt Chart (Excel) hoặc tạo file CSV để nhập lộ trình học vào Google Calendar.
+          </p>
+          <div className="calendar-card-actions" style={{ display: 'flex', gap: '10px' }}>
+            {output.chart_id && (
+              <button 
+                className="calendar-sync-btn" 
+                style={{ backgroundColor: '#17A2B8', color: 'white' }}
+                onClick={() => window.open(`${backendUrl}/chart/${output.chart_id}/excel`, '_blank')}
+              >
+                Tải Gantt Chart (Excel)
+              </button>
+            )}
+            <button className="calendar-sync-btn" onClick={handleGenerateSchedule} disabled={courses.length === 0}>
+              Tạo lịch học (Google Calendar CSV)
+            </button>
           </div>
-          
-          {output.alternative_courses && output.alternative_courses.length > 0 && (
-            <div className="alternative-courses-section" style={{ marginTop: '1.2rem' }}>
-              <h5 className="alternative-courses-title" style={{ fontSize: '0.86rem', fontWeight: 750, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Khóa học thay thế đề xuất:
-              </h5>
-              <div className="alternative-courses-list" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {output.alternative_courses.map((altCourse) => (
-                  <a 
-                    key={altCourse.course_id}
-                    href={altCourse.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="alternative-course-link"
-                    style={{
-                      fontSize: '0.78rem',
-                      fontWeight: 650,
-                      color: 'var(--accent, #0d9488)',
-                      padding: '6px 12px',
-                      background: 'var(--bg-app, #f4f6fa)',
-                      border: '1px solid var(--border-subtle, #dfe5ee)',
-                      borderRadius: '20px',
-                      textDecoration: 'none',
-                      transition: 'all 0.2s ease',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    📖 {altCourse.name}
-                  </a>
-                ))}
+        </>
+      )}
+
+      {calendarStatus === 'generating' && (
+        <>
+          <p className="calendar-card-desc">Đang tạo lịch học đề xuất...</p>
+          <div className="calendar-card-actions">
+            <button className="calendar-sync-btn loading" disabled>
+              <span className="btn-spinner" />
+              Đang tạo lịch...
+            </button>
+          </div>
+        </>
+      )}
+
+      {calendarStatus === 'preview' && (
+        <div className="calendar-preview-container">
+          <p className="calendar-preview-heading">Xem trước & Tùy chỉnh lịch học của bạn:</p>
+          {proposedEvents.map((event, idx) => {
+            const startDate = event.start.dateTime.substring(0, 10);
+            
+            let pattern = 'none';
+            let count = 1;
+            if (event.recurrence && event.recurrence[0]) {
+              if (event.recurrence[0].includes('FREQ=WEEKLY')) pattern = 'weekly';
+              else if (event.recurrence[0].includes('FREQ=DAILY')) pattern = 'daily';
+              else pattern = 'custom';
+              
+              const match = event.recurrence[0].match(/COUNT=(\d+)/);
+              if (match) count = parseInt(match[1]);
+            }
+
+            return (
+              <div key={idx} className="calendar-event-edit-card">
+                <div className="form-group">
+                  <label>Tên sự kiện</label>
+                  <input 
+                    type="text" 
+                    value={event.summary} 
+                    onChange={(e) => handleEventChange(idx, 'summary', e.target.value)} 
+                  />
+                </div>
+                
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Ngày bắt đầu</label>
+                    <input 
+                      type="date" 
+                      value={startDate} 
+                      onChange={(e) => handleEventChange(idx, 'startDate', e.target.value)} 
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>Tần suất học</label>
+                    <select 
+                      value={pattern} 
+                      onChange={(e) => handleEventChange(idx, 'pattern', e.target.value)}
+                    >
+                      <option value="weekly">Hàng tuần (Thứ 2, 4, 6)</option>
+                      <option value="daily">Hàng ngày</option>
+                      <option value="none">Không lặp lại</option>
+                    </select>
+                  </div>
+
+                  {pattern !== 'none' && (
+                    <div className="form-group">
+                      <label>{pattern === 'weekly' ? 'Số buổi học' : 'Số ngày học'}</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={count} 
+                        onChange={(e) => handleEventChange(idx, 'count', e.target.value)} 
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label>Mô tả chi tiết</label>
+                  <textarea 
+                    rows="3" 
+                    value={event.description} 
+                    onChange={(e) => handleEventChange(idx, 'description', e.target.value)} 
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })}
+
+          <div className="calendar-card-actions preview-actions">
+            <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+              Hủy
+            </button>
+            <button className="calendar-sync-btn confirm-sync-btn" onClick={handleExportToCSV}>
+              Tải xuống file CSV
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Google Calendar Sync Widget */}
-      <div className="calendar-sync-card">
-        <div className="calendar-card-header">
-          <span className="calendar-card-icon" role="img" aria-label="calendar">📅</span>
-          <h4>Lập kế hoạch học tập trên Google Calendar</h4>
+      {calendarStatus === 'success' && (
+        <div className="calendar-sync-success-msg" style={{ width: '100%', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="success-check">✓</span>
+            <span>{calendarMessage}</span>
+          </div>
+          <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+            Đóng
+          </button>
         </div>
-        <p className="calendar-card-desc">
-          Đồng bộ lộ trình này để tự động tạo lịch học nhắc nhở cho khóa học này trên Google Calendar.
-        </p>
-        <div className="calendar-card-actions">
-          {calendarStatus === 'idle' && (
-            <button className="calendar-sync-btn" onClick={handleAddToCalendar} disabled={courses.length === 0}>
-              Đồng bộ khóa học vào Google Calendar
+      )}
+
+      {calendarStatus === 'error' && (
+        <div className="calendar-sync-error-msg">
+          <span className="error-cross">✕</span>
+          <span>{calendarMessage}</span>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button className="calendar-cancel-btn" onClick={handleCancelPreview}>
+              Quay lại
             </button>
-          )}
-          {calendarStatus === 'loading' && (
-            <button className="calendar-sync-btn loading" disabled>
-              <span className="btn-spinner" />
-              Đang đồng bộ...
+            <button className="calendar-retry-btn" onClick={proposedEvents.length > 0 ? handleExportToCSV : handleGenerateSchedule}>
+              Thử lại
             </button>
-          )}
-          {calendarStatus === 'success' && (
-            <div className="calendar-sync-success-msg">
-              <span className="success-check">✓</span>
-              <span>{calendarMessage}</span>
-            </div>
-          )}
-          {calendarStatus === 'error' && (
-            <div className="calendar-sync-error-msg">
-              <span className="error-cross">✕</span>
-              <span>{calendarMessage}</span>
-              <button className="calendar-retry-btn" onClick={handleAddToCalendar}>
-                Thử lại
-              </button>
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage, user, backendUrl }) {
+function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfileDocuments, locale = 'vi' }) {
   const [expanded, setExpanded] = useState(true);
   const info = agentInfo[toolName] || {
     label: toolName,
@@ -661,21 +1184,34 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
   const Icon = info.icon;
   const normalizedOutput = normalizeToolOutput(output);
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
+  const isAssessmentOutput = normalizedOutput?.feature === 'assessment';
   const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
-  const shouldRenderHollandForm = isHollandOutput
+  const isProfileConfirmationOutput = normalizedOutput?.feature === 'profile_confirmation';
+  const isCareerAlignmentOutput = normalizedOutput?.feature === 'career_alignment';
+  const shouldRenderHollandForm = (isHollandOutput || isAssessmentOutput)
     && normalizedOutput?.questions
     && status === 'completed';
-  const shouldRenderHollandResult = isHollandOutput
-    && normalizedOutput?.top_code
+  const shouldRenderHollandResult = (isHollandOutput || isAssessmentOutput)
+    && (normalizedOutput?.top_code || normalizedOutput?.top_dimensions || normalizedOutput?.result_code)
     && status === 'completed';
   const shouldRenderProfileScanResult = isProfileScanOutput
-    && normalizedOutput?.grade
     && status === 'completed';
-  const shouldRenderAcademicPlan = toolName === 'academic_architect'
-    && normalizedOutput?.academic_plan
+  const shouldRenderVerifier = toolName === 'academic_architect_input_verifier'
     && status === 'completed';
-  const toolLabel = isHollandOutput && toolName === 'profile_scanner'
-    ? `${info.label} · Holland Test`
+  const profileActionResolved = isProfileScanOutput
+    && resolvedProfileDocuments?.has(normalizedOutput?.profile_action?.cv_document_id);
+  const profileScanResult = profileActionResolved
+    ? {
+      ...normalizedOutput,
+      profile_action: {
+        ...normalizedOutput.profile_action,
+        options: [],
+        message_vi: 'Lựa chọn cho CV này đã được xử lý.'
+      }
+    }
+    : normalizedOutput;
+  const toolLabel = (isHollandOutput || isAssessmentOutput) && toolName === 'profile_scanner'
+    ? `${info.label} · ${normalizedOutput?.title || 'Assessment'}`
     : info.label;
 
   return (
@@ -715,11 +1251,15 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
               {shouldRenderHollandForm ? (
                 <HollandTestForm output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : shouldRenderHollandResult ? (
-                <HollandResultCard result={normalizedOutput} />
+                <HollandResultCard result={normalizedOutput} locale={locale} />
               ) : shouldRenderProfileScanResult ? (
-                <ProfileScanResultCard result={normalizedOutput} />
-              ) : shouldRenderAcademicPlan ? (
-                <AcademicPlanWidget output={normalizedOutput} user={user} backendUrl={backendUrl} />
+                <ProfileScanResultCard result={profileScanResult} onSendMessage={onSendMessage} locale={locale} />
+              ) : isCareerAlignmentOutput && status === 'completed' ? (
+                <CareerAlignmentCard result={normalizedOutput} />
+              ) : isProfileConfirmationOutput && status === 'completed' ? (
+                <div className="profile-action-status"><CheckCircle2 size={16} />{normalizedOutput?.message_vi}</div>
+              ) : shouldRenderVerifier ? (
+                <AcademicArchitectInputConfirmWidget output={normalizedOutput} onSendMessage={onSendMessage} />
               ) : (
                 <ToolResultSummary output={output} />
               )}
@@ -727,24 +1267,6 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, user, backend
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function AgentModule({ agentKey, active }) {
-  const info = agentInfo[agentKey];
-  const Icon = info.icon;
-
-  return (
-    <div className={`agent-module ${info.themeClass} ${active ? 'active' : ''}`}>
-      <div className="agent-module-icon">
-        <Icon size={18} />
-      </div>
-      <div>
-        <div className="agent-module-title">{info.label}</div>
-        <div className="agent-module-desc">{info.description}</div>
-      </div>
-      <div className="agent-module-state">{active ? 'Đang chạy' : 'Sẵn sàng'}</div>
     </div>
   );
 }
@@ -776,39 +1298,29 @@ function CvAttachmentChip({ attachment, onRemove, compact = false }) {
 function LoginScreen({ googleClientId }) {
   return (
     <div className="login-screen">
-      <div className="login-shell">
-        <section className="login-hero">
-          <div className="brand-mark">
-            <Sparkles size={22} />
-            <span>Z-MentorAI</span>
-          </div>
-          <h1>Không gian AI giúp bạn ra quyết định nghề nghiệp.</h1>
-          <p>
-            Đưa CV, mục tiêu và câu hỏi của bạn vào một nơi. Z-MentorAI giữ cuộc trò chuyện tập trung vào quét hồ sơ,
-            phân tích thị trường và lộ trình học tập.
-          </p>
-          <div className="login-proof-grid">
-            <div>
-              <strong>Hồ sơ</strong>
-              <span>Đọc điểm mạnh và tín hiệu còn thiếu</span>
-            </div>
-            <div>
-              <strong>Thị trường</strong>
-              <span>So sánh vai trò và kỳ vọng tuyển dụng</span>
-            </div>
-            <div>
-              <strong>Lộ trình</strong>
-              <span>Biến khoảng trống thành hướng học rõ ràng</span>
-            </div>
-          </div>
-        </section>
+      <div className="login-visual" aria-hidden="true" />
+      <header className="login-brand">
+        <img src={brandMarkSrc} alt="" />
+        <span>
+          <strong>Z-MentorAI</strong>
+          <small>Cố vấn nghề nghiệp AI</small>
+        </span>
+      </header>
 
-        <section className="login-visual-panel">
+      <main className="login-shell">
+        <section className="login-hero">
+          <div className="login-kicker">Hồ sơ rõ ràng. Quyết định có cơ sở.</div>
+          <h1>Hiểu rõ hồ sơ.<br />Chọn đúng bước tiếp theo.</h1>
+          <p>
+            Z-MentorAI kết nối hồ sơ, tín hiệu thị trường và mục tiêu học tập để mỗi quyết định nghề nghiệp
+            đều có cơ sở rõ ràng.
+          </p>
+
           <div className="login-card">
-            <h2>Bắt đầu phiên tư vấn</h2>
-            <p>
-              Đăng nhập bằng Google để tiếp tục các cuộc trò chuyện và lưu ngữ cảnh nghề nghiệp của bạn.
-            </p>
+            <div className="login-card-heading">
+              <span>Bắt đầu phiên tư vấn</span>
+              <small>Thông tin của bạn được giữ theo từng tài khoản.</small>
+            </div>
             <div className="login-actions">
               <div id="google-signin-button" className="google-btn-container"></div>
               {!googleClientId && (
@@ -816,14 +1328,119 @@ function LoginScreen({ googleClientId }) {
               )}
             </div>
           </div>
-          <LoginChatTerminal />
+
+          <div className="login-capabilities" aria-label="Các năng lực chính">
+            <div>
+              <FileSearch size={18} />
+              <span><strong>Quét hồ sơ</strong><small>Đọc bằng chứng và khoảng trống</small></span>
+            </div>
+            <div>
+              <Compass size={18} />
+              <span><strong>Hiểu thị trường</strong><small>Đối chiếu nhu cầu tuyển dụng</small></span>
+            </div>
+            <div>
+              <GraduationCap size={18} />
+              <span><strong>Dựng lộ trình</strong><small>Chuyển mục tiêu thành hành động</small></span>
+            </div>
+          </div>
         </section>
-      </div>
+      </main>
     </div>
   );
 }
 
-function AppHeader({ activeAgents, avatarSrc, user, onAvatarClick, onLogout }) {
+function AccountHeader({ activeAgents, avatarSrc, user, locale, onNavigate, onAvatarClick, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+  const t = uiText[locale];
+
+  useEffect(() => {
+    const close = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => event.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  return (
+    <header className="app-header">
+      <button className="brand-section brand-button" onClick={() => onNavigate('chat')} type="button">
+        <span className="brand-logo"><img src={brandMarkSrc} alt="" /></span>
+        <span><strong className="brand-title">Z-MentorAI</strong><span className="brand-subtitle">Cố vấn nghề nghiệp AI</span></span>
+      </button>
+      <div className="agent-status-bar">
+        {Object.keys(agentInfo).slice(0, 3).map((key) => (
+          <div className={`agent-badge ${activeAgents.includes(key) ? 'active' : ''}`} key={key}>
+            <span className="badge-dot" /><span>{agentInfo[key].label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="account-menu" ref={menuRef}>
+        <button className="account-trigger" aria-expanded={open} onClick={() => setOpen((value) => !value)} type="button">
+          {avatarSrc ? <img src={avatarSrc} alt="" className="user-avatar" /> : <span className="user-avatar-placeholder"><User size={18} /></span>}
+          <span className="user-info"><span className="user-name">{user.name}</span><span className="user-email">{user.email}</span></span>
+          <ChevronDown size={16} />
+        </button>
+        {open && (
+          <div className="account-dropdown">
+            <button onClick={() => { onNavigate('profile'); setOpen(false); }} type="button"><User size={17} /><span>{t.profile}</span></button>
+            <button onClick={() => { onNavigate('settings'); setOpen(false); }} type="button"><Settings size={17} /><span>{t.settings}</span></button>
+            <button onClick={() => { onAvatarClick(); setOpen(false); }} type="button"><Upload size={17} /><span>{locale === 'vi' ? 'Đổi ảnh đại diện' : 'Change avatar'}</span></button>
+            <div className="account-dropdown-separator" />
+            <button className="danger" onClick={onLogout} type="button"><LogOut size={17} /><span>{t.logout}</span></button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}
+
+function ProfileWorkspace({ profile, locale, onBack, onSave, loading }) {
+  const t = uiText[locale];
+  const [form, setForm] = useState(profile || {});
+  const [status, setStatus] = useState('');
+  const fields = [
+    ['name', t.fullName], ['phone', t.phone], ['location', t.location], ['target_role', t.targetRole],
+    ['linkedin_url', t.linkedin], ['github_url', t.github], ['portfolio_url', t.portfolio]
+  ];
+  const save = async (event) => {
+    event.preventDefault();
+    setStatus('saving');
+    const ok = await onSave(form);
+    setStatus(ok ? 'saved' : 'error');
+  };
+  const cv = profile?.current_cv;
+  const skills = (cv?.skills || []).map((skill) => typeof skill === 'string' ? skill : (skill[`display_name_${locale}`] || skill.canonical_name));
+  return (
+    <main className="account-workspace">
+      <div className="account-workspace-header"><button onClick={onBack} type="button"><ArrowRight size={17} />{t.backChat}</button><div><h2>{t.personalTitle}</h2><p>{t.personalDesc}</p></div></div>
+      <div className="profile-layout">
+        <form className="profile-form" onSubmit={save}>
+          <label className="profile-field"><span>{t.email}</span><div className="locked-input"><Lock size={15} /><input disabled value={profile?.email || ''} /></div></label>
+          {fields.map(([key, label]) => <label className="profile-field" key={key}><span>{label}</span><input value={form[key] || ''} onChange={(event) => setForm((value) => ({ ...value, [key]: event.target.value }))} /></label>)}
+          <div className="profile-save-row"><button disabled={loading || status === 'saving'} type="submit">{status === 'saving' ? t.saving : t.save}</button>{status === 'saved' && <span><CheckCircle2 size={16} />{t.saved}</span>}{status === 'error' && <span className="form-error">{locale === 'vi' ? 'Không thể lưu thông tin.' : 'Could not save profile.'}</span>}</div>
+        </form>
+        <section className="current-cv-panel">
+          <div className="current-cv-title"><FileText size={20} /><div><span>{t.currentCv}</span><strong>{cv?.original_filename || t.noCv}</strong></div>{cv?.grade && <span className={`cv-grade grade-${String(cv.grade).toLowerCase()}`}>{cv.grade}</span>}</div>
+          {cv && <><div className="cv-facts"><div><span>{t.uploadDate}</span><strong>{cv.uploaded_at ? new Date(cv.uploaded_at).toLocaleDateString(locale === 'vi' ? 'vi-VN' : 'en-US') : '--'}</strong></div><div><span>{t.version}</span><strong>v{cv.profile_version || 1}</strong></div><div><span>{locale === 'vi' ? 'Điểm CV' : 'CV score'}</span><strong>{cv.total_score ? `${Math.round(cv.total_score)}/100` : '--'}</strong></div></div>{cv.summary && <p className="cv-summary">{cv.summary}</p>}<div className="profile-skill-cloud">{skills.slice(0, 16).map((skill) => <span key={skill}>{skill}</span>)}</div></>}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function SettingsWorkspace({ locale, theme, onBack, onChange }) {
+  const t = uiText[locale];
+  return <main className="account-workspace settings-workspace"><div className="account-workspace-header"><button onClick={onBack} type="button"><ArrowRight size={17} />{t.backChat}</button><div><h2>{t.settings}</h2><p>{t.settingsDesc}</p></div></div><section className="settings-list"><div className="setting-row"><div><strong>{t.language}</strong><span>Vietnamese / English</span></div><div className="segmented-control"><button className={locale === 'vi' ? 'active' : ''} onClick={() => onChange('language', 'vi')} type="button">VI</button><button className={locale === 'en' ? 'active' : ''} onClick={() => onChange('language', 'en')} type="button">EN</button></div></div><div className="setting-row"><div><strong>{t.appearance}</strong><span>{locale === 'vi' ? 'Chọn chế độ hiển thị phù hợp.' : 'Choose a comfortable display mode.'}</span></div><div className="segmented-control"><button className={theme === 'light' ? 'active' : ''} onClick={() => onChange('theme', 'light')} type="button"><Sun size={15} />{t.light}</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => onChange('theme', 'dark')} type="button"><Moon size={15} />{t.dark}</button></div></div></section></main>;
+}
+
+// eslint-disable-next-line no-unused-vars
+function LegacyAppHeader({ activeAgents, avatarSrc, user, onAvatarClick, onLogout }) {
   return (
     <header className="app-header">
       <div className="brand-section">
@@ -920,22 +1537,18 @@ function SessionSidebar({ sessions, activeSessionId, isLoading, onCreateNewSessi
   );
 }
 
-function WelcomeState({ user, activeAgents, onSendMessage }) {
+function WelcomeState({ onSendMessage }) {
   return (
     <div className="welcome-container">
+      <img className="welcome-brand-watermark" src={brandMarkSrc} alt="" aria-hidden="true" />
       <div className="welcome-copy">
-        <h2>Hôm nay mình sẽ cùng phân tích bước đi nghề nghiệp nào, {user.name.split(' ')[0]}?</h2>
+        <h2>Hãy bắt đầu cùng Z-MentorAI</h2>
         <p>
           Hãy đặt câu hỏi trực tiếp, đính kèm CV hoặc bắt đầu bằng một gợi ý bên dưới.
         </p>
       </div>
 
-      <div className="agent-module-grid">
-        {Object.keys(agentInfo).map((agentKey) => (
-          <AgentModule key={agentKey} agentKey={agentKey} active={activeAgents.includes(agentKey)} />
-        ))}
-      </div>
-
+      <div className="suggested-heading">Bắt đầu nhanh</div>
       <div className="suggested-questions">
         {suggestedQuestions.map((question) => {
           const info = agentInfo[question.agent];
@@ -963,7 +1576,12 @@ function WelcomeState({ user, activeAgents, onSendMessage }) {
   );
 }
 
-function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl }) {
+function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSendMessage, user, backendUrl, locale = 'vi' }) {
+  const resolvedProfileDocuments = new Set(
+    messages.flatMap((message) => (message.toolCalls || []).map((toolCall) => normalizeToolOutput(toolCall.output)))
+      .filter((output) => output?.feature === 'profile_confirmation' && output?.cv_document_id)
+      .map((output) => output.cv_document_id)
+  );
   return (
     <div className="messages-feed">
       {messages.map((msg) => {
@@ -975,7 +1593,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
           <div key={msg.id} className={`message-wrapper ${msg.role}`}>
             <div className="message-header">{msg.role === 'user' ? 'Bạn' : 'Điều phối viên'}</div>
 
-            {msg.role === 'assistant' && visibleToolCalls.map((toolCall) => (
+            {msg.role === 'assistant' && visibleToolCalls.filter(toolCall => toolCall.name !== 'academic_architect_create_gantt').map((toolCall) => (
               <ToolCallWidget
                 key={toolCall.id}
                 toolName={toolCall.name}
@@ -985,6 +1603,8 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                 onSendMessage={onSendMessage}
                 user={user}
                 backendUrl={backendUrl}
+                resolvedProfileDocuments={resolvedProfileDocuments}
+                locale={locale}
               />
             ))}
 
@@ -996,7 +1616,76 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                     <p>{msg.content}</p>
                   </>
                 ) : (
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <>
+                    {(() => {
+                      const academicToolCall = msg.toolCalls?.find(
+                        (t) => t.name === 'academic_architect_create_gantt' && t.status === 'completed'
+                      );
+                      const output = academicToolCall ? normalizeToolOutput(academicToolCall.output) : null;
+                      const courses = output ? [
+                        ...(output.courses || []),
+                        ...(output.alternative_courses || [])
+                      ] : [];
+
+                      return (
+                        <ReactMarkdown
+                          components={{
+                            a: ({ href, children, ...props }) => {
+                              const matchedCourse = courses.find(c => {
+                                if (!c.url || !href) return false;
+                                const cleanHref = href.toLowerCase().replace(/\/$/, "");
+                                const cleanCourseUrl = c.url.toLowerCase().replace(/\/$/, "");
+                                return cleanHref === cleanCourseUrl || (c.slug && cleanHref.endsWith(c.slug.toLowerCase()));
+                              });
+
+                              if (matchedCourse) {
+                                return (
+                                  <a
+                                    href={matchedCourse.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="markdown-course-link-card"
+                                    {...props}
+                                  >
+                                    <span className="markdown-course-link-icon" role="img" aria-label="course">🎓</span>
+                                    <div className="markdown-course-link-content">
+                                      <div className="markdown-course-link-title">{matchedCourse.name || children}</div>
+                                      <div className="markdown-course-link-duration">⏱️ {matchedCourse.duration || '15 giờ'}</div>
+                                    </div>
+                                    <div className="markdown-course-link-action">
+                                      <span>Học ngay</span>
+                                      <ArrowRight size={14} />
+                                    </div>
+                                  </a>
+                                );
+                              }
+
+                              return (
+                                <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                                  {children}
+                                </a>
+                              );
+                            }
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      );
+                    })()}
+                    {(() => {
+                      const academicToolCall = msg.toolCalls?.find(
+                        (t) => t.name === 'academic_architect_create_gantt' && t.status === 'completed'
+                      );
+                      if (!academicToolCall) return null;
+                      const output = normalizeToolOutput(academicToolCall.output);
+                      if (!output) return null;
+                      return (
+                        <div className="orches-calendar-sync-wrapper" style={{ marginTop: '1rem' }}>
+                          <CalendarSyncWidget output={output} user={user} backendUrl={backendUrl} />
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
             )}
@@ -1097,12 +1786,13 @@ function ChatWorkspace({
   onCvFileChange,
   onRemoveCvAttachment,
   cvUploadError,
-  backendUrl
+  backendUrl,
+  locale = 'vi'
 }) {
   return (
     <div className="chat-area">
       {messages.length === 0 ? (
-        <WelcomeState user={user} activeAgents={activeAgents} onSendMessage={onSendMessage} />
+        <WelcomeState onSendMessage={onSendMessage} />
       ) : (
         <MessagesFeed
           messages={messages}
@@ -1112,6 +1802,7 @@ function ChatWorkspace({
           onSendMessage={onSendMessage}
           user={user}
           backendUrl={backendUrl}
+          locale={locale}
         />
       )}
 
@@ -1149,6 +1840,13 @@ export default function App() {
   const [activeAgents, setActiveAgents] = useState([]);
   const [cvAttachment, setCvAttachment] = useState(null);
   const [cvUploadError, setCvUploadError] = useState('');
+  const [workspace, setWorkspace] = useState('chat');
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [preferences, setPreferences] = useState(() => ({
+    language: localStorage.getItem('z_mentor_language') || 'vi',
+    theme: localStorage.getItem('z_mentor_theme') || 'light'
+  }));
 
   const backendUrl = useMemo(() => import.meta.env.VITE_API_URL || window.location.origin, []);
   const messagesEndRef = useRef(null);
@@ -1156,6 +1854,54 @@ export default function App() {
   const avatarInputRef = useRef(null);
   const cvInputRef = useRef(null);
   const bootstrappedSessionsRef = useRef(null);
+  const locale = preferences.language;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = preferences.theme;
+    document.documentElement.lang = preferences.language;
+    localStorage.setItem('z_mentor_language', preferences.language);
+    localStorage.setItem('z_mentor_theme', preferences.theme);
+  }, [preferences]);
+
+  const fetchProfile = useCallback(async () => {
+    if (!user) return;
+    setProfileLoading(true);
+    try {
+      const response = await fetch(`${backendUrl}/me/profile`, { headers: { 'X-User-Id': user.google_id } });
+      if (!response.ok) throw new Error('Unable to load profile');
+      const data = await response.json();
+      setProfile(data);
+      if (data.preferences) setPreferences(data.preferences);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [backendUrl, user]);
+
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  const saveProfile = async (form) => {
+    setProfileLoading(true);
+    try {
+      const response = await fetch(`${backendUrl}/me/profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-User-Id': user.google_id }, body: JSON.stringify(form) });
+      if (!response.ok) return false;
+      const data = await response.json();
+      setProfile(data);
+      const nextUser = { ...user, name: data.name };
+      setUser(nextUser);
+      localStorage.setItem('z_mentor_user', JSON.stringify(nextUser));
+      return true;
+    } finally { setProfileLoading(false); }
+  };
+
+  const updatePreference = async (key, value) => {
+    const next = { ...preferences, [key]: value };
+    setPreferences(next);
+    try {
+      await fetch(`${backendUrl}/me/settings`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-User-Id': user.google_id }, body: JSON.stringify(next) });
+    } catch (error) { console.error(error); }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1569,8 +2315,14 @@ export default function App() {
             const data = JSON.parse(dataStr);
 
             if (data.type === 'tool_start') {
-              streamedToolCalls.set(data.tool, {
-                id: `${data.tool}-${Date.now()}`,
+              const existingLegacyCall = !data.tool_call_id
+                ? Array.from(streamedToolCalls.entries()).find(([, call]) => (
+                  call.name === data.tool && call.status === 'running'
+                ))
+                : null;
+              const toolCallKey = data.tool_call_id || existingLegacyCall?.[0] || `${data.tool}-${Date.now()}`;
+              streamedToolCalls.set(toolCallKey, {
+                id: toolCallKey,
                 name: data.tool,
                 input: data.input,
                 status: 'running'
@@ -1578,12 +2330,12 @@ export default function App() {
               setActiveAgents((prev) => [...new Set([...prev, data.tool])]);
               setMessages((prev) => prev.map((msg) => {
                 if (msg.id !== assistantMessageId) return msg;
-                const exists = msg.toolCalls.some((toolCall) => toolCall.name === data.tool);
+                const exists = msg.toolCalls.some((toolCall) => toolCall.id === toolCallKey);
                 if (exists) return msg;
                 return {
                   ...msg,
                   toolCalls: [...msg.toolCalls, {
-                    id: `${data.tool}-${Date.now()}`,
+                    id: toolCallKey,
                     name: data.tool,
                     input: data.input,
                     status: 'running'
@@ -1591,9 +2343,15 @@ export default function App() {
                 };
               }));
             } else if (data.type === 'tool_end') {
-              const previousToolCall = streamedToolCalls.get(data.tool);
-              streamedToolCalls.set(data.tool, {
-                id: previousToolCall?.id || `${data.tool}-${Date.now()}`,
+              const existingLegacyCall = !data.tool_call_id
+                ? Array.from(streamedToolCalls.entries()).find(([, call]) => (
+                  call.name === data.tool && call.status === 'running'
+                ))
+                : null;
+              const toolCallKey = data.tool_call_id || existingLegacyCall?.[0] || `${data.tool}-${Date.now()}`;
+              const previousToolCall = streamedToolCalls.get(toolCallKey);
+              streamedToolCalls.set(toolCallKey, {
+                id: previousToolCall?.id || toolCallKey,
                 name: data.tool,
                 input: previousToolCall?.input || data.input,
                 output: data.output,
@@ -1602,12 +2360,12 @@ export default function App() {
               setActiveAgents((prev) => prev.filter((tool) => tool !== data.tool));
               setMessages((prev) => prev.map((msg) => {
                 if (msg.id !== assistantMessageId) return msg;
-                const existingToolCall = msg.toolCalls.find((toolCall) => toolCall.name === data.tool);
+                const existingToolCall = msg.toolCalls.find((toolCall) => toolCall.id === toolCallKey);
                 if (!existingToolCall) {
                   return {
                     ...msg,
                     toolCalls: [...msg.toolCalls, {
-                      id: `${data.tool}-${Date.now()}`,
+                      id: toolCallKey,
                       name: data.tool,
                       input: data.input,
                       output: data.output,
@@ -1618,7 +2376,7 @@ export default function App() {
                 return {
                   ...msg,
                   toolCalls: msg.toolCalls.map((toolCall) => (
-                    toolCall.name === data.tool
+                    toolCall.id === toolCallKey
                       ? { ...toolCall, output: data.output, status: 'completed' }
                       : toolCall
                   ))
@@ -1649,18 +2407,22 @@ export default function App() {
         if (!trimmed.startsWith('data: ')) return;
         try {
           const data = JSON.parse(trimmed.slice(6));
-          if (data.type === 'tool_start' && !streamedToolCalls.has(data.tool)) {
-            streamedToolCalls.set(data.tool, {
-              id: `${data.tool}-${Date.now()}`,
+          const existingReplayCall = !data.tool_call_id
+            ? Array.from(streamedToolCalls.entries()).find(([, call]) => call.name === data.tool)
+            : null;
+          const toolCallKey = data.tool_call_id || existingReplayCall?.[0] || `legacy-${data.tool}`;
+          if (data.type === 'tool_start' && !streamedToolCalls.has(toolCallKey)) {
+            streamedToolCalls.set(toolCallKey, {
+              id: toolCallKey,
               name: data.tool,
               input: data.input,
               status: 'running'
             });
           }
           if (data.type === 'tool_end') {
-            const previousToolCall = streamedToolCalls.get(data.tool);
-            streamedToolCalls.set(data.tool, {
-              id: previousToolCall?.id || `${data.tool}-${Date.now()}`,
+            const previousToolCall = streamedToolCalls.get(toolCallKey);
+            streamedToolCalls.set(toolCallKey, {
+              id: previousToolCall?.id || toolCallKey,
               name: data.tool,
               input: previousToolCall?.input || data.input,
               output: data.output,
@@ -1678,7 +2440,7 @@ export default function App() {
           if (msg.id !== assistantMessageId) return msg;
           const mergedToolCalls = [...msg.toolCalls];
           finalToolCalls.forEach((toolCall) => {
-            const existingIndex = mergedToolCalls.findIndex((item) => item.name === toolCall.name);
+            const existingIndex = mergedToolCalls.findIndex((item) => item.id === toolCall.id);
             if (existingIndex >= 0) {
               mergedToolCalls[existingIndex] = { ...mergedToolCalls[existingIndex], ...toolCall };
             } else {
@@ -1730,15 +2492,21 @@ export default function App() {
 
   return (
     <div className="app-container">
-        <AppHeader
+        <AccountHeader
           activeAgents={activeAgents}
           avatarSrc={avatarSrc}
           user={user}
           onAvatarClick={handleAvatarClick}
           onLogout={handleLogout}
+          locale={locale}
+          onNavigate={setWorkspace}
         />
 
-      <main className="chat-main">
+      {workspace === 'profile' ? (
+        <ProfileWorkspace key={`${profile?.user_id || 'profile'}-${profile?.current_cv?.profile_version || 0}`} profile={profile} locale={locale} onBack={() => setWorkspace('chat')} onSave={saveProfile} loading={profileLoading} />
+      ) : workspace === 'settings' ? (
+        <SettingsWorkspace locale={locale} theme={preferences.theme} onBack={() => setWorkspace('chat')} onChange={updatePreference} />
+      ) : <main className="chat-main">
         <SessionSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -1767,8 +2535,9 @@ export default function App() {
           onRemoveCvAttachment={handleRemoveCvAttachment}
           cvUploadError={cvUploadError}
           backendUrl={backendUrl}
+          locale={locale}
         />
-      </main>
+      </main>}
 
       <input
         type="file"

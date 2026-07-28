@@ -193,6 +193,86 @@ class UploadAvatarRequest(BaseModel):
     avatar_base64: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    target_role: Optional[str] = None
+
+
+class SettingsUpdateRequest(BaseModel):
+    language: Optional[str] = None
+    theme: Optional[str] = None
+
+
+PROFILE_EDITABLE_FIELDS = {
+    "name", "phone", "location", "linkedin_url", "github_url",
+    "portfolio_url", "target_role",
+}
+
+
+def require_known_user(user_id: str) -> dict:
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Missing user identity")
+    if USE_FIRESTORE:
+        snapshot = firestore_client.collection("user").document(user_id).get()
+        if not snapshot.exists:
+            raise HTTPException(status_code=401, detail="Unknown user")
+        return snapshot.to_dict()
+    user = read_users_db().get("users", {}).get(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unknown user")
+    return user
+
+
+def get_profile_workspace(user_id: str) -> dict:
+    user = require_known_user(user_id)
+    preferences = user.get("preferences") or {"language": "vi", "theme": "light"}
+    canonical = None
+    active_document = None
+    if USE_FIRESTORE:
+        profile_snapshot = firestore_client.collection(
+            os.getenv("PROFILE_SCANNER_PROFILES_COLLECTION", "profile_scanner_profiles")
+        ).document(user_id).get()
+        canonical = profile_snapshot.to_dict() if profile_snapshot.exists else None
+        active_document_id = (canonical or {}).get("active_cv_document_id")
+        if active_document_id:
+            document_snapshot = firestore_client.collection(
+                os.getenv("CV_DOCUMENTS_COLLECTION", "profile_scanner_cv_documents")
+            ).document(active_document_id).get()
+            active_document = document_snapshot.to_dict() if document_snapshot.exists else None
+
+    identity = (canonical or {}).get("identity") or {}
+    return {
+        "user_id": user_id,
+        "email": user.get("email", ""),
+        "name": user.get("name") or identity.get("full_name") or "",
+        "picture": user.get("picture", ""),
+        "custom_avatar": user.get("custom_avatar"),
+        "phone": user.get("phone") or identity.get("phone") or "",
+        "location": user.get("location") or identity.get("location") or "",
+        "linkedin_url": user.get("linkedin_url") or identity.get("linkedin_url") or "",
+        "github_url": user.get("github_url") or identity.get("github_url") or "",
+        "portfolio_url": user.get("portfolio_url") or identity.get("portfolio_url") or "",
+        "target_role": user.get("target_role") or (canonical or {}).get("target_role") or "",
+        "preferences": preferences,
+        "current_cv": None if not canonical else {
+            "cv_document_id": canonical.get("active_cv_document_id"),
+            "original_filename": (active_document or {}).get("original_filename"),
+            "uploaded_at": (active_document or {}).get("uploaded_at"),
+            "grade": canonical.get("grade"),
+            "total_score": canonical.get("total_score"),
+            "headline": canonical.get("headline"),
+            "summary": canonical.get("summary"),
+            "skills": canonical.get("normalized_skills") or canonical.get("skills") or [],
+            "profile_version": canonical.get("profile_version"),
+        },
+    }
+
+
 if USE_VERTEX_AI:
     from langchain_google_vertexai import ChatVertexAI
     llm = ChatVertexAI(
@@ -252,15 +332,101 @@ def normalize_tool_output(output: Any) -> dict:
 
 def summarize_tool_calls(tool_calls: list[dict]) -> str:
     for tool_call in tool_calls:
-        if tool_call.get("name") == "academic_architect":
-            return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
+        name = tool_call.get("name")
         output = normalize_tool_output(tool_call.get("output"))
-        if output.get("feature") == "holland_assessment":
-            if output.get("questions"):
-                return "Đã tạo biểu mẫu Holland Test."
-            if output.get("top_code"):
-                return "Đã chấm điểm Holland Test."
+        
+        if name in {"academic_architect", "academic_architect_create_gantt"}:
+            return "Đã xây dựng lộ trình học tập Gantt Chart và gợi ý các khóa học phù hợp."
+        elif name == "academic_architect_skill_gap":
+            return "Đã phân tích khoảng cách kỹ năng từ dữ liệu tuyển dụng thực tế."
+        elif name == "academic_architect_swap_course":
+            return "Đã cập nhật khóa học thay thế vào lộ trình Gantt Chart."
+        output = normalize_tool_output(tool_call.get("output"))
+        if name == "academic_architect":
+            return "Đã xây dựng lộ trình học tập và gợi ý các khóa học phù hợp."
+        if name == "academic_architect_input_verifier":
+            return "Đã chuẩn bị thông tin đầu vào (mục tiêu nghề nghiệp & kỹ năng) để xác nhận."
+        elif name == "market_scout":
+            return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
+        elif name == "profile_scanner":
+            if output.get("feature") == "profile_confirmation":
+                return output.get("message_vi", "Đã cập nhật trạng thái hồ sơ cá nhân.")
+            elif output.get("feature") == "career_alignment":
+                return "Đã tổng hợp mức độ phù hợp giữa CV, Holland và MI."
+            elif output.get("feature") == "assessment":
+                if output.get("questions"):
+                    return f"Đã tạo biểu mẫu {output.get('title', 'assessment')}."
+                elif output.get("top_dimensions"):
+                    return f"Đã chấm điểm {output.get('title', 'assessment')}."
+            elif output.get("feature") == "holland_assessment":
+                if output.get("questions"):
+                    return "Đã tạo biểu mẫu Holland Test."
+                elif output.get("top_code"):
+                    return "Đã chấm điểm Holland Test và lưu kết quả RIASEC."
+            elif output.get("feature") == "profile_scan" or "extracted_skills" in output or "grade" in output:
+                profile_action = output.get("profile_action") or {}
+                if profile_action.get("message_vi"):
+                    return profile_action["message_vi"]
+                return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
+
+
+def compact_tool_output_for_history(tool_name: str, output: Any) -> Any:
+    normalized = normalize_tool_output(output)
+    compact = output
+    if tool_name == "profile_scanner" and normalized:
+        compact = dict(normalized)
+        compact.pop("benchmark_snapshot", None)
+        compact.pop("structured_profile", None)
+        compact.pop("benchmark_sources", None)
+        compact.pop("raw_extracted_skills", None)
+    encoded = json.dumps(compact, ensure_ascii=False, default=str).encode("utf-8")
+    if len(encoded) <= 200_000:
+        return compact
+    summary = normalize_tool_output(compact) or {}
+    return {
+        "status": summary.get("status", "success"),
+        "feature": summary.get("feature"),
+        "message_vi": summary.get("message_vi") or summary.get("answer"),
+        "history_output_truncated": True,
+        "original_size_bytes": len(encoded),
+    }
+
+
+def compact_history_messages(
+    messages: list[dict],
+    *,
+    max_messages: int = 80,
+    max_bytes: int = 750_000,
+) -> tuple[list[dict], int]:
+    recent = messages[-max_messages:]
+    turns: list[list[dict]] = []
+    current_turn: list[dict] = []
+    for message in recent:
+        if message.get("role") == "user" and current_turn:
+            turns.append(current_turn)
+            current_turn = [message]
+        else:
+            current_turn.append(message)
+    if current_turn:
+        turns.append(current_turn)
+
+    kept_turns_reversed = []
+    total_bytes = 0
+    for turn in reversed(turns):
+        turn_bytes = len(
+            json.dumps(turn, ensure_ascii=False, default=str).encode("utf-8")
+        )
+        if kept_turns_reversed and total_bytes + turn_bytes > max_bytes:
+            break
+        kept_turns_reversed.append(turn)
+        total_bytes += turn_bytes
+    compacted = [
+        message
+        for turn in reversed(kept_turns_reversed)
+        for message in turn
+    ]
+    return compacted, max(0, len(messages) - len(compacted))
 
 
 def sanitize_user_message_for_history(user_message: str) -> str:
@@ -268,7 +434,7 @@ def sanitize_user_message_for_history(user_message: str) -> str:
     if not content:
         return ""
 
-    if "holland_score" not in content and "answers_json" not in content:
+    if "holland_score" not in content and "assessment_score" not in content and "answers_json" not in content:
         return content
 
     answered_count = None
@@ -285,9 +451,20 @@ def sanitize_user_message_for_history(user_message: str) -> str:
             answered_count = None
 
     if answered_count:
+        if "assessment_score" in content or "multiple_intelligences" in content:
+            return (
+                f"Mình đã hoàn thành bài MI với {answered_count} câu trả lời. "
+                "Hãy chấm điểm và lưu kết quả Multiple Intelligences vào hồ sơ của mình."
+            )
         return (
             f"Mình đã hoàn thành Holland Test với {answered_count} câu trả lời. "
             "Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình."
+        )
+
+    if "assessment_score" in content or "multiple_intelligences" in content:
+        return (
+            "Mình đã hoàn thành bài MI. "
+            "Hãy chấm điểm và lưu kết quả Multiple Intelligences vào hồ sơ của mình."
         )
 
     return (
@@ -354,13 +531,22 @@ async def save_chat_exchange(
     if assistant_content or assistant_tool_calls:
         assistant_record = {"role": "assistant", "content": assistant_content}
         if assistant_tool_calls:
-            assistant_record["tool_calls"] = assistant_tool_calls
+            assistant_record["tool_calls"] = [
+                {
+                    **tool_call,
+                    "output": compact_tool_output_for_history(
+                        tool_call.get("name", ""),
+                        tool_call.get("output"),
+                    ),
+                }
+                for tool_call in assistant_tool_calls
+            ]
         session["messages"].append(assistant_record)
     
-    if session.get("title") == "New Chat":
+    if session.get("title") in ("New Chat", "Cuộc trò chuyện mới"):
         try:
             title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {user_message}"
-            res = await llm.ainvoke(title_prompt)
+            res = await llm.ainvoke([HumanMessage(content=title_prompt)])
             new_title = res.content.strip().replace('"', '').replace("'", "")
             if new_title:
                 session["title"] = new_title
@@ -370,6 +556,14 @@ async def save_chat_exchange(
             print(f"Error generating session title: {e}")
             session["title"] = user_message[:30] + ("..." if len(user_message) > 30 else "")
             
+    compacted_messages, dropped_count = compact_history_messages(session.get("messages", []))
+    session["messages"] = compacted_messages
+    if dropped_count:
+        session["history_messages_dropped"] = (
+            int(session.get("history_messages_dropped", 0)) + dropped_count
+        )
+        session["history_compacted_at"] = now
+
     if USE_FIRESTORE:
         session_to_save = session.copy()
         session_to_save["user_id"] = google_id
@@ -479,6 +673,43 @@ async def auth_upload_avatar(request: UploadAvatarRequest):
     user["custom_avatar"] = request.avatar_base64
     await save_user(request.google_id, user)
     return user
+
+
+@app.get("/me/profile")
+async def get_my_profile(x_user_id: str = Header(...)):
+    return get_profile_workspace(x_user_id)
+
+
+@app.patch("/me/profile")
+async def update_my_profile(request: ProfileUpdateRequest, x_user_id: str = Header(...)):
+    user = require_known_user(x_user_id)
+    updates = request.model_dump(exclude_none=True)
+    for key in list(updates):
+        if key not in PROFILE_EDITABLE_FIELDS:
+            updates.pop(key)
+            continue
+        if isinstance(updates[key], str):
+            updates[key] = updates[key].strip()
+    user.update(updates)
+    user["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await save_user(x_user_id, user)
+    return get_profile_workspace(x_user_id)
+
+
+@app.patch("/me/settings")
+async def update_my_settings(request: SettingsUpdateRequest, x_user_id: str = Header(...)):
+    user = require_known_user(x_user_id)
+    updates = request.model_dump(exclude_none=True)
+    language = updates.get("language", (user.get("preferences") or {}).get("language", "vi"))
+    theme = updates.get("theme", (user.get("preferences") or {}).get("theme", "light"))
+    if language not in {"vi", "en"}:
+        raise HTTPException(status_code=422, detail="language must be vi or en")
+    if theme not in {"light", "dark"}:
+        raise HTTPException(status_code=422, detail="theme must be light or dark")
+    user["preferences"] = {"language": language, "theme": theme}
+    user["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await save_user(x_user_id, user)
+    return user["preferences"]
 
 
 @app.post("/profile-scanner/cv/upload")
@@ -644,40 +875,17 @@ class CalendarAppendRequest(BaseModel):
     lacking_skills: list[str]
     courses: list[dict]
 
-@app.post("/calendar/append")
-async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = Header(...)):
-    logger.info(f"Calendar: Appending {len(request.courses)} courses for user {x_user_id} towards target '{request.career_goal}'")
-    
+
+
+@app.post("/calendar/generate-schedule")
+async def generate_schedule(request: CalendarAppendRequest, x_user_id: str = Header(...)):
+    logger.info(f"Calendar: Generating schedule for user {x_user_id} towards target '{request.career_goal}'")
     try:
-        import google.auth
-        from googleapiclient.discovery import build
-        
-        # Load default credentials with calendar scope
-        credentials, project = google.auth.default(
-            scopes=['https://www.googleapis.com/auth/calendar']
-        )
-        service = build('calendar', 'v3', credentials=credentials)
-        
-        # 1. Create a dedicated secondary calendar for the study roadmap
-        calendar_body = {
-            'summary': f"Z-Mentor AI: {request.career_goal}",
-            'timeZone': 'Asia/Ho_Chi_Minh'
-        }
-        
-        try:
-            created_calendar = service.calendars().insert(body=calendar_body).execute()
-            calendar_id = created_calendar['id']
-            calendar_name = created_calendar['summary']
-        except Exception as cal_err:
-            logger.warning(f"Failed to create secondary calendar: {cal_err}. Falling back to primary calendar.")
-            calendar_id = 'primary'
-            calendar_name = "Primary Calendar"
-            
-        # 2. Add each course as an event/task sequence on Google Calendar
         import datetime
         today = datetime.date.today()
         current_day_offset = 1  # start tomorrow
         
+        events = []
         for i, course in enumerate(request.courses):
             workload_str = course.get('workload')
             duration_str = course.get('duration') or '15 giờ'
@@ -718,7 +926,7 @@ async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = He
                         ],
                     },
                 }
-                service.events().insert(calendarId=calendar_id, body=event_body).execute()
+                events.append(event_body)
                 current_day_offset += weeks * 7
             else:
                 days = parse_duration_to_days(duration_str)
@@ -750,58 +958,132 @@ async def append_to_calendar(request: CalendarAppendRequest, x_user_id: str = He
                         ],
                     },
                 }
-                service.events().insert(calendarId=calendar_id, body=event_body).execute()
+                events.append(event_body)
                 current_day_offset += days
-            
+                
         return {
-            "status": "success",
-            "message": f"Đã lập lịch thành công {len(request.courses)} khóa học trên Google Calendar thực của bạn (Lịch: {calendar_name})!",
-            "scheduled_events_count": len(request.courses),
-            "calendar_name": calendar_name,
-            "is_mock": False
+            "career_goal": request.career_goal,
+            "lacking_skills": request.lacking_skills,
+            "events": events
         }
-        
     except Exception as e:
-        logger.warning(f"Google Calendar API failed or unauthorized: {e}. Falling back to mock calendar sync.")
-        
-        scheduled_details = []
-        for course in request.courses:
-            workload_str = course.get('workload')
-            if workload_str:
-                weeks, hours_per_session = parse_workload_to_weeks_and_hours(workload_str)
-                scheduled_details.append(f"{course.get('name')} ({weeks} tuần, {hours_per_session}h/buổi)")
-            else:
-                days = parse_duration_to_days(course.get('duration') or '15 giờ')
-                scheduled_details.append(f"{course.get('name')} ({days} ngày)")
+        logger.exception("Failed to generate schedule")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate schedule: {str(e)}"
+        )
+
+@app.get("/chart/{chart_id}/excel")
+async def proxy_gantt_excel(chart_id: str):
+    academic_url = os.getenv("ACADEMIC_ARCHITECT_URL", "http://academic-architect:8080").rstrip("/")
+    target_url = f"{academic_url}/chart/{chart_id}/excel"
+    
+    client = httpx.AsyncClient()
+    req = client.build_request("GET", target_url)
+    try:
+        r = await client.send(req, stream=True)
+        if r.status_code != 200:
+            await r.aclose()
+            await client.aclose()
+            raise HTTPException(status_code=r.status_code, detail="Failed to fetch excel from Academic Architect")
             
-        return {
-            "status": "success",
-            "message": f"Đồng bộ thành công (Chế độ mô phỏng)! Đã lập lịch {len(request.courses)} khóa học cho mục tiêu {request.career_goal} trên Google Calendar mô phỏng ({', '.join(scheduled_details)}).",
-            "scheduled_events_count": len(request.courses),
-            "calendar_name": f"Lộ trình học {request.career_goal}",
-            "is_mock": True,
-            "debug_error": str(e)
-        }
+        async def stream_content():
+            try:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+            finally:
+                await r.aclose()
+                await client.aclose()
+
+        filename = f"gantt_roadmap_{chart_id}.xlsx"
+        return StreamingResponse(
+            stream_content(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Fallback for local native testing if docker network is not available
+        if "academic-architect" in academic_url:
+            try:
+                target_url_fallback = f"http://localhost:8003/chart/{chart_id}/excel"
+                req_fallback = client.build_request("GET", target_url_fallback)
+                r = await client.send(req_fallback, stream=True)
+                if r.status_code != 200:
+                    await r.aclose()
+                    await client.aclose()
+                    raise HTTPException(status_code=r.status_code, detail="Failed to fetch excel from Academic Architect")
+                
+                async def stream_content_fallback():
+                    try:
+                        async for chunk in r.aiter_bytes():
+                            yield chunk
+                    finally:
+                        await r.aclose()
+                        await client.aclose()
+
+                filename = f"gantt_roadmap_{chart_id}.xlsx"
+                return StreamingResponse(
+                    stream_content_fallback(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+            except HTTPException:
+                raise
+            except Exception as ex:
+                await client.aclose()
+                logger.error(f"Error proxying Excel download (fallback failed): {ex}")
+                raise HTTPException(status_code=500, detail="Error proxying Gantt Excel")
+                
+        await client.aclose()
+        logger.error(f"Error proxying Excel download: {e}")
+        raise HTTPException(status_code=500, detail="Error proxying Gantt Excel")
+
 
 # System prompt
 def get_system_message(user_id: str) -> SystemMessage:
+    import datetime
+    current_date = datetime.date.today().strftime("%d/%m/%Y")
     return SystemMessage(content=(
         "You are the central Orchestrator Agent for a Job Orientation platform. Your ultimate goal is to guide users towards their ideal career. "
+        "You are a dedicated career orientation assistant. You MUST decline any user queries or requests that are not related to the purpose of this chatbot (such as telling jokes, translating/summarizing unrelated general texts, solving math/general coding problems, or answering general knowledge questions). If a query is unrelated, politely refuse to answer, explaining in Vietnamese that your purpose is solely to assist with career scanning, Holland assessment, market scout, and academic roadmap building. "
         "You have access to three specialized agents as tools: Profile Scanner, Market Scout, and Academic Architect. "
         f"The current user's User ID (Google ID) is '{user_id}'. You must use this user ID string when calling tools. "
         "The Holland/RIASEC test is a Profile Scanner capability, not a separate agent. "
         "If the user asks for a Holland test, RIASEC test, personality-career test, career-interest test, or asks which career type fits them, call profile_scanner with task='holland_start'. "
         "When the user provides Holland answers, convert them into the required answers_json array and call profile_scanner with task='holland_score'. "
+        "When an assessment attempt_id is present, pass it unchanged to profile_scanner while scoring. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
+        "The MI / Multiple Intelligences assessment is a Profile Scanner capability for learning style and intelligence tendency, not an official MBTI test. "
+        "If the user asks for MI, Multiple Intelligences, tri thong minh da dang, learning style, study style, MBTI, or personality-style testing, call profile_scanner with task='assessment_start' and assessment_type='multiple_intelligences'. "
+        "When the user provides MI answers, convert them into answers_json and call profile_scanner with task='assessment_score' and assessment_type='multiple_intelligences'. "
+        "If the latest user message explicitly says to call profile_scanner with task='assessment_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
         "If the user asks about salary based on an uploaded/scanned CV, first call profile_scanner with task='scan_profile', then call salary_benchmark with the original salary question plus profile context. "
         "When calling salary_benchmark from CV context, pass job_title from Profile Scanner target_role or structured_profile.target_role_hint, pass location if the user mentioned it, and pass experience_years if available. "
         "If only seniority is available, map junior to 2 years, middle/mid-level to 4 years, senior to 6 years, and lead/manager to 8 years. "
         "If no job title or target role can be found from the CV/profile output, ask the user which role they want to benchmark. "
+        "If the user provides or changes a target role after uploading a CV, call profile_scanner with task='scan_profile' and target_role set to the user's exact role. Profile Scanner will select the user's latest CV when cv_document_id is unavailable. "
+        "If the latest user message explicitly requests profile_confirm and includes cv_document_id plus decision, call profile_scanner immediately with task='profile_confirm', the exact cv_document_id, and decision. Do not reinterpret the decision. "
+        "If the user asks whether their CV direction conflicts with Holland or MI, or asks for a combined career alignment analysis, call profile_scanner with task='career_alignment'. "
+        "Career alignment is deterministic: never invent a conflict state or use MI as proof that a career is unsuitable. "
         "Do not invent CV analysis beyond Profile Scanner output; if the scanner says extraction is completed, explain that profile normalization and benchmark evaluation are the next steps. "
         "For ordinary CV/profile/background scanning, call profile_scanner with task='scan_profile'. "
-        "For course roadmap or learning planning, call the academic_architect tool with the user's target career goal, user_id (pass the current user's User ID), and optionally current_skills. "
-        "When calling academic_architect, write a short, friendly summary or introduction (1-2 sentences) in your final response. Do not repeat or copy the entire academic plan or list of courses, as the Academic Architect tool widget will display them beautifully. "
+        "For course roadmap or learning planning: "
+        "If the user wants to build a learning plan or roadmap (e.g., clicks 'Dựng lộ trình học' or says 'Tôi muốn xây dựng lộ trình học tập') but has not specified their target job role or career goal, you MUST ask them what target position or career role they want to build the roadmap for first. Do not call any tool until they specify this target career goal. "
+        "1. Once the target career_goal is known or specified, you MUST call the `academic_architect_input_verifier` tool with target career_goal, user_id, and action='verify' to load and show the target career goal and current skills to the user for validation. "
+        "2. If `academic_architect_input_verifier` returns empty current_skills, stop and politely ask the user to upload their CV first before building a roadmap. "
+        "3. If the user edits the skills (e.g. requests to add, remove, or modify skills, or types a message like 'thêm kỹ năng Python' or 'xóa kỹ năng Java'), calculate the new list of skills, then call `academic_architect_input_verifier` with action='update', user_id, career_goal, and the updated list of current_skills (as a comma-separated string) to update the backend database. Then explain the updated inputs. "
+        "4. When the user confirms the inputs (e.g. clicks 'Xác nhận'), you MUST FIRST call `academic_architect_skill_gap` to get the skill gap analysis. "
+        "5. Show the missing skills to the user. Ask them to confirm if they agree with these missing skills before building the roadmap. "
+        "6. Once they approve the missing skills, call `academic_architect_create_gantt` with the career_goal and lacking_skills array to generate the Gantt roadmap and chart_id. "
+        "7. If the user asks to swap a course, call `academic_architect_get_alternatives` with the chart_id and task_id. After they pick one, call `academic_architect_swap_course`. "
+        f"Today's date is {current_date}. "
+        "When calling academic_architect_create_gantt, structure your final response in Vietnamese exactly with these sections:\n"
+        "1. **Khoảng trống kỹ năng**: Summarize the lacking skills.\n"
+        "2. **Lộ trình học tập chi tiết**: Organize the plan into clear steps. Format courses as markdown links and append their duration.\n"
+        "3. **Tùy chọn**: Remind them they can download the Excel Gantt Chart or sync to Google Calendar using the buttons below, or ask you to swap any course they don't like.\n"
         "Based on the user's message, decide which tool(s) to call to gather the necessary information. "
         "Once you have the information, synthesize it and provide a helpful, coherent response to the user. "
         "If you need more information from the user before you can use a tool, ask them directly."
@@ -827,19 +1109,22 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                 
                 if event_type == "on_tool_start":
                     tool_input = event["data"].get("input")
-                    running_tool_inputs[name] = tool_input
-                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'input': tool_input})}\n\n"
+                    tool_call_id = str(event.get("run_id") or f"{name}-{uuid.uuid4()}")
+                    running_tool_inputs[tool_call_id] = tool_input
+                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': name, 'tool_call_id': tool_call_id, 'input': tool_input})}\n\n"
                 
                 elif event_type == "on_tool_end":
                     tool_output = event["data"].get("output")
                     serializable_output = serialize_tool_output(tool_output)
+                    tool_call_id = str(event.get("run_id") or f"{name}-{uuid.uuid4()}")
                     assistant_tool_calls.append({
+                        "id": tool_call_id,
                         "name": name,
-                        "input": running_tool_inputs.get(name),
+                        "input": running_tool_inputs.get(tool_call_id),
                         "output": serializable_output,
                         "status": "completed",
                     })
-                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'output': serializable_output})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': name, 'tool_call_id': tool_call_id, 'output': serializable_output})}\n\n"
                 
                 elif event_type == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")

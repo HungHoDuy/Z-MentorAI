@@ -5,6 +5,7 @@ class CvExtractionResult(BaseModel):
     status: str = "success"
     scan_status: str = "extraction_completed"
     cv_document_id: str
+    extraction_version: str
     parser_type: str
     ocr_fallback_used: bool = False
     text_char_count: int

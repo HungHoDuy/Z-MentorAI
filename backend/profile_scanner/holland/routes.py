@@ -1,7 +1,10 @@
+import uuid
+
 from fastapi import APIRouter, HTTPException
 
 from core.config import logger, settings
-from holland.questions import HOLLAND_QUESTIONS, HOLLAND_SCALE
+from assessments.scoring import build_question_set_hash
+from holland.questions import HOLLAND_ASSESSMENT_VERSION, HOLLAND_QUESTIONS, HOLLAND_SCALE
 from holland.repository import get_latest_holland_assessment, save_holland_assessment
 from holland.schemas import (
     HollandQuestionsResponse,
@@ -19,6 +22,9 @@ router = APIRouter(prefix="/holland", tags=["holland"])
 async def get_holland_questions():
     return HollandQuestionsResponse(
         status="success",
+        assessment_version=HOLLAND_ASSESSMENT_VERSION,
+        question_set_hash=build_question_set_hash(HOLLAND_QUESTIONS),
+        attempt_id=str(uuid.uuid4()),
         scale=HOLLAND_SCALE,
         questions=HOLLAND_QUESTIONS,
     )
@@ -42,6 +48,9 @@ async def start_holland_assessment(user_id: str):
 
     return HollandStartResponse(
         status="success",
+        assessment_version=HOLLAND_ASSESSMENT_VERSION,
+        question_set_hash=build_question_set_hash(HOLLAND_QUESTIONS),
+        attempt_id=str(uuid.uuid4()),
         latest_result=latest_result,
         scale=HOLLAND_SCALE,
         questions=HOLLAND_QUESTIONS,
@@ -52,8 +61,8 @@ async def start_holland_assessment(user_id: str):
 async def score_holland_assessment(request: HollandScoreRequest):
     result = score_holland_answers(request)
     result_payload = result.model_dump() if hasattr(result, "model_dump") else result.dict()
-    await save_holland_assessment(result_payload)
-    return result
+    saved_result = await save_holland_assessment(result_payload)
+    return HollandScoreResponse(**saved_result)
 
 
 @router.get("/latest/{user_id}")

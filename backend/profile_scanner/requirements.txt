@@ -3,11 +3,11 @@ uvicorn
 langchain
 langchain-core
 langchain-google-genai
-langchain-google-vertexai
 pydantic
 google-cloud-firestore
 google-cloud-storage
 google-cloud-documentai
+google-genai
 python-multipart
 pypdf
 python-docx

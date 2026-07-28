@@ -8,3 +8,5 @@ google-cloud-firestore
 langchain-google-genai
 langchain-google-vertexai
 python-dotenv
+openpyxl
+sse-starlette
