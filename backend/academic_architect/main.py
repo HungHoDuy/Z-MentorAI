@@ -726,11 +726,16 @@ async def swap_course(chart_id: str, request: SwapCourseRequest):
     if USE_FIRESTORE:
         db = get_firestore_client()
         if request.user_id:
-            docs = db.collection(GANTT_COLLECTION_NAME).where("user_id", "==", request.user_id).order_by("created_at", direction="DESCENDING").limit(1).stream()
+            docs = db.collection(GANTT_COLLECTION_NAME).where("user_id", "==", request.user_id).stream()
+            user_charts = []
             for d in docs:
-                chart_data = d.to_dict() or {}
+                data = d.to_dict() or {}
+                data["chart_id"] = d.id
+                user_charts.append(data)
+            if user_charts:
+                user_charts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                chart_data = user_charts[0]
                 chart_id = chart_data.get("chart_id", chart_id)
-                break
         
         if not chart_data:
             doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id)
