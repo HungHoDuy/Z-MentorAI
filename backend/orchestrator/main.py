@@ -547,7 +547,10 @@ async def save_chat_exchange(
         try:
             title_prompt = f"Generate a short conversation title (2 to 4 words) summarizing the following user message. Return ONLY the title text, with no quotes, formatting, or extra explanation.\nUser Message: {user_message}"
             res = await llm.ainvoke([HumanMessage(content=title_prompt)])
-            new_title = res.content.strip().replace('"', '').replace("'", "")
+            raw_content = res.content
+            if isinstance(raw_content, list):
+                raw_content = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in raw_content])
+            new_title = raw_content.strip().replace('"', '').replace("'", "")
             if new_title:
                 session["title"] = new_title
             else:

@@ -505,7 +505,10 @@ Do not wrap in markdown outside JSON.
 """
     if llm:
         res = await llm.ainvoke(prompt_skill_gap)
-        raw_content = res.content.strip()
+        raw_content = res.content
+        if isinstance(raw_content, list):
+            raw_content = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in raw_content])
+        raw_content = raw_content.strip()
         if raw_content.startswith("```json"):
             raw_content = raw_content[7:]
         if raw_content.endswith("```"):
