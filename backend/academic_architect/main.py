@@ -687,44 +687,24 @@ async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest
     skill_query = request.skill_name or "Chuyên môn"
     current_course_id = ""
 
-    chart_data = {}
-    if USE_FIRESTORE:
-        if request.user_id:
-            docs = db.collection(GANTT_COLLECTION_NAME).where("user_id", "==", request.user_id).order_by("created_at", direction=firestore.Query.DESCENDING).limit(1).stream()
-            for d in docs:
-                chart_data = d.to_dict() or {}
-                chart_id = chart_data.get("chart_id", chart_id)
+    if doc_ref and doc_ref.exists:
+        chart_data = doc_ref.to_dict() or {}
+        tasks = chart_data.get("tasks", [])
+        for t in tasks:
+            if t.get("task_id") == request.task_id:
+                skill_query = t.get("skill_name") or skill_query
+                current_course_id = t.get("course_id") or ""
                 break
-        if not chart_data and doc_ref and doc_ref.exists:
-            chart_data = doc_ref.to_dict() or {}
-    elif not USE_FIRESTORE:
-        db_local = read_gantt_db()
-        if request.user_id:
-            user_charts = [c for c in db_local.values() if c.get("user_id") == request.user_id]
-            user_charts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            if user_charts:
-                chart_data = user_charts[0]
-                chart_id = chart_data.get("chart_id", chart_id)
-        if not chart_data and chart_id in db_local:
-            chart_data = db_local[chart_id]
     elif not USE_FIRESTORE:
         db_local = read_gantt_db()
         if chart_id in db_local:
             chart_data = db_local[chart_id]
-        elif request.user_id:
-            logger.warning(f"Chart {chart_id} not found. Falling back to latest for user {request.user_id} in local db")
-            user_charts = [c for c in db_local.values() if c.get("user_id") == request.user_id]
-            user_charts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            if user_charts:
-                chart_data = user_charts[0]
-                chart_id = chart_data.get("chart_id", chart_id)
-
-    tasks = chart_data.get("tasks", [])
-    for t in tasks:
-        if t.get("task_id") == request.task_id:
-            skill_query = t.get("skill_name") or skill_query
-            current_course_id = t.get("course_id") or ""
-            break
+            tasks = chart_data.get("tasks", [])
+            for t in tasks:
+                if t.get("task_id") == request.task_id:
+                    skill_query = t.get("skill_name") or skill_query
+                    current_course_id = t.get("course_id") or ""
+                    break
 
     # Vector search top 6 courses to exclude the current course
     results, _ = await asyncio.to_thread(perform_vector_search, skill_query, "description", "computer-science", 6)
