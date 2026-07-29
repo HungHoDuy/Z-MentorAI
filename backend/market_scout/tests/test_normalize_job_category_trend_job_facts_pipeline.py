@@ -1,6 +1,6 @@
 from datetime import date
 
-from backend.market_scout.pipelines.normalize_job_category_trend_job_facts_pipeline import (
+from backend.market_scout.pipelines.trend_tracker.normalize_job_category_trend_job_facts_pipeline import (
     NormalizeJobCategoryTrendJobFactsPipeline,
 )
 
