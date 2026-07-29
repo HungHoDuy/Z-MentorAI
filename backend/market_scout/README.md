@@ -461,7 +461,8 @@ Local dry-sized run example:
 ```powershell
 cd F:\Z-MentorAI\Z-MentorAIackend\market_scout\market_scout_crawling
 
-& F:\Z-MentorAIenv\Scripts\python.exe .un_weekly_careerviet_crawl.py `
+& F:\Z-MentorAIenv\Scripts\python.exe .
+un_weekly_careerviet_crawl.py `
   --batch-id 2026W31 `
   --scope it-sales `
   --start-page 1 `
@@ -473,7 +474,8 @@ cd F:\Z-MentorAI\Z-MentorAIackend\market_scout\market_scout_crawling
 Production weekly run should use 100-200 jobs:
 
 ```powershell
-& F:\Z-MentorAIenv\Scripts\python.exe .un_weekly_careerviet_crawl.py `
+& F:\Z-MentorAIenv\Scripts\python.exe .
+un_weekly_careerviet_crawl.py `
   --scope it-sales `
   --max-pages 10 `
   --max-jobs 200 `
@@ -588,3 +590,74 @@ De xuat implementation:
 5. Neu thieu `job_title`, hoi lai user muon benchmark vi tri nao.
 
 Muc tieu la de user khong can nhap lai toan bo thong tin neu CV da chua du role, ky nang va kinh nghiem.
+
+## Weekly Salary Data Job 2: Preprocess + Embed
+
+Job 2 takes the raw weekly CareerViet detail collection from Job 1 and prepares it for Salary Benchmark search.
+
+Default input and output by batch:
+
+```text
+Input:  careerviet_jobs_weekly_YYYYWww
+Output: data_for_vectorize_YYYYWww
+Vector: data_vector_embeddings
+Error:  data_for_vectorize_errors_YYYYWww
+```
+
+What Job 2 does:
+
+1. Reads raw CareerViet job detail records for one batch.
+2. Normalizes fields needed by Salary Benchmark: job id, title, company, URL, location, industry, description, requirements, benefits, experience, salary bounds, source, scope, batch id, crawl timestamps.
+3. Parses salary ranges directly when salary has `{min} Tr - {max} Tr VND`.
+4. Fills `Cạnh Tranh` salaries using the current batch salary median as a deterministic production fallback.
+5. Handles open-ended salary text:
+   - `Trên X Tr VND` -> `min_salary = X`, `max_salary = X * open_ended_factor`.
+   - `Lên đến X Tr VND` -> `min_salary = X / open_ended_factor`, `max_salary = X`.
+6. Drops unsupported salary rows into the error collection instead of silently indexing them.
+7. Reuses existing salary pipelines to embed processed records, estimate open-ended bounds, and build salary index fields.
+
+`--competitive-salary-method batch_median` is kept only as an explicit rollback/testing option. Production should use the default `xgboost` mode.
+
+Local smoke-test dry run example, without loading the XGBoost embedding model:
+
+```powershell
+& F:\Z-MentorAI\venv\Scripts\python.exe backend\market_scout\market_scout_crawling\run_weekly_careerviet_preprocess.py `
+  --batch-id 2026W31 `
+  --source-collection careerviet_jobs_weekly_2026W31 `
+  --processed-collection data_for_vectorize_2026W31 `
+  --embedding-collection data_vector_embeddings `
+  --limit 20 `
+  --skip-embedding `
+  --skip-estimate-bounds `
+  --skip-build-index `
+  --competitive-salary-method batch_median `
+  --dry-run `
+  --verbose
+```
+
+Real weekly run example, using default XGBoost mode for `C?nh Tranh` salaries:
+
+```powershell
+& F:\Z-MentorAI\venv\Scripts\python.exe backend\market_scout\market_scout_crawling\run_weekly_careerviet_preprocess.py `
+  --batch-id 2026W31 `
+  --source-collection careerviet_jobs_weekly_2026W31 `
+  --processed-collection data_for_vectorize_2026W31 `
+  --embedding-collection data_vector_embeddings `
+  --verbose
+```
+
+Cloud Build image for Cloud Run Job 2:
+
+```bash
+gcloud builds submit \
+  --config backend/market_scout/cloudbuild.weekly_preprocess.yaml \
+  --project=z-mentorai
+```
+
+Cloud Run Job 2 should use image:
+
+```text
+asia-southeast1-docker.pkg.dev/z-mentorai/market-scout/careerviet-preprocess:job2
+```
+
+Run manually first, then schedule weekly only after Job 1 -> Job 2 -> Job 3 has been verified end to end.
