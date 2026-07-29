@@ -1,0 +1,7 @@
+﻿-r requirements.txt
+
+joblib
+numpy
+scikit-learn==1.6.1
+sentence-transformers
+xgboost

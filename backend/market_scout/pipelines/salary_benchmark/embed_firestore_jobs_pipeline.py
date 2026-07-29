@@ -269,6 +269,10 @@ class EmbedFirestoreJobsPipeline:
             {
                 "source_collection": self.source_collection,
                 "source_document_id": document_id,
+                "batch_id": source_data.get("batch_id"),
+                "source": source_data.get("source"),
+                "scope": source_data.get("scope"),
+                "crawled_at": source_data.get("crawled_at"),
                 "embedding_text": embedding_text,
                 "embedding_model": self.embedding_service.model_name,
                 "embedding_updated_at": datetime.now(timezone.utc).isoformat(),

@@ -1,0 +1,15 @@
+﻿FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY backend/market_scout/requirements.txt ./requirements.txt
+COPY backend/market_scout/requirements.weekly_preprocess.txt ./requirements.weekly_preprocess.txt
+RUN pip install --no-cache-dir -r requirements.weekly_preprocess.txt
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
+
+COPY backend ./backend
+
+CMD ["python", "backend/market_scout/market_scout_crawling/run_weekly_careerviet_preprocess.py"]
