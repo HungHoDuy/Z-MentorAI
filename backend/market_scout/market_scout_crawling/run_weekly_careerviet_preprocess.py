@@ -398,7 +398,19 @@ def write_records(db: Any, collection_name: str, records: list[tuple[str, dict[s
 def run_json_step(command: list[str], *, verbose: bool) -> dict[str, Any]:
     if verbose:
         print("Running:", " ".join(command), flush=True)
-    completed = subprocess.run(command, check=True, text=True, capture_output=True)
+    try:
+        completed = subprocess.run(command, check=True, text=True, capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        stdout = (exc.stdout or "").strip()
+        stderr = (exc.stderr or "").strip()
+        if stdout:
+            print("Subprocess stdout:", stdout, flush=True)
+        if stderr:
+            print("Subprocess stderr:", stderr, file=sys.stderr, flush=True)
+        raise RuntimeError(
+            f"Subprocess failed with exit code {exc.returncode}: {' '.join(command)}"
+        ) from exc
+
     if verbose and completed.stderr:
         print(completed.stderr, file=sys.stderr, flush=True)
     stdout = completed.stdout.strip()
