@@ -6,7 +6,6 @@ import json
 import math
 import re
 import statistics
-import subprocess
 import sys
 import unicodedata
 from dataclasses import dataclass, asdict
@@ -19,10 +18,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.market_scout.repositories.salary_benchmark.salary_repository import build_firestore_client, load_env_file
+from backend.market_scout.pipelines.salary_benchmark.embed_firestore_jobs_pipeline import EmbedFirestoreJobsPipeline
+from backend.market_scout.pipelines.salary_benchmark.estimate_salary_bounds_pipeline import (
+    EstimateSalaryBoundsPipeline,
+)
+from backend.market_scout.repositories.salary_benchmark.salary_repository import (
+    apply_where,
+    build_firestore_client,
+    load_env_file,
+)
 from backend.market_scout.services.salary_benchmark.salary_competitive_prediction_service import (
     SalaryCompetitivePredictionService,
 )
+from backend.market_scout.services.salary_benchmark.salary_index_service import SalaryIndexService
 
 MILLION_VND = 1_000_000
 RANGE_RE = re.compile(r"(?P<min>\d+(?:[\.,]\d+)?)\s*(?:tr|trieu|m|million)?\s*(?:-|\u2013|\u2014|den|to)\s*(?P<max>\d+(?:[\.,]\d+)?)\s*(?:tr|trieu|m|million)?", re.IGNORECASE)
@@ -182,46 +190,26 @@ def main() -> None:
         summary.written_processed_records = 0
 
     if processed_records and not args.skip_embedding:
-        summary.embed_result = run_json_step(
-            [
-                sys.executable,
-                str(PROJECT_ROOT / "backend/market_scout/local_scripts/salary_benchmark/run_embedJobs.py"),
-                "--source-collection",
-                processed_collection,
-                "--vector-collection",
-                args.embedding_collection,
-                "--verbose",
-                *( ["--dry-run"] if args.dry_run else [] ),
-            ],
+        summary.embed_result = run_embed_jobs(
+            source_collection=processed_collection,
+            vector_collection=args.embedding_collection,
+            dry_run=args.dry_run,
             verbose=args.verbose,
         )
 
     if processed_records and not args.skip_estimate_bounds:
-        summary.estimate_bounds_result = run_json_step(
-            [
-                sys.executable,
-                str(PROJECT_ROOT / "backend/market_scout/local_scripts/salary_benchmark/run_estimateSalaryBounds.py"),
-                "--collection",
-                args.embedding_collection,
-                "--source-collection-filter",
-                processed_collection,
-                *( ["--dry-run"] if args.dry_run else [] ),
-            ],
-            verbose=args.verbose,
+        summary.estimate_bounds_result = run_estimate_salary_bounds(
+            collection_name=args.embedding_collection,
+            source_collection_filter=processed_collection,
+            dry_run=args.dry_run,
         )
 
     if processed_records and not args.skip_build_index:
-        summary.build_index_result = run_json_step(
-            [
-                sys.executable,
-                str(PROJECT_ROOT / "backend/market_scout/local_scripts/salary_benchmark/run_buildSalaryIndex.py"),
-                "--collection",
-                args.embedding_collection,
-                "--source-collection-filter",
-                processed_collection,
-                *( ["--dry-run"] if args.dry_run else [] ),
-            ],
-            verbose=args.verbose,
+        summary.build_index_result = run_build_salary_index(
+            db,
+            collection_name=args.embedding_collection,
+            source_collection_filter=processed_collection,
+            dry_run=args.dry_run,
         )
 
     if not processed_records and not args.allow_empty:
@@ -395,33 +383,90 @@ def write_records(db: Any, collection_name: str, records: list[tuple[str, dict[s
     return written
 
 
-def run_json_step(command: list[str], *, verbose: bool) -> dict[str, Any]:
+def run_embed_jobs(
+    *,
+    source_collection: str,
+    vector_collection: str,
+    dry_run: bool,
+    verbose: bool,
+) -> dict[str, Any]:
     if verbose:
-        print("Running:", " ".join(command), flush=True)
-    try:
-        completed = subprocess.run(command, check=True, text=True, capture_output=True)
-    except subprocess.CalledProcessError as exc:
-        stdout = (exc.stdout or "").strip()
-        stderr = (exc.stderr or "").strip()
-        if stdout:
-            print("Subprocess stdout:", stdout, flush=True)
-        if stderr:
-            print("Subprocess stderr:", stderr, file=sys.stderr, flush=True)
-        raise RuntimeError(
-            f"Subprocess failed with exit code {exc.returncode}: {' '.join(command)}"
-        ) from exc
+        print(
+            f"Embedding processed jobs: source={source_collection} vector={vector_collection} dry_run={dry_run}",
+            flush=True,
+        )
+    result = EmbedFirestoreJobsPipeline(
+        source_collection=source_collection,
+        vector_collection=vector_collection,
+    ).run(dry_run=dry_run)
+    return result.to_dict()
 
-    if verbose and completed.stderr:
-        print(completed.stderr, file=sys.stderr, flush=True)
-    stdout = completed.stdout.strip()
-    if verbose and stdout:
-        print(stdout, flush=True)
-    if not stdout:
-        return {}
-    try:
-        return json.loads(stdout)
-    except json.JSONDecodeError:
-        return {"raw_stdout": stdout}
+
+def run_estimate_salary_bounds(
+    *,
+    collection_name: str,
+    source_collection_filter: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    result = EstimateSalaryBoundsPipeline(
+        collection_name=collection_name,
+        source_collection_filter=source_collection_filter,
+    ).run(dry_run=dry_run)
+    return result.to_dict()
+
+
+def run_build_salary_index(
+    db: Any,
+    *,
+    collection_name: str,
+    source_collection_filter: str,
+    dry_run: bool,
+    batch_size: int = 25,
+) -> dict[str, Any]:
+    collection = db.collection(collection_name)
+    query = apply_where(collection, "source_collection", "==", source_collection_filter)
+    index_service = SalaryIndexService()
+    pending: list[tuple[str, dict[str, Any]]] = []
+    scanned = 0
+    indexed = 0
+    written = 0
+    skipped = 0
+
+    for snapshot in query.stream():
+        scanned += 1
+        fields = index_service.build_index_fields(snapshot.id, snapshot.to_dict() or {})
+        if fields is None:
+            skipped += 1
+            continue
+        indexed += 1
+        if dry_run:
+            continue
+        pending.append((snapshot.id, fields))
+        if len(pending) >= batch_size:
+            written += commit_index_fields(db, collection, pending)
+            pending = []
+
+    if pending:
+        written += commit_index_fields(db, collection, pending)
+
+    return {
+        "status": "success",
+        "collection": collection_name,
+        "source_collection_filter": source_collection_filter,
+        "scanned_documents": scanned,
+        "indexed_documents": indexed,
+        "written_documents": written,
+        "skipped_documents": skipped,
+        "dry_run": dry_run,
+    }
+
+
+def commit_index_fields(db: Any, collection: Any, operations: list[tuple[str, dict[str, Any]]]) -> int:
+    batch = db.batch()
+    for document_id, fields in operations:
+        batch.set(collection.document(document_id), fields, merge=True)
+    batch.commit()
+    return len(operations)
 
 
 def first_value(data: dict[str, Any], *keys: str) -> Any:
