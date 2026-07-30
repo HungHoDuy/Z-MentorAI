@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - backend/market_scout/Dockerfile.weekly_job_mapping_embedding
+      - -t
+      - asia-southeast1-docker.pkg.dev/$PROJECT_ID/market-scout/careerviet-job-mapping-embedding:job4
+      - .
+images:
+  - asia-southeast1-docker.pkg.dev/$PROJECT_ID/market-scout/careerviet-job-mapping-embedding:job4

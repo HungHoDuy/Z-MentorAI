@@ -32,6 +32,14 @@ class FakeQuery:
         self.docs = docs
         self.limit_value = len(docs)
         self.after = None
+        self.filters: list[tuple[str, str, object]] = []
+
+    def where(self, field_path: str | None = None, op_string: str | None = None, value: object = None, *, filter=None):
+        if filter is not None:
+            self.filters.append((filter.field_path, filter.op_string, filter.value))
+        else:
+            self.filters.append((field_path or "", op_string or "", value))
+        return self
 
     def order_by(self, field: str):
         return self
@@ -47,15 +55,21 @@ class FakeQuery:
     def stream(self, timeout: int = 60):
         if self.after is not None:
             return []
-        return self.docs[: self.limit_value]
+        docs = self.docs
+        for field_path, op_string, value in self.filters:
+            if field_path == "source_collection" and op_string == "==":
+                docs = [doc for doc in docs if doc.to_dict().get("source_collection") == value]
+        return docs[: self.limit_value]
 
 
 class FakeFirestoreClient:
     def __init__(self, docs: list[FakeSnapshot]) -> None:
         self.docs = docs
+        self.last_query: FakeQuery | None = None
 
     def collection(self, name: str):
-        return FakeQuery(self.docs)
+        self.last_query = FakeQuery(self.docs)
+        return self.last_query
 
 
 def test_job_mapping_embedding_text_uses_stable_relevant_fields() -> None:
@@ -96,6 +110,30 @@ def test_embed_job_mapping_pipeline_dry_run_counts_valid_facts() -> None:
     assert result.embedding_model == "fake-embedding-model"
 
 
+def test_embed_job_mapping_pipeline_filters_by_source_collection() -> None:
+    docs = [
+        FakeSnapshot("job-weekly", {**_fact_data(), "source_collection": "data_for_vectorize_2026W31"}),
+        FakeSnapshot("job-old", {**_fact_data(), "source_collection": "data_for_vectorize"}),
+    ]
+    firestore_client = FakeFirestoreClient(docs)
+    pipeline = EmbedJobMappingPipeline(
+        firestore_client=firestore_client,
+        embedding_service=FakeEmbeddingService(),
+        source_collection="trend_job_facts_v2",
+        embedding_collection="job_mapping_embedding",
+        source_collection_filter="data_for_vectorize_2026W31",
+        batch_size=2,
+        page_size=10,
+    )
+
+    result = pipeline.run(dry_run=True)
+
+    assert result.scanned_documents == 1
+    assert result.embedded_documents == 1
+    assert firestore_client.last_query is not None
+    assert ("source_collection", "==", "data_for_vectorize_2026W31") in firestore_client.last_query.filters
+
+
 def _fact_data() -> dict:
     return {
         "job_key": "job-1",
@@ -114,6 +152,7 @@ def _fact_data() -> dict:
         "company": "Example Co",
         "min_salary": 10,
     }
+
 
 def test_job_mapping_document_keeps_only_runtime_mapping_fields() -> None:
     fact = job_category_trend_fact_from_document("job-1", _fact_data())
