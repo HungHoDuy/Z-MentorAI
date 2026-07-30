@@ -66,6 +66,7 @@ class EmbedJobMappingPipeline:
         source_collection: str | None = None,
         embedding_collection: str | None = None,
         embedding_field: str | None = None,
+        source_collection_filter: str | None = None,
         batch_size: int = 10,
         page_size: int = 100,
         stream_timeout: int = 60,
@@ -89,6 +90,7 @@ class EmbedJobMappingPipeline:
             "MARKET_SCOUT_JOB_MAPPING_EMBEDDING_FIELD",
             DEFAULT_EMBEDDING_FIELD,
         )
+        self.source_collection_filter = source_collection_filter
         self.batch_size = batch_size
         self.page_size = page_size
         self.stream_timeout = stream_timeout
@@ -96,9 +98,10 @@ class EmbedJobMappingPipeline:
 
     def run(self, *, limit: int | None = None, dry_run: bool = False) -> EmbedJobMappingResult:
         self.logger.info(
-            "Starting job mapping embedding pipeline: source=%s target=%s batch_size=%s page_size=%s dry_run=%s",
+            "Starting job mapping embedding pipeline: source=%s target=%s source_collection_filter=%s batch_size=%s page_size=%s dry_run=%s",
             self.source_collection,
             self.embedding_collection,
+            self.source_collection_filter,
             self.batch_size,
             self.page_size,
             dry_run,
@@ -180,7 +183,10 @@ class EmbedJobMappingPipeline:
                     break
                 current_page_size = min(current_page_size, remaining)
 
-            query = collection_ref.order_by("__name__").limit(current_page_size)
+            query = collection_ref
+            if self.source_collection_filter:
+                query = _apply_where(query, "source_collection", "==", self.source_collection_filter)
+            query = query.order_by("__name__").limit(current_page_size)
             if last_snapshot is not None:
                 query = query.start_after(last_snapshot)
 
@@ -225,3 +231,11 @@ class EmbedJobMappingPipeline:
                 "Missing google-cloud-firestore vector support. Upgrade google-cloud-firestore in requirements.txt."
             ) from exc
         return Vector(embedding)
+
+def _apply_where(query: Any, field_path: str, operator: str, value: Any) -> Any:
+    try:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        return query.where(filter=FieldFilter(field_path, operator, value))
+    except (ImportError, TypeError):
+        return query.where(field_path, operator, value)
