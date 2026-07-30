@@ -3,7 +3,6 @@ main:
   steps:
     - init:
         assign:
-          - input: ${default(input, {})}
           - project_id: ${default(map.get(input, "project_id"), sys.get_env("GOOGLE_CLOUD_PROJECT_ID"))}
           - region: ${default(map.get(input, "region"), "asia-southeast1")}
           - run_timestamp: ${time.format(sys.now(), "Asia/Ho_Chi_Minh")}
@@ -45,8 +44,8 @@ main:
                     - ${string(workers)}
               taskCount: 1
               timeout: "7200s"
-        connector_params:
-          timeout: 7200
+          connector_params:
+            timeout: 7200
         result: crawl_result
 
     - run_preprocess_job:
@@ -69,8 +68,8 @@ main:
                     - "--verbose"
               taskCount: 1
               timeout: "7200s"
-        connector_params:
-          timeout: 7200
+          connector_params:
+            timeout: 7200
         result: preprocess_result
 
     - run_trend_facts_job:
@@ -89,8 +88,8 @@ main:
                     - "--verbose"
               taskCount: 1
               timeout: "3600s"
-        connector_params:
-          timeout: 3600
+          connector_params:
+            timeout: 3600
         result: trend_facts_result
 
     - run_job_mapping_embedding_job:
@@ -111,8 +110,8 @@ main:
                     - "--verbose"
               taskCount: 1
               timeout: "3600s"
-        connector_params:
-          timeout: 3600
+          connector_params:
+            timeout: 3600
         result: job_mapping_result
 
     - done:
