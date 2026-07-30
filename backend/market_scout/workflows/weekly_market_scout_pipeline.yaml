@@ -1,0 +1,133 @@
+main:
+  params: [input]
+  steps:
+    - init:
+        assign:
+          - input: ${default(input, {})}
+          - project_id: ${default(map.get(input, "project_id"), sys.get_env("GOOGLE_CLOUD_PROJECT_ID"))}
+          - region: ${default(map.get(input, "region"), "asia-southeast1")}
+          - run_timestamp: ${time.format(sys.now(), "Asia/Ho_Chi_Minh")}
+          - default_batch_id: ${text.substring(run_timestamp, 0, 4) + text.substring(run_timestamp, 5, 7) + text.substring(run_timestamp, 8, 10)}
+          - batch_id: ${default(map.get(input, "batch_id"), default_batch_id)}
+          - scope: ${default(map.get(input, "scope"), "it-sales")}
+          - max_jobs: ${default(map.get(input, "max_jobs"), 200)}
+          - workers: ${default(map.get(input, "workers"), 2)}
+          - start_page: ${default(map.get(input, "start_page"), 1)}
+          - max_pages: ${default(map.get(input, "max_pages"), 10)}
+          - raw_collection: ${"careerviet_jobs_weekly_" + batch_id}
+          - processed_collection: ${"data_for_vectorize_" + batch_id}
+          - crawl_job: "market-scout-careerviet-crawl-weekly"
+          - preprocess_job: "market-scout-careerviet-preprocess-weekly"
+          - trend_facts_job: "market-scout-careerviet-trend-facts-weekly"
+          - job_mapping_job: "market-scout-careerviet-job-mapping-weekly"
+          - job_prefix: ${"projects/" + project_id + "/locations/" + region + "/jobs/"}
+
+    - run_crawl_job:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job_prefix + crawl_job}
+          body:
+            overrides:
+              containerOverrides:
+                - args:
+                    - "run_weekly_careerviet_crawl.py"
+                    - "--batch-id"
+                    - ${batch_id}
+                    - "--scope"
+                    - ${scope}
+                    - "--start-page"
+                    - ${string(start_page)}
+                    - "--max-pages"
+                    - ${string(max_pages)}
+                    - "--max-jobs"
+                    - ${string(max_jobs)}
+                    - "--workers"
+                    - ${string(workers)}
+              taskCount: 1
+              timeout: "7200s"
+        connector_params:
+          timeout: 7200
+        result: crawl_result
+
+    - run_preprocess_job:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job_prefix + preprocess_job}
+          body:
+            overrides:
+              containerOverrides:
+                - args:
+                    - "backend/market_scout/market_scout_crawling/run_weekly_careerviet_preprocess.py"
+                    - "--batch-id"
+                    - ${batch_id}
+                    - "--source-collection"
+                    - ${raw_collection}
+                    - "--processed-collection"
+                    - ${processed_collection}
+                    - "--embedding-collection"
+                    - "data_vector_embeddings"
+                    - "--verbose"
+              taskCount: 1
+              timeout: "7200s"
+        connector_params:
+          timeout: 7200
+        result: preprocess_result
+
+    - run_trend_facts_job:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job_prefix + trend_facts_job}
+          body:
+            overrides:
+              containerOverrides:
+                - args:
+                    - "backend/market_scout/run_normalizeJobCategoryTrendJobFacts.py"
+                    - "--source-collection"
+                    - ${processed_collection}
+                    - "--facts-collection"
+                    - "trend_job_facts_v2"
+                    - "--verbose"
+              taskCount: 1
+              timeout: "3600s"
+        connector_params:
+          timeout: 3600
+        result: trend_facts_result
+
+    - run_job_mapping_embedding_job:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job_prefix + job_mapping_job}
+          body:
+            overrides:
+              containerOverrides:
+                - args:
+                    - "backend/market_scout/run_embedJobMapping.py"
+                    - "--source-collection"
+                    - "trend_job_facts_v2"
+                    - "--embedding-collection"
+                    - "job_mapping_embedding"
+                    - "--source-collection-filter"
+                    - ${processed_collection}
+                    - "--verbose"
+              taskCount: 1
+              timeout: "3600s"
+        connector_params:
+          timeout: 3600
+        result: job_mapping_result
+
+    - done:
+        return:
+          status: "success"
+          batch_id: ${batch_id}
+          raw_collection: ${raw_collection}
+          processed_collection: ${processed_collection}
+          jobs:
+            crawl: ${crawl_job}
+            preprocess: ${preprocess_job}
+            trend_facts: ${trend_facts_job}
+            job_mapping_embedding: ${job_mapping_job}
+          executions:
+            crawl: ${crawl_result.name}
+            preprocess: ${preprocess_result.name}
+            trend_facts: ${trend_facts_result.name}
+            job_mapping_embedding: ${job_mapping_result.name}
