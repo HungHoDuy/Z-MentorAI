@@ -44,7 +44,7 @@ const uiText = {
     personalTitle: 'Hồ sơ cá nhân', personalDesc: 'Thông tin dùng để các agent hiểu đúng bối cảnh nghề nghiệp của bạn.',
     fullName: 'Họ và tên', email: 'Email tài khoản', phone: 'Số điện thoại', location: 'Địa điểm',
     targetRole: 'Vị trí mục tiêu', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio',
-    save: 'Lưu thay đổi', saving: 'Đang lưu...', saved: 'Đã lưu thông tin.', currentCv: 'Hồ sơ CV hiện tại',
+    save: 'Lưu thay đổi', saving: 'Đang lưu...', saved: 'Đã lưu thông tin.', currentCv: 'Hồ sơ nghề nghiệp hiện tại',
     noCv: 'Bạn chưa xác nhận CV nào làm hồ sơ hiện tại.', uploadDate: 'Ngày tải lên', version: 'Phiên bản hồ sơ',
     language: 'Ngôn ngữ', appearance: 'Giao diện', light: 'Sáng', dark: 'Tối', settingsDesc: 'Tùy chỉnh cách Z-MentorAI hiển thị trên thiết bị này.',
     backChat: 'Quay lại trò chuyện', assessmentResult: 'Kết quả bài đánh giá', answered: 'câu đã trả lời', learningTips: 'Gợi ý học tập'
@@ -101,6 +101,127 @@ function localizeRecommendation(text, locale) {
   if (text.includes('No quantified achievement')) return 'Bổ sung thành tựu có số liệu hoặc tác động đo lường được.';
   if (text.includes('No email detected')) return 'Bổ sung email liên hệ rõ ràng trong CV.';
   return text;
+}
+
+const profileFieldLabels = {
+  vi: {
+    email: 'email', phone: 'số điện thoại', location: 'địa điểm', target_role: 'vị trí mục tiêu',
+    experience: 'kinh nghiệm', education: 'học vấn', skills: 'kỹ năng', other: 'một số thông tin'
+  },
+  en: {
+    email: 'email', phone: 'phone number', location: 'location', target_role: 'target role',
+    experience: 'experience', education: 'education', skills: 'skills', other: 'some information'
+  }
+};
+
+function formatNaturalList(items, locale = 'vi') {
+  const values = [...new Set(items.filter(Boolean))];
+  if (values.length <= 1) return values[0] || '';
+  const conjunction = locale === 'vi' ? ' và ' : ' and ';
+  return `${values.slice(0, -1).join(', ')}${conjunction}${values.at(-1)}`;
+}
+
+function getProfileIssueMessage(profile, locale = 'vi') {
+  const labels = profileFieldLabels[locale] || profileFieldLabels.vi;
+  const structuredIssues = Array.isArray(profile?.profile_issues) ? profile.profile_issues : [];
+  const issueFields = structuredIssues.map((issue) => labels[issue?.field] || labels.other);
+  if (issueFields.length) {
+    const fields = formatNaturalList(issueFields, locale);
+    return locale === 'vi'
+      ? `Cần kiểm tra lại ${fields} vì CV chưa cung cấp đủ thông tin rõ ràng.`
+      : `Please review ${fields} because the CV does not provide enough clear information.`;
+  }
+
+  const legacyIssues = Array.isArray(profile?.missing_or_unclear) ? profile.missing_or_unclear : [];
+  if (!legacyIssues.length) return '';
+  const knownFields = legacyIssues.flatMap((issue) =>
+    String(issue || '').toLowerCase().match(/email|phone|location|target[_ ]?role|experience|education|skills?/g) || []
+  ).map((field) => {
+    if (field.startsWith('target')) return labels.target_role;
+    if (field.startsWith('skill')) return labels.skills;
+    return labels[field] || labels.other;
+  });
+  if (knownFields.length) {
+    const fields = formatNaturalList(knownFields, locale);
+    return locale === 'vi'
+      ? `Cần kiểm tra lại ${fields} vì CV chưa cung cấp đủ thông tin rõ ràng.`
+      : `Please review ${fields} because the CV does not provide enough clear information.`;
+  }
+  const hasVietnameseText = legacyIssues.some((issue) => /[À-ỹ]/.test(String(issue || '')));
+  if (locale === 'vi' && hasVietnameseText) return legacyIssues.join(' ');
+  return locale === 'vi'
+    ? 'Một số thông tin trong CV chưa đủ rõ ràng. Vui lòng kiểm tra lại hồ sơ được nhận diện.'
+    : 'Some CV information is unclear. Please review the recognized profile.';
+}
+
+function ExpandableTagList({ items = [], emptyText, initialCount = 12, locale = 'vi' }) {
+  const [expanded, setExpanded] = useState(false);
+  const normalized = items.filter(Boolean);
+  const visibleItems = expanded ? normalized : normalized.slice(0, initialCount);
+  return (
+    <>
+      <div className="profile-skill-cloud">
+        {visibleItems.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}
+        {!normalized.length && <em>{emptyText}</em>}
+      </div>
+      {normalized.length > initialCount && (
+        <button className="inline-expand-button" onClick={() => setExpanded((value) => !value)} type="button">
+          {expanded
+            ? (locale === 'vi' ? 'Thu gọn' : 'Show less')
+            : (locale === 'vi' ? `Xem thêm ${normalized.length - initialCount} kỹ năng` : `Show ${normalized.length - initialCount} more skills`)}
+        </button>
+      )}
+    </>
+  );
+}
+
+function ProfileSnapshotSections({ profile, locale = 'vi' }) {
+  const skills = Array.isArray(profile?.skills) ? profile.skills.map((skill) => (
+    typeof skill === 'string' ? skill : (skill?.[`display_name_${locale}`] || skill?.canonical_name || skill?.name)
+  )).filter(Boolean) : [];
+  const experiences = Array.isArray(profile?.work_experiences) ? profile.work_experiences : [];
+  const education = Array.isArray(profile?.education) ? profile.education : (Array.isArray(profile?.education_records) ? profile.education_records : []);
+  const projects = Array.isArray(profile?.projects) ? profile.projects : [];
+  const renderRecord = (item, index, kind) => {
+    if (typeof item === 'string') return <article key={`${kind}-${index}`}><p>{item}</p></article>;
+    const title = kind === 'experience'
+      ? (item.title || item.role || 'Kinh nghiệm')
+      : kind === 'education'
+        ? (item.degree || item.field || item.institution || 'Học vấn')
+        : (item.name || 'Dự án');
+    const meta = kind === 'experience'
+      ? [item.organization, item.duration]
+      : kind === 'education'
+        ? [item.institution, item.duration]
+        : [item.role, item.url];
+    return (
+      <article key={`${kind}-${title}-${index}`}>
+        <strong>{title}</strong>
+        {meta.filter(Boolean).length > 0 && <span>{meta.filter(Boolean).join(' · ')}</span>}
+        {(item.summary || item.evidence) && <p>{item.summary || item.evidence}</p>}
+      </article>
+    );
+  };
+  return (
+    <div className="profile-snapshot-sections">
+      <section className="cv-draft-section profile-snapshot-skills">
+        <h4>{locale === 'vi' ? 'Kỹ năng' : 'Skills'}</h4>
+        <ExpandableTagList items={skills} emptyText={locale === 'vi' ? 'Chưa tìm thấy kỹ năng rõ ràng.' : 'No clear skills found.'} locale={locale} />
+      </section>
+      <div className="cv-draft-columns">
+        <section className="cv-draft-section">
+          <h4>{locale === 'vi' ? 'Kinh nghiệm' : 'Experience'}</h4>
+          {experiences.length ? experiences.map((item, index) => renderRecord(item, index, 'experience')) : <p>{locale === 'vi' ? 'Chưa tìm thấy mục kinh nghiệm.' : 'No experience found.'}</p>}
+        </section>
+        <section className="cv-draft-section">
+          <h4>{locale === 'vi' ? 'Học vấn và dự án' : 'Education and projects'}</h4>
+          {education.map((item, index) => renderRecord(item, index, 'education'))}
+          {projects.map((item, index) => renderRecord(item, index, 'project'))}
+          {!education.length && !projects.length && <p>{locale === 'vi' ? 'Chưa tìm thấy học vấn hoặc dự án.' : 'No education or projects found.'}</p>}
+        </section>
+      </div>
+    </div>
+  );
 }
 
 function formatFileSize(bytes) {
@@ -374,7 +495,7 @@ function HollandResultCard({ result, locale = 'vi' }) {
           <div>
             <span className="profile-scan-section-title">Gợi ý học tập</span>
             <ul className="profile-recommendations">
-              {result.recommendations_vi.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+              {result.recommendations_vi.map((item) => <li key={item}>{item}</li>)}
             </ul>
           </div>
         </div>
@@ -383,7 +504,7 @@ function HollandResultCard({ result, locale = 'vi' }) {
   );
 }
 
-function ProfileConfirmationActions({ action, onSendMessage }) {
+function ProfileConfirmationActions({ action, onSendMessage, locale = 'vi' }) {
   const [submitting, setSubmitting] = useState('');
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState('');
@@ -398,25 +519,27 @@ function ProfileConfirmationActions({ action, onSendMessage }) {
   const handleDecision = async (option) => {
     if (submitting || completed) return;
     const displayText = option.decision === 'reject'
-      ? 'Không, hãy giữ nguyên hồ sơ cá nhân hiện tại.'
+      ? (locale === 'vi' ? 'Không, hãy giữ nguyên hồ sơ cá nhân hiện tại.' : 'No, keep my current career profile unchanged.')
       : `${option.label_vi} từ CV vừa tải lên.`;
-    const backendText = [
-      displayText,
-      `Call profile_scanner immediately with task="profile_confirm", cv_document_id="${action.cv_document_id}", and decision="${option.decision}".`,
-      'Do not ask for confirmation again and do not change the decision.'
-    ].join('\n');
     setSubmitting(option.decision);
     setError('');
-    const ok = await onSendMessage({ displayText, backendText });
+    const ok = await onSendMessage({
+      displayText,
+      action: {
+        type: 'profile.save_decision',
+        cv_document_id: action.cv_document_id,
+        decision: option.decision
+      }
+    });
     setSubmitting('');
     if (ok) setCompleted(true);
-    else setError('Chưa cập nhật được hồ sơ. Vui lòng kiểm tra kết nối và thử lại.');
+    else setError(locale === 'vi' ? 'Chưa cập nhật được hồ sơ. Vui lòng kiểm tra kết nối và thử lại.' : 'Could not update the profile. Check your connection and try again.');
   };
 
   return (
     <div className="profile-confirmation-panel">
       <div>
-        <span className="profile-scan-section-title">Xác nhận hồ sơ cá nhân</span>
+        <span className="profile-scan-section-title">{locale === 'vi' ? 'Lưu vào hồ sơ cá nhân?' : 'Save to your personal profile?'}</span>
         <p>{action.message_vi}</p>
       </div>
       <div className="profile-confirmation-actions">
@@ -428,11 +551,11 @@ function ProfileConfirmationActions({ action, onSendMessage }) {
             onClick={() => handleDecision(option)}
             type="button"
           >
-            {submitting === option.decision ? 'Đang xử lý...' : option.label_vi}
+            {submitting === option.decision ? (locale === 'vi' ? 'Đang xử lý...' : 'Processing...') : (locale === 'vi' ? option.label_vi : option.label_en || option.label_vi)}
           </button>
         ))}
       </div>
-      {completed && <div className="profile-action-status"><CheckCircle2 size={16} />Đã gửi lựa chọn.</div>}
+      {completed && <div className="profile-action-status"><CheckCircle2 size={16} />{locale === 'vi' ? 'Đã gửi lựa chọn.' : 'Your choice was submitted.'}</div>}
       {error && <div className="holland-form-error">{error}</div>}
     </div>
   );
@@ -455,7 +578,7 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
         <div className="profile-scan-title">
           <div className="profile-scan-eyebrow">{locale === 'vi' ? 'Kết quả đánh giá CV' : 'CV assessment result'}</div>
           <h3>{result?.target_role || 'Profile Scanner'}</h3>
-          {result?.target_level && <span className="profile-target-level">Benchmark cấp độ: {targetLevelLabels[locale]?.[result.target_level] || result.target_level}</span>}
+          {result?.target_level && <span className="profile-target-level">{locale === 'vi' ? 'Cấp độ đánh giá' : 'Assessment level'}: {targetLevelLabels[locale]?.[result.target_level] || result.target_level}</span>}
           <p>{resultSummary}</p>
         </div>
         <div className="profile-total-score">
@@ -464,7 +587,7 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
         </div>
       </div>
 
-      <ProcessingSteps steps={result?.processing_steps} />
+      <ProcessingSteps steps={result?.processing_steps} locale={locale} />
 
       {dimensions.length > 0 && (
         <div className="profile-dimension-list">
@@ -488,28 +611,25 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
       <div className={`profile-scan-grid ${recommendations.length ? '' : 'single-column'}`}>
         <div>
           <span className="profile-scan-section-title">{locale === 'vi' ? 'Kỹ năng nổi bật' : 'Highlighted skills'}</span>
-          <div className="profile-skill-cloud">
-            {skills.slice(0, 12).map((skill) => <span key={skill}>{skill}</span>)}
-            {!skills.length && <em>Chưa phát hiện kỹ năng rõ ràng.</em>}
-          </div>
+          <ExpandableTagList items={skills} emptyText={locale === 'vi' ? 'Chưa phát hiện kỹ năng rõ ràng.' : 'No clear skills found.'} locale={locale} />
         </div>
         {recommendations.length > 0 && (
           <div>
             <span className="profile-scan-section-title">{locale === 'vi' ? 'Đề xuất từ bằng chứng CV' : 'Evidence-based suggestions'}</span>
             <ul className="profile-recommendations">
-              {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+              {recommendations.map((item) => <li key={item}>{item}</li>)}
             </ul>
           </div>
         )}
       </div>
       {result?.profile_action && (
-        <ProfileConfirmationActions action={result.profile_action} onSendMessage={onSendMessage} />
+        <ProfileConfirmationActions action={result.profile_action} onSendMessage={onSendMessage} locale={locale} />
       )}
     </div>
   );
 }
 
-function ProcessingSteps({ steps = [] }) {
+function ProcessingSteps({ steps = [], locale = 'vi' }) {
   if (!Array.isArray(steps) || !steps.length) return null;
   return (
     <ol className="processing-steps" aria-label="Tiến trình xử lý CV">
@@ -518,8 +638,8 @@ function ProcessingSteps({ steps = [] }) {
           <span className="processing-step-mark">
             {step.status === 'completed' ? <CheckCircle2 size={15} /> : <span />}
           </span>
-          <strong>{step.label_vi}</strong>
-          <small>{step.status === 'waiting_user' ? 'Chờ xác nhận' : step.status === 'completed' ? 'Hoàn tất' : step.status === 'running' ? 'Đang xử lý' : 'Chưa bắt đầu'}</small>
+          <strong>{locale === 'vi' ? step.label_vi : step.label_en || step.label_vi}</strong>
+          <small>{step.status === 'waiting_user' ? (locale === 'vi' ? 'Cần bạn xác nhận' : 'Needs your confirmation') : step.status === 'completed' ? (locale === 'vi' ? 'Hoàn tất' : 'Completed') : step.status === 'running' ? (locale === 'vi' ? 'Đang đánh giá' : 'In progress') : (locale === 'vi' ? 'Sắp thực hiện' : 'Upcoming')}</small>
         </li>
       ))}
     </ol>
@@ -530,10 +650,7 @@ function CvDraftCard({ result, onSendMessage, locale = 'vi' }) {
   const [submitting, setSubmitting] = useState('');
   const [error, setError] = useState('');
   const draft = result?.cv_draft || {};
-  const experiences = Array.isArray(draft.work_experiences) ? draft.work_experiences : [];
-  const education = Array.isArray(draft.education) ? draft.education : [];
-  const projects = Array.isArray(draft.projects) ? draft.projects : [];
-  const skills = Array.isArray(draft.skills) ? draft.skills : [];
+  const issueMessage = getProfileIssueMessage(draft, locale);
 
   const sendDraftAction = async (type) => {
     if (submitting) return;
@@ -541,8 +658,8 @@ function CvDraftCard({ result, onSendMessage, locale = 'vi' }) {
     setError('');
     const ok = await onSendMessage({
       displayText: type === 'cv_draft.confirm'
-        ? 'Tôi xác nhận CV Draft này. Hãy tiếp tục chấm điểm.'
-        : 'Tôi muốn chỉnh sửa thông tin trong CV Draft.',
+        ? 'Tôi xác nhận thông tin trong hồ sơ được nhận diện. Hãy tiếp tục đánh giá.'
+        : 'Tôi muốn chỉnh sửa thông tin trong hồ sơ được nhận diện.',
       action: {
         type,
         cv_document_id: result.cv_document_id,
@@ -557,14 +674,14 @@ function CvDraftCard({ result, onSendMessage, locale = 'vi' }) {
     <div className="cv-draft-card">
       <div className="cv-draft-heading">
         <div>
-          <span className="profile-scan-eyebrow">CV Draft · Phiên bản {result?.draft_version || 1}</span>
+          <span className="profile-scan-eyebrow">Hồ sơ được nhận diện · Phiên bản {result?.draft_version || 1}</span>
           <h3>{draft.full_name || 'Chưa nhận diện được họ tên'}</h3>
           <p>{draft.headline || draft.summary || 'Kiểm tra lại các trường đã được trích xuất trước khi chấm điểm.'}</p>
         </div>
-        <span className="cv-draft-status"><CheckCircle2 size={15} /> Đã trích xuất</span>
+        <span className="cv-draft-status"><CheckCircle2 size={15} /> Đã đọc CV</span>
       </div>
 
-      <ProcessingSteps steps={result?.processing_steps} />
+      <ProcessingSteps steps={result?.processing_steps} locale={locale} />
 
       <div className="cv-draft-facts">
         <div><span>Vai trò mục tiêu</span><strong>{result?.target_role || draft.target_role_hint || 'Chưa xác định'}</strong></div>
@@ -573,53 +690,18 @@ function CvDraftCard({ result, onSendMessage, locale = 'vi' }) {
         <div><span>Địa điểm</span><strong>{draft.location || 'Không tìm thấy'}</strong></div>
       </div>
 
-      <section className="cv-draft-section">
-        <h4>Kỹ năng được trích xuất</h4>
-        <div className="profile-skill-cloud">
-          {skills.map((skill) => <span key={skill}>{skill}</span>)}
-          {!skills.length && <em>Chưa tìm thấy kỹ năng rõ ràng.</em>}
-        </div>
-      </section>
+      <ProfileSnapshotSections profile={draft} locale={locale} />
 
-      <div className="cv-draft-columns">
-        <section className="cv-draft-section">
-          <h4>Kinh nghiệm</h4>
-          {experiences.length ? experiences.map((item, index) => (
-            <article key={`${item.title}-${item.organization}-${index}`}>
-              <strong>{item.title || 'Kinh nghiệm chưa có chức danh'}</strong>
-              <span>{[item.organization, item.duration].filter(Boolean).join(' · ')}</span>
-              {item.summary && <p>{item.summary}</p>}
-            </article>
-          )) : <p>Chưa tìm thấy mục kinh nghiệm.</p>}
-        </section>
-        <section className="cv-draft-section">
-          <h4>Học vấn và dự án</h4>
-          {education.map((item, index) => (
-            <article key={`${item.institution}-${index}`}>
-              <strong>{item.degree || item.field || 'Học vấn'}</strong>
-              <span>{[item.institution, item.duration].filter(Boolean).join(' · ')}</span>
-            </article>
-          ))}
-          {projects.map((item, index) => (
-            <article key={`${item.name}-${index}`}>
-              <strong>{item.name || 'Dự án'}</strong>
-              {item.summary && <p>{item.summary}</p>}
-            </article>
-          ))}
-          {!education.length && !projects.length && <p>Chưa tìm thấy học vấn hoặc dự án.</p>}
-        </section>
-      </div>
-
-      {Array.isArray(draft.missing_or_unclear) && draft.missing_or_unclear.length > 0 && (
-        <div className="cv-draft-warning"><AlertCircle size={16} /><span>{draft.missing_or_unclear.slice(0, 3).join(' ')}</span></div>
+      {issueMessage && (
+        <div className="cv-draft-warning"><AlertCircle size={16} /><span>{issueMessage}</span></div>
       )}
 
       <div className="cv-draft-actions">
         <button disabled={Boolean(submitting)} onClick={() => sendDraftAction('cv_draft.confirm')} type="button">
-          {submitting === 'cv_draft.confirm' ? 'Đang xử lý...' : 'Xác nhận và chấm điểm'}
+          {submitting === 'cv_draft.confirm' ? 'Đang xử lý...' : 'Xác nhận thông tin và đánh giá'}
         </button>
         <button className="secondary" disabled={Boolean(submitting)} onClick={() => sendDraftAction('cv_draft.edit_requested')} type="button">
-          {submitting === 'cv_draft.edit_requested' ? 'Đang mở...' : 'Chỉnh sửa'}
+          {submitting === 'cv_draft.edit_requested' ? 'Đang mở...' : 'Chỉnh sửa thông tin'}
         </button>
       </div>
       {error && <div className="holland-form-error">{error}</div>}
@@ -650,11 +732,11 @@ function TargetLevelCard({ result, onSendMessage, locale = 'vi' }) {
   };
   return (
     <div className="target-level-card">
-      <span className="profile-scan-eyebrow">Benchmark theo cấp độ</span>
+      <span className="profile-scan-eyebrow">Mục tiêu ứng tuyển</span>
       <h3>Chọn cấp độ bạn muốn ứng tuyển</h3>
       <p>{result?.message_vi}</p>
       {result?.current_level_estimate && (
-        <div className="level-estimate">CV hiện thể hiện gần mức <strong>{targetLevelLabels[locale]?.[result.current_level_estimate] || result.current_level_estimate}</strong>. Đây chỉ là gợi ý, không tự động thay đổi benchmark.</div>
+        <div className="level-estimate">CV hiện thể hiện gần mức <strong>{targetLevelLabels[locale]?.[result.current_level_estimate] || result.current_level_estimate}</strong>. Đây chỉ là gợi ý để chọn tiêu chí đánh giá phù hợp.</div>
       )}
       <div className="level-options">
         {options.map((option) => (
@@ -668,7 +750,7 @@ function TargetLevelCard({ result, onSendMessage, locale = 'vi' }) {
   );
 }
 
-function CareerAlignmentCard({ result }) {
+function CareerAlignmentCard({ result, locale = 'vi' }) {
   const stateLabels = {
     aligned: 'Định hướng phù hợp',
     interest_conflict: 'Xung đột về hứng thú',
@@ -682,18 +764,18 @@ function CareerAlignmentCard({ result }) {
     <div className="career-alignment-card">
       <div className="career-alignment-header">
         <div>
-          <span className="profile-scan-eyebrow">Career Alignment · {result?.rule_version}</span>
+          <span className="profile-scan-eyebrow">{locale === 'vi' ? 'Tổng hợp định hướng nghề nghiệp' : 'Career alignment summary'}</span>
           <h3>{stateLabels[result?.alignment_state] || stateLabels.insufficient_data}</h3>
-          <p>{result?.target_role || 'Chưa xác định target role'}</p>
+          <p>{result?.target_role || (locale === 'vi' ? 'Chưa xác định vị trí mục tiêu' : 'Target role not specified')}</p>
         </div>
         {result?.career_alignment_score !== null && result?.career_alignment_score !== undefined && (
           <div className="profile-total-score"><strong>{Math.round(result.career_alignment_score)}</strong><span>/100</span></div>
         )}
       </div>
       <div className="alignment-metrics">
-        <span>CV readiness <strong>{result?.cv_readiness_score ?? '--'}</strong></span>
-        <span>Holland alignment <strong>{result?.holland_alignment_score ?? '--'}</strong></span>
-        <span>Conflict <strong>{result?.conflict_severity || 'unknown'}</strong></span>
+        <span>{locale === 'vi' ? 'Mức độ sẵn sàng từ CV' : 'CV readiness'} <strong>{result?.cv_readiness_score ?? '--'}</strong></span>
+        <span>{locale === 'vi' ? 'Mức độ phù hợp Holland' : 'Holland alignment'} <strong>{result?.holland_alignment_score ?? '--'}</strong></span>
+        <span>{locale === 'vi' ? 'Mức độ cần lưu ý' : 'Conflict level'} <strong>{locale === 'vi' ? ({ low: 'Thấp', medium: 'Trung bình', high: 'Cao', none: 'Không có' }[result?.conflict_severity] || 'Chưa xác định') : (result?.conflict_severity || 'Unknown')}</strong></span>
       </div>
       {recommendations.length > 0 && <ul className="profile-recommendations">{recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
     </div>
@@ -1440,7 +1522,7 @@ function ToolCallWidget({ toolName, input, output, status, onSendMessage, user, 
       {expanded && (
         <div className="tool-content">
           {status === 'running' && liveProgress?.processing_steps && (
-            <ProcessingSteps steps={liveProgress.processing_steps} />
+            <ProcessingSteps steps={liveProgress.processing_steps} locale={locale} />
           )}
           {output && (
             <div className="tool-section">
@@ -1455,7 +1537,7 @@ function ToolCallWidget({ toolName, input, output, status, onSendMessage, user, 
               ) : isTargetLevelOutput && status === 'completed' ? (
                 <TargetLevelCard result={normalizedOutput} onSendMessage={onSendMessage} locale={locale} />
               ) : isCareerAlignmentOutput && status === 'completed' ? (
-                <CareerAlignmentCard result={normalizedOutput} />
+                <CareerAlignmentCard result={normalizedOutput} locale={locale} />
               ) : isProfileConfirmationOutput && status === 'completed' ? (
                 <div className="profile-action-status"><CheckCircle2 size={16} />{normalizedOutput?.message_vi}</div>
               ) : shouldRenderVerifier ? (
@@ -1615,7 +1697,6 @@ function ProfileWorkspace({ profile, locale, onBack, onSave, loading }) {
     setStatus(ok ? 'saved' : 'error');
   };
   const cv = profile?.current_cv;
-  const skills = (cv?.skills || []).map((skill) => typeof skill === 'string' ? skill : (skill[`display_name_${locale}`] || skill.canonical_name));
   return (
     <main className="account-workspace">
       <div className="account-workspace-header"><button onClick={onBack} type="button"><ArrowRight size={17} />{t.backChat}</button><div><h2>{t.personalTitle}</h2><p>{t.personalDesc}</p></div></div>
@@ -1626,8 +1707,26 @@ function ProfileWorkspace({ profile, locale, onBack, onSave, loading }) {
           <div className="profile-save-row"><button disabled={loading || status === 'saving'} type="submit">{status === 'saving' ? t.saving : t.save}</button>{status === 'saved' && <span><CheckCircle2 size={16} />{t.saved}</span>}{status === 'error' && <span className="form-error">{locale === 'vi' ? 'Không thể lưu thông tin.' : 'Could not save profile.'}</span>}</div>
         </form>
         <section className="current-cv-panel">
-          <div className="current-cv-title"><FileText size={20} /><div><span>{t.currentCv}</span><strong>{cv?.original_filename || t.noCv}</strong></div>{cv?.grade && <span className={`cv-grade grade-${String(cv.grade).toLowerCase()}`}>{cv.grade}</span>}</div>
-          {cv && <><div className="cv-facts"><div><span>{t.uploadDate}</span><strong>{cv.uploaded_at ? new Date(cv.uploaded_at).toLocaleDateString(locale === 'vi' ? 'vi-VN' : 'en-US') : '--'}</strong></div><div><span>{t.version}</span><strong>v{cv.profile_version || 1}</strong></div><div><span>{locale === 'vi' ? 'Điểm CV' : 'CV score'}</span><strong>{cv.total_score ? `${Math.round(cv.total_score)}/100` : '--'}</strong></div></div>{cv.summary && <p className="cv-summary">{cv.summary}</p>}<div className="profile-skill-cloud">{skills.slice(0, 16).map((skill) => <span key={skill}>{skill}</span>)}</div></>}
+          <div className="current-cv-title">
+            <FileText size={20} />
+            <div><span>{t.currentCv}</span><strong>{cv?.original_filename || t.noCv}</strong></div>
+            {cv?.grade && <span className={`cv-grade grade-${String(cv.grade).toLowerCase()}`}>{cv.grade}</span>}
+          </div>
+          {cv && (
+            <>
+              <div className="cv-facts">
+                <div><span>{t.uploadDate}</span><strong>{cv.uploaded_at ? new Date(cv.uploaded_at).toLocaleDateString(locale === 'vi' ? 'vi-VN' : 'en-US') : '--'}</strong></div>
+                <div><span>{t.version}</span><strong>v{cv.profile_version || 1}</strong></div>
+                <div><span>{locale === 'vi' ? 'Điểm CV' : 'CV score'}</span><strong>{cv.total_score !== null && cv.total_score !== undefined ? `${Math.round(cv.total_score)}/100` : '--'}</strong></div>
+                <div><span>{locale === 'vi' ? 'Vị trí mục tiêu' : 'Target role'}</span><strong>{cv.target_role || '--'}</strong></div>
+                <div><span>{locale === 'vi' ? 'Cấp độ đánh giá' : 'Assessment level'}</span><strong>{targetLevelLabels[locale]?.[cv.target_level] || cv.target_level || '--'}</strong></div>
+                <div><span>{locale === 'vi' ? 'Cập nhật lần cuối' : 'Last updated'}</span><strong>{cv.updated_at ? new Date(cv.updated_at).toLocaleDateString(locale === 'vi' ? 'vi-VN' : 'en-US') : '--'}</strong></div>
+              </div>
+              {cv.headline && <h3 className="current-cv-headline">{cv.headline}</h3>}
+              {cv.summary && <p className="cv-summary">{cv.summary}</p>}
+              <ProfileSnapshotSections profile={cv} locale={locale} />
+            </>
+          )}
         </section>
       </div>
     </main>

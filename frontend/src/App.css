@@ -83,7 +83,7 @@
 .account-workspace-header > button svg { transform: rotate(180deg); }
 .account-workspace-header h2 { margin: 0; font-size: 1.55rem; letter-spacing: 0; }
 .account-workspace-header p { margin: 0.35rem 0 0; color: var(--text-muted); }
-.profile-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr); gap: 1.5rem; max-width: 1180px; margin: 0 auto; }
+.profile-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; max-width: 1180px; margin: 0 auto; }
 .profile-form, .current-cv-panel, .settings-list { border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-app); }
 .profile-form { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1.4rem; }
 .profile-field { display: grid; gap: 0.42rem; min-width: 0; }
@@ -100,13 +100,14 @@
 .current-cv-title { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 0.7rem; }
 .current-cv-title div { display: grid; gap: 0.2rem; min-width: 0; }
 .current-cv-title span { color: var(--text-muted); font-size: 0.72rem; }
-.current-cv-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.current-cv-title strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .cv-grade { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-strong); font-weight: 800; }
-.cv-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin: 1.2rem 0; }
+.cv-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; margin: 1.2rem 0; }
 .cv-facts div { display: grid; gap: 0.2rem; padding: 0.65rem; border: 1px solid var(--border-subtle); border-radius: 6px; }
 .cv-facts span { color: var(--text-muted); font-size: 0.68rem; }
-.cv-facts strong { font-size: 0.8rem; }
+.cv-facts strong { min-width: 0; font-size: 0.8rem; overflow-wrap: anywhere; }
 .cv-summary { color: var(--text-secondary); font-size: 0.82rem; line-height: 1.55; }
+.current-cv-headline { margin: 0 0 0.35rem; font-size: 1rem; }
 .settings-workspace { display: block; }
 .settings-list { max-width: 880px; margin: 0 auto; overflow: hidden; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1.2rem 1.4rem; border-bottom: 1px solid var(--border-subtle); }
@@ -556,9 +557,9 @@
 .cv-attachment-copy strong,
 .cv-attachment-copy span {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .cv-attachment-copy strong {
@@ -1074,11 +1075,10 @@
 
 .holland-score-meta strong {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-primary);
   font-weight: 720;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .holland-score-meta em {
@@ -1243,11 +1243,10 @@
 
 .profile-dimension-meta strong {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-primary);
   font-weight: 740;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .profile-dimension-meta span {
@@ -1369,8 +1368,8 @@
 
 .processing-steps {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
   margin: 0;
   padding: 0.85rem 1.15rem;
   border-bottom: 1px solid var(--border-subtle);
@@ -1383,7 +1382,8 @@
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   column-gap: 0.4rem;
-  align-items: center;
+  align-items: start;
+  align-content: start;
 }
 
 .processing-steps li:not(:last-child)::after {
@@ -1417,25 +1417,22 @@
 }
 
 .processing-steps strong,
-.processing-steps small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.processing-steps small { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 
 .processing-steps strong {
   z-index: 1;
   padding-right: 0.45rem;
   background: var(--bg-app);
   color: var(--text-primary);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .processing-steps small {
   grid-column: 2;
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.65rem;
+  line-height: 1.35;
 }
 
 .cv-draft-facts {
@@ -1458,11 +1455,29 @@
 }
 
 .cv-draft-facts strong {
-  overflow: hidden;
+  min-width: 0;
   color: var(--text-primary);
   font-size: 0.76rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.profile-snapshot-sections { border-top: 1px solid var(--border-subtle); }
+.profile-snapshot-skills { border-bottom: 1px solid var(--border-subtle); }
+.current-cv-panel .profile-snapshot-sections { margin: 1rem -1.3rem -1.3rem; }
+.inline-expand-button {
+  width: fit-content;
+  min-height: 32px;
+  margin-top: 0.55rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-chat);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .cv-draft-section {
@@ -2182,6 +2197,10 @@
   .chat-main {
     grid-template-columns: 250px minmax(0, 1fr);
   }
+
+  .processing-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  .processing-steps li::after { display: none; }
 
 }
 
