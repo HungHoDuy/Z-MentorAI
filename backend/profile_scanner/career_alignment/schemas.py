@@ -19,5 +19,12 @@ class CareerAlignmentResponse(BaseModel):
     mi_top_dimensions: list[str] = Field(default_factory=list)
     evidence_summary_vi: list[str] = Field(default_factory=list)
     recommendations_vi: list[str] = Field(default_factory=list)
-    rule_version: str = "career-alignment-v1"
+    executive_summary_vi: str = ""
+    strengths_vi: list[str] = Field(default_factory=list)
+    watchouts_vi: list[str] = Field(default_factory=list)
+    action_plan_vi: list[str] = Field(default_factory=list)
+    learning_strategy_vi: str = ""
+    guidance_source: str = "deterministic_fallback"
+    guidance_version: str = "profile-guidance-v1"
+    rule_version: str = "career-alignment-v2"
     generated_at: str

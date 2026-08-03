@@ -453,6 +453,11 @@ function HollandResultCard({ result, locale = 'vi' }) {
     : (locale === 'vi' ? 'Kết quả Holland Test' : 'Holland Test result');
   const answeredCount = result?.answered_count;
   const hasScores = Object.keys(scores).length > 0;
+  const isMiResult = result?.feature === 'assessment';
+  const learningStrategies = Array.isArray(result?.learning_strategies_vi) && result.learning_strategies_vi.length
+    ? result.learning_strategies_vi
+    : (Array.isArray(result?.recommendations_vi) ? result.recommendations_vi : []);
+  const applicationExamples = Array.isArray(result?.application_examples_vi) ? result.application_examples_vi : [];
 
   return (
     <div className="holland-result-card">
@@ -490,14 +495,24 @@ function HollandResultCard({ result, locale = 'vi' }) {
         </div>
       )}
 
-      {Array.isArray(result?.recommendations_vi) && result.recommendations_vi.length > 0 && (
-        <div className="profile-scan-grid">
+      {learningStrategies.length > 0 && (
+        <div className={`assessment-guidance-grid ${applicationExamples.length ? '' : 'single-column'}`}>
           <div>
-            <span className="profile-scan-section-title">Gợi ý học tập</span>
+            <span className="profile-scan-section-title">
+              {isMiResult ? (locale === 'vi' ? 'Chiến lược học phù hợp' : 'Suggested learning strategies') : (locale === 'vi' ? 'Gợi ý định hướng' : 'Career suggestions')}
+            </span>
             <ul className="profile-recommendations">
-              {result.recommendations_vi.map((item) => <li key={item}>{item}</li>)}
+              {learningStrategies.map((item) => <li key={item}>{item}</li>)}
             </ul>
           </div>
+          {applicationExamples.length > 0 && (
+            <div>
+              <span className="profile-scan-section-title">{locale === 'vi' ? 'Ứng dụng vào mục tiêu hiện tại' : 'Apply to your current goal'}</span>
+              <ul className="profile-recommendations">
+                {applicationExamples.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -752,20 +767,37 @@ function TargetLevelCard({ result, onSendMessage, locale = 'vi' }) {
 
 function CareerAlignmentCard({ result, locale = 'vi' }) {
   const stateLabels = {
-    aligned: 'Định hướng phù hợp',
-    interest_conflict: 'Xung đột về hứng thú',
-    readiness_gap: 'Thiếu bằng chứng sẵn sàng',
-    exploration_advised: 'Nên khám phá thêm',
-    mixed_or_uncertain: 'Chưa đủ rõ ràng',
-    insufficient_data: 'Thiếu dữ liệu'
+    vi: {
+      aligned: 'Định hướng đang phù hợp',
+      interest_conflict: 'Cần kiểm chứng mức độ hứng thú',
+      readiness_gap: 'Cần bổ sung bằng chứng năng lực',
+      exploration_advised: 'Nên khám phá thêm trước khi quyết định',
+      mixed_or_uncertain: 'Chưa đủ rõ ràng để kết luận',
+      insufficient_data: 'Chưa đủ dữ liệu để tổng hợp'
+    },
+    en: {
+      aligned: 'Current direction is aligned',
+      interest_conflict: 'Interest needs validation',
+      readiness_gap: 'More capability evidence needed',
+      exploration_advised: 'Explore further before deciding',
+      mixed_or_uncertain: 'Not enough clarity yet',
+      insufficient_data: 'Not enough data to synthesize'
+    }
   };
-  const recommendations = Array.isArray(result?.recommendations_vi) ? result.recommendations_vi : [];
+  const recommendations = Array.isArray(result?.action_plan_vi) && result.action_plan_vi.length
+    ? result.action_plan_vi
+    : (Array.isArray(result?.recommendations_vi) ? result.recommendations_vi : []);
+  const strengths = Array.isArray(result?.strengths_vi) ? result.strengths_vi : [];
+  const watchouts = Array.isArray(result?.watchouts_vi) ? result.watchouts_vi : [];
+  const evidence = Array.isArray(result?.evidence_summary_vi) ? result.evidence_summary_vi : [];
+  const summary = result?.executive_summary_vi || evidence[0] || '';
+  const learningStrategy = result?.learning_strategy_vi || '';
   return (
     <div className="career-alignment-card">
       <div className="career-alignment-header">
         <div>
           <span className="profile-scan-eyebrow">{locale === 'vi' ? 'Tổng hợp định hướng nghề nghiệp' : 'Career alignment summary'}</span>
-          <h3>{stateLabels[result?.alignment_state] || stateLabels.insufficient_data}</h3>
+          <h3>{stateLabels[locale]?.[result?.alignment_state] || stateLabels[locale]?.insufficient_data}</h3>
           <p>{result?.target_role || (locale === 'vi' ? 'Chưa xác định vị trí mục tiêu' : 'Target role not specified')}</p>
         </div>
         {result?.career_alignment_score !== null && result?.career_alignment_score !== undefined && (
@@ -777,7 +809,40 @@ function CareerAlignmentCard({ result, locale = 'vi' }) {
         <span>{locale === 'vi' ? 'Mức độ phù hợp Holland' : 'Holland alignment'} <strong>{result?.holland_alignment_score ?? '--'}</strong></span>
         <span>{locale === 'vi' ? 'Mức độ cần lưu ý' : 'Conflict level'} <strong>{locale === 'vi' ? ({ low: 'Thấp', medium: 'Trung bình', high: 'Cao', none: 'Không có' }[result?.conflict_severity] || 'Chưa xác định') : (result?.conflict_severity || 'Unknown')}</strong></span>
       </div>
-      {recommendations.length > 0 && <ul className="profile-recommendations">{recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
+      {summary && (
+        <section className="alignment-summary">
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Kết luận tổng hợp' : 'Combined conclusion'}</span>
+          <p>{summary}</p>
+        </section>
+      )}
+      {(strengths.length > 0 || watchouts.length > 0) && (
+        <div className="alignment-insight-grid">
+          {strengths.length > 0 && (
+            <section>
+              <span className="profile-scan-section-title">{locale === 'vi' ? 'Tín hiệu tích cực' : 'Positive signals'}</span>
+              <ul className="profile-recommendations">{strengths.map((item) => <li key={item}>{item}</li>)}</ul>
+            </section>
+          )}
+          {watchouts.length > 0 && (
+            <section>
+              <span className="profile-scan-section-title">{locale === 'vi' ? 'Điểm cần kiểm chứng' : 'Points to validate'}</span>
+              <ul className="profile-recommendations">{watchouts.map((item) => <li key={item}>{item}</li>)}</ul>
+            </section>
+          )}
+        </div>
+      )}
+      {recommendations.length > 0 && (
+        <section className="alignment-action-plan">
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Kế hoạch hành động ưu tiên' : 'Prioritized action plan'}</span>
+          <ol>{recommendations.map((item) => <li key={item}>{item}</li>)}</ol>
+        </section>
+      )}
+      {learningStrategy && (
+        <section className="alignment-learning-strategy">
+          <span className="profile-scan-section-title">{locale === 'vi' ? 'Cách học phù hợp với bạn' : 'Learning approach for you'}</span>
+          <p>{learningStrategy}</p>
+        </section>
+      )}
     </div>
   );
 }
