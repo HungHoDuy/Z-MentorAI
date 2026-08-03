@@ -194,6 +194,9 @@ class HybridSignalService:
             if live_evidence:
                 return live_evidence
 
+        if not query.job_family_id:
+            return []
+
         cached_evidence = self.evidence_repository.list_for_external_outlook(
             job_family_id=query.job_family_id,
             location_id=query.location_id,
