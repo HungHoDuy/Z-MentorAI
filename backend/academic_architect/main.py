@@ -756,14 +756,19 @@ async def swap_course(chart_id: str, request: SwapCourseRequest):
             selected_name = c_data.get("name") or selected_name
             slug = c_data.get("slug")
             selected_url = f"https://www.coursera.org/learn/{slug}" if slug else ""
-    else:
-        # If no firestore, do a quick vector search to get the details
+            
+    if selected_name == "Alternative Course":
+        # Fallback: do a quick vector search to get the details in case LLM passed a slug or URL
+        logger.warning(f"Course document not found by strict ID. Attempting vector search fallback for: {request.selected_course_id}")
         results, _ = await asyncio.to_thread(perform_vector_search, request.selected_course_id, "name", "computer-science", 10)
         for c in results:
-            if c["course_id"] == request.selected_course_id:
+            if c["course_id"] == request.selected_course_id or request.selected_course_id in c.get("url", "") or c.get("slug", "") in request.selected_course_id:
                 selected_name = c.get("name") or selected_name
                 selected_url = c.get("url") or ""
                 break
+        if selected_name == "Alternative Course" and results:
+            selected_name = results[0].get("name") or selected_name
+            selected_url = results[0].get("url") or ""
 
     # Find and update task
     task_found = False

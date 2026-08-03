@@ -1643,7 +1643,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
           <div key={msg.id} className={`message-wrapper ${msg.role}`}>
             <div className="message-header">{msg.role === 'user' ? 'Bạn' : 'Điều phối viên'}</div>
 
-            {msg.role === 'assistant' && visibleToolCalls.filter(toolCall => toolCall.name !== 'academic_architect_create_gantt').map((toolCall) => (
+            {msg.role === 'assistant' && visibleToolCalls.filter(toolCall => toolCall.name !== 'academic_architect_create_gantt' && toolCall.name !== 'academic_architect_swap_course').map((toolCall) => (
               <ToolCallWidget
                 key={toolCall.id}
                 toolName={toolCall.name}
@@ -1669,7 +1669,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                   <>
                     {(() => {
                       const academicToolCall = msg.toolCalls?.find(
-                        (t) => t.name === 'academic_architect_create_gantt' && t.status === 'completed'
+                        (t) => (t.name === 'academic_architect_create_gantt' || t.name === 'academic_architect_swap_course') && t.status === 'completed'
                       );
                       const output = academicToolCall ? normalizeToolOutput(academicToolCall.output) : null;
                       const courses = output ? [
@@ -1724,7 +1724,7 @@ function MessagesFeed({ messages, isLoading, activeAgents, messagesEndRef, onSen
                     })()}
                     {(() => {
                       const academicToolCall = msg.toolCalls?.find(
-                        (t) => t.name === 'academic_architect_create_gantt' && t.status === 'completed'
+                        (t) => (t.name === 'academic_architect_create_gantt' || t.name === 'academic_architect_swap_course') && t.status === 'completed'
                       );
                       if (!academicToolCall) return null;
                       const output = normalizeToolOutput(academicToolCall.output);
