@@ -62,7 +62,7 @@ jobs:
     - name: Deploy to Cloud Run
       run: |
         if [ -n "${{ inputs.env_vars }}" ]; then
-          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --set-env-vars="${{ inputs.env_vars }}" --quiet
+          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --min-instances=1 --set-env-vars="${{ inputs.env_vars }}" --quiet
         else
-          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet
+          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --min-instances=1 --quiet
         fi
