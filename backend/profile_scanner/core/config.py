@@ -38,6 +38,14 @@ class Settings:
     vertex_ai_location: str = os.getenv("VERTEX_AI_LOCATION", "asia-southeast1")
     profile_ai_extraction_enabled: bool = os.getenv("PROFILE_AI_EXTRACTION_ENABLED", "false").lower() == "true"
     profile_ai_model_name: str = os.getenv("PROFILE_AI_MODEL_NAME", "gemini-2.5-flash")
+    profile_ai_guidance_enabled: bool = os.getenv(
+        "PROFILE_AI_GUIDANCE_ENABLED",
+        "false",
+    ).lower() == "true"
+    profile_ai_guidance_model_name: str = os.getenv(
+        "PROFILE_AI_GUIDANCE_MODEL_NAME",
+        profile_ai_model_name,
+    )
     dynamic_benchmark_enabled: bool = os.getenv("DYNAMIC_BENCHMARK_ENABLED", "false").lower() == "true"
     benchmark_snapshots_collection: str = os.getenv(
         "BENCHMARK_SNAPSHOTS_COLLECTION",

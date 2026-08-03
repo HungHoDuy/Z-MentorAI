@@ -8,9 +8,10 @@ from career_alignment.schemas import CareerAlignmentResponse
 from holland.repository import get_latest_holland_assessment
 from profile_analysis.benchmark import ROLE_BENCHMARKS
 from core.config import logger
+from guidance.service import generate_alignment_narrative
 
 
-RULE_VERSION = "career-alignment-v1"
+RULE_VERSION = "career-alignment-v2"
 RIASEC_DIMENSIONS = ("R", "I", "A", "S", "E", "C")
 
 
@@ -155,6 +156,18 @@ async def synthesize_career_alignment(user_id: str) -> CareerAlignmentResponse:
     state, severity = classify_alignment(float(cv_readiness), holland_alignment)
     overall = round(float(cv_readiness) * 0.60 + holland_alignment * 0.40, 2)
     target_role = profile["target_role"]
+    deterministic_recommendations = build_recommendations(state, target_role, mi_dimensions)
+    narrative, guidance_source = await generate_alignment_narrative(
+        profile=profile,
+        holland=holland,
+        mi_result=mi_result,
+        benchmark=benchmark,
+        state=state,
+        severity=severity,
+        cv_score=float(cv_readiness),
+        holland_score=holland_alignment,
+        recommendations=deterministic_recommendations,
+    )
     response = CareerAlignmentResponse(
         status="success",
         user_id=user_id,
@@ -174,7 +187,13 @@ async def synthesize_career_alignment(user_id: str) -> CareerAlignmentResponse:
             f"Mức tương đồng Holland với profile nghề: {round(holland_alignment, 1)}/100.",
             "MI chỉ được dùng để đề xuất chiến lược học tập, không tham gia kết luận conflict nghề nghiệp.",
         ],
-        recommendations_vi=build_recommendations(state, target_role, mi_dimensions),
+        recommendations_vi=narrative.action_plan_vi,
+        executive_summary_vi=narrative.executive_summary_vi,
+        strengths_vi=narrative.strengths_vi,
+        watchouts_vi=narrative.watchouts_vi,
+        action_plan_vi=narrative.action_plan_vi,
+        learning_strategy_vi=narrative.learning_strategy_vi,
+        guidance_source=guidance_source,
         rule_version=RULE_VERSION,
         generated_at=generated_at,
     )
@@ -187,6 +206,7 @@ async def synthesize_career_alignment(user_id: str) -> CareerAlignmentResponse:
             "alignment_state": state,
             "conflict_severity": severity,
             "rule_version": RULE_VERSION,
+            "guidance_source": guidance_source,
         },
     )
     return response
