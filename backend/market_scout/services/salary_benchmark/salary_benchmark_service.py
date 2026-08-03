@@ -127,10 +127,10 @@ class SalaryBenchmarkService:
                 matched_records=len(samples),
             )
 
-        avg_min = sum(sample.record.salary_min_vnd for sample in filtered_samples) / len(filtered_samples)
-        avg_max = sum(sample.record.salary_max_vnd for sample in filtered_samples) / len(filtered_samples)
-        salary_min = self._round_salary(avg_min)
-        salary_max = self._round_salary(avg_max)
+        salary_min_values = sorted(sample.record.salary_min_vnd for sample in filtered_samples)
+        salary_max_values = sorted(sample.record.salary_max_vnd for sample in filtered_samples)
+        salary_min = self._round_salary(_percentile(salary_min_values, 0.25))
+        salary_max = self._round_salary(_percentile(salary_max_values, 0.75))
         if salary_min > salary_max:
             salary_min, salary_max = salary_max, salary_min
 
@@ -184,8 +184,13 @@ class SalaryBenchmarkService:
     def _sources(self, samples: list[_SalarySample]) -> list[SalaryBenchmarkSource]:
         sorted_samples = sorted(samples, key=lambda sample: sample.distance if sample.distance is not None else 999)
         sources: list[SalaryBenchmarkSource] = []
-        for sample in sorted_samples[: self.source_limit]:
+        seen_keys: set[str] = set()
+        for sample in sorted_samples:
             record = sample.record
+            dedupe_key = _source_dedupe_key(record)
+            if dedupe_key in seen_keys:
+                continue
+            seen_keys.add(dedupe_key)
             sources.append(
                 SalaryBenchmarkSource(
                     company=record.company,
@@ -196,6 +201,8 @@ class SalaryBenchmarkService:
                     distance=sample.distance,
                 )
             )
+            if len(sources) >= self.source_limit:
+                break
         return sources
 
     def _confidence(self, average_distance: float | None) -> str:
@@ -229,3 +236,19 @@ def _percentile(sorted_values: list[float], percentile: float) -> float:
     upper_index = min(lower_index + 1, len(sorted_values) - 1)
     weight = position - lower_index
     return sorted_values[lower_index] * (1 - weight) + sorted_values[upper_index] * weight
+
+
+def _source_dedupe_key(record: SalaryJobRecord) -> str:
+    company = _normalize_dedupe_text(record.company)
+    title = _normalize_dedupe_text(record.job_title)
+    if company and title:
+        return f"company_title:{company}|{title}"
+
+    stable_id = _normalize_dedupe_text(record.job_url or record.source_document_id or record.job_id)
+    if stable_id:
+        return f"stable:{stable_id}"
+    return f"title:{title}"
+
+
+def _normalize_dedupe_text(value: str | None) -> str:
+    return " ".join(str(value or "").casefold().replace("_", " ").replace("-", " ").split())
