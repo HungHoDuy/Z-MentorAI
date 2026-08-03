@@ -40,7 +40,7 @@ class Settings:
     profile_ai_model_name: str = os.getenv("PROFILE_AI_MODEL_NAME", "gemini-2.5-flash")
     profile_ai_guidance_enabled: bool = os.getenv(
         "PROFILE_AI_GUIDANCE_ENABLED",
-        "false",
+        os.getenv("PROFILE_AI_EXTRACTION_ENABLED", "false"),
     ).lower() == "true"
     profile_ai_guidance_model_name: str = os.getenv(
         "PROFILE_AI_GUIDANCE_MODEL_NAME",
