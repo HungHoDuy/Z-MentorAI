@@ -59,6 +59,7 @@ class MarketScoutAgent:
         self.query_understanding_service = query_understanding_service or MarketScoutQueryUnderstandingService()
         self.default_top_k = default_top_k
         self.default_fetch_k = default_fetch_k
+        self._query_understanding_cache: dict[str, Any] = {}
 
     async def run(self, request: MarketScoutRequest | str, user_context: dict[str, Any] | None = None) -> MarketScoutResponse:
         request_start = perf_counter()
@@ -148,6 +149,12 @@ class MarketScoutAgent:
             raw_intent = self.intent_classifier.classify(request.user_query)
             raw_intent = await _maybe_await(raw_intent)
             return MarketScoutIntent.from_value(raw_intent)
+
+        understanding = self._understand_query(request.user_query)
+        if understanding is not None:
+            intent = MarketScoutIntent.from_value(getattr(understanding, "intent", None))
+            if intent is not MarketScoutIntent.UNCLEAR:
+                return intent
 
         return _classify_intent(request.user_query)
 
@@ -266,17 +273,8 @@ class MarketScoutAgent:
         user_query: str,
         existing_entities: dict[str, Any],
     ) -> dict[str, Any]:
-        if self.query_understanding_service is None:
-            return {}
-        try:
-            understanding = self.query_understanding_service.understand(user_query)
-        except Exception as exc:
-            _log_event(
-                "market_scout_query_understanding_failed",
-                agent="market_scout",
-                user_query=_short_query(user_query),
-                error=str(exc),
-            )
+        understanding = self._understand_query(user_query)
+        if understanding is None:
             return {}
         trend_query = getattr(understanding, "trend_query", None)
         if trend_query is None:
@@ -288,12 +286,33 @@ class MarketScoutAgent:
             "job_category_hint": getattr(trend_query, "job_category_hint", None),
             "job_family_hint": getattr(trend_query, "job_family_hint", None),
         }
+        query_trend_intent = _trend_intent_from_query(user_query)
+        if query_trend_intent == TrendQueryIntent.EXTERNAL_OUTLOOK.value:
+            extracted["trend_intent"] = TrendQueryIntent.EXTERNAL_OUTLOOK.value
         extracted.update(_external_outlook_scope_defaults(user_query, extracted))
         return {
             key: value
             for key, value in extracted.items()
             if value is not None and not existing_entities.get(key)
         }
+
+    def _understand_query(self, user_query: str) -> Any | None:
+        if self.query_understanding_service is None:
+            return None
+        if user_query in self._query_understanding_cache:
+            return self._query_understanding_cache[user_query]
+        try:
+            understanding = self.query_understanding_service.understand(user_query)
+        except Exception as exc:
+            _log_event(
+                "market_scout_query_understanding_failed",
+                agent="market_scout",
+                user_query=_short_query(user_query),
+                error=str(exc),
+            )
+            return None
+        self._query_understanding_cache[user_query] = understanding
+        return understanding
 
     @staticmethod
     def _compose_trend_response(
@@ -407,7 +426,14 @@ def _trend_intent_from_query(query: str) -> str | None:
             "trien vong",
             "xu huong",
             "phat trien",
+            "sap toi",
+            "nam toi",
+            "cac nam toi",
+            "nhung nam toi",
+            "thoi gian toi",
             "vai nam toi",
+            "con hot",
+            "hot",
             "con phat trien",
         )
     ):
@@ -646,6 +672,7 @@ _TREND_KEYWORDS = (
     "viec lam",
     "co tuyen dung",
     "co dang tuyen",
+    "hot",
     "2026",
     "2027",
     "tuong lai",
@@ -654,7 +681,13 @@ _TREND_KEYWORDS = (
     "trien vong",
     "xu huong",
     "phat trien",
+    "sap toi",
+    "nam toi",
+    "cac nam toi",
+    "nhung nam toi",
+    "thoi gian toi",
     "vai nam toi",
+    "con hot",
     "con phat trien",
 )
 

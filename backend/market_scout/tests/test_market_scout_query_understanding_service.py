@@ -36,7 +36,10 @@ class FakeLlm:
 
 def test_understand_salary_uses_existing_salary_normalizer() -> None:
     salary_understanding = FakeSalaryQueryUnderstandingService()
-    service = MarketScoutQueryUnderstandingService(salary_query_understanding_service=salary_understanding)
+    service = MarketScoutQueryUnderstandingService(
+        llm=FakeLlm({"intent": "salary_benchmark", "confidence": "high"}),
+        salary_query_understanding_service=salary_understanding,
+    )
 
     result = service.understand("muc luong backend engineer tai Ha Noi voi 3 nam kinh nghiem")
 
@@ -92,7 +95,7 @@ def test_understand_unclear_can_use_llm_for_intent_when_enabled() -> None:
 
     assert result.intent == MarketScoutIntent.TREND_TRACKER
     assert result.trend_query is not None
-    assert result.trend_query.intent == TrendQueryIntent.CURRENT_SKILL_DEMAND
+    assert result.trend_query.intent == TrendQueryIntent.EXTERNAL_OUTLOOK
     assert result.trend_query.role_mention == "business analyst"
 
 
@@ -113,6 +116,51 @@ def test_understand_ai_replacement_question_as_external_outlook() -> None:
     )
 
     result = service.understand("Lieu cong viec ke toan co bi thay the boi AI khong?")
+
+    assert result.intent == MarketScoutIntent.TREND_TRACKER
+    assert result.trend_query is not None
+    assert result.trend_query.intent == TrendQueryIntent.EXTERNAL_OUTLOOK
+
+def test_understand_upcoming_ai_hiring_question_falls_back_to_external_outlook() -> None:
+    service = MarketScoutQueryUnderstandingService(llm=FakeLlm({}))
+
+    result = service.understand("nhu c\u1ea7u tuy\u1ec3n nh\u00e2n l\u1ef1c cho ng\u00e0nh AI s\u1eafp t\u1edbi nh\u01b0 th\u1ebf n\u00e0o?")
+
+    assert result.intent == MarketScoutIntent.TREND_TRACKER
+    assert result.trend_query is not None
+    assert result.trend_query.intent == TrendQueryIntent.EXTERNAL_OUTLOOK
+
+def test_understand_llm_current_hiring_demand_stays_current_demand() -> None:
+    service = MarketScoutQueryUnderstandingService(
+        llm=FakeLlm(
+            {
+                "intent": "trend_tracker",
+                "trend_intent": "current_demand",
+                "role_mention": "AI Engineer",
+                "location_text": "Ha Noi",
+                "confidence": "high",
+            }
+        )
+    )
+
+    result = service.understand("AI Engineer tai Ha Noi co dang tuyen nhieu khong?")
+
+    assert result.intent == MarketScoutIntent.TREND_TRACKER
+    assert result.trend_query is not None
+    assert result.trend_query.intent == TrendQueryIntent.CURRENT_DEMAND
+
+
+def test_understand_llm_unclear_market_question_defaults_to_external_outlook() -> None:
+    service = MarketScoutQueryUnderstandingService(
+        llm=FakeLlm(
+            {
+                "intent": "unclear",
+                "confidence": "medium",
+            }
+        )
+    )
+
+    result = service.understand("nganh AI sap toi nhu the nao?")
 
     assert result.intent == MarketScoutIntent.TREND_TRACKER
     assert result.trend_query is not None

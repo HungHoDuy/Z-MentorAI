@@ -94,10 +94,25 @@ class FakeQueryUnderstandingService:
             source="fake",
         )
 
+class FakeIntentClassifier:
+    def __init__(self, intent: MarketScoutIntent) -> None:
+        self.intent = intent
+        self.calls: list[str] = []
+
+    def classify(self, user_query: str) -> str:
+        self.calls.append(user_query)
+        return self.intent.value
+
+
 def test_market_scout_agent_routes_salary_query_to_salary_flow() -> None:
     flow_result = _make_flow_result()
     salary_flow = FakeSalaryFlow(flow_result)
-    agent = MarketScoutAgent(salary_flow=salary_flow, default_top_k=5, default_fetch_k=10)
+    agent = MarketScoutAgent(
+        salary_flow=salary_flow,
+        intent_classifier=FakeIntentClassifier(MarketScoutIntent.SALARY_BENCHMARK),
+        default_top_k=5,
+        default_fetch_k=10,
+    )
 
     response = asyncio.run(agent.run("Luong Sales B2B o Ho Chi Minh"))
 
@@ -250,3 +265,33 @@ def test_market_scout_agent_uses_cv_context_for_salary_query() -> None:
     assert "vi tri Business Analyst" in enriched_query
     assert "tai Ha Noi" in enriched_query
     assert "2 nam kinh nghiem" in enriched_query
+
+def test_market_scout_agent_classifies_upcoming_ai_hiring_question_as_external_outlook() -> None:
+    query = "nhu c\u1ea7u tuy\u1ec3n nh\u00e2n l\u1ef1c cho ng\u00e0nh AI s\u1eafp t\u1edbi nh\u01b0 th\u1ebf n\u00e0o?"
+
+    assert _classify_intent(query) is MarketScoutIntent.TREND_TRACKER
+    assert _trend_intent_from_query(query) == TrendQueryIntent.EXTERNAL_OUTLOOK.value
+
+
+def test_market_scout_agent_overrides_llm_current_demand_when_query_has_future_signal() -> None:
+    trend_flow = FakeTrendFlow()
+    query_understanding = FakeQueryUnderstandingService(
+        TrendQueryUnderstanding(
+            intent=TrendQueryIntent.CURRENT_DEMAND,
+            job_category_hint="AI",
+            confidence="medium",
+        )
+    )
+    agent = MarketScoutAgent(
+        salary_flow=FakeSalaryFlow(_make_flow_result()),
+        trend_flow=trend_flow,
+        response_composer=FakeTrendSummaryComposer(),
+        query_understanding_service=query_understanding,
+    )
+
+    response = asyncio.run(agent.run("nhu c\u1ea7u tuy\u1ec3n nh\u00e2n l\u1ef1c cho ng\u00e0nh AI s\u1eafp t\u1edbi nh\u01b0 th\u1ebf n\u00e0o?"))
+
+    assert response.intent == MarketScoutIntent.TREND_TRACKER
+    assert trend_flow.calls[0].intent == TrendQueryIntent.EXTERNAL_OUTLOOK
+    assert trend_flow.calls[0].job_family_id == "digital_telecom"
+    assert trend_flow.calls[0].location_id == "vietnam"
