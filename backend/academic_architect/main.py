@@ -725,39 +725,19 @@ async def swap_course(chart_id: str, request: SwapCourseRequest):
     chart_data = {}
     if USE_FIRESTORE:
         db = get_firestore_client()
-        if request.user_id:
-            docs = db.collection(GANTT_COLLECTION_NAME).where("user_id", "==", request.user_id).stream()
-            user_charts = []
-            for d in docs:
-                data = d.to_dict() or {}
-                data["chart_id"] = d.id
-                user_charts.append(data)
-            if user_charts:
-                user_charts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-                chart_data = user_charts[0]
-                chart_id = chart_data.get("chart_id", chart_id)
-        
-        if not chart_data:
-            doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id)
-            doc = doc_ref.get()
-            if doc.exists:
-                chart_data = doc.to_dict() or {}
-        
-        if not chart_data:
+        doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id)
+        doc = doc_ref.get()
+        if doc.exists:
+            chart_data = doc.to_dict() or {}
+            
+        if not chart_data or (request.user_id and chart_data.get("user_id") != request.user_id):
             raise HTTPException(status_code=404, detail=f"Gantt chart not found for user {request.user_id} and ID '{chart_id}'")
     else:
         db_local = read_gantt_db()
-        if request.user_id:
-            user_charts = [c for c in db_local.values() if c.get("user_id") == request.user_id]
-            user_charts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            if user_charts:
-                chart_data = user_charts[0]
-                chart_id = chart_data.get("chart_id", chart_id)
-        
-        if not chart_data and chart_id in db_local:
+        if chart_id in db_local:
             chart_data = db_local[chart_id]
             
-        if not chart_data:
+        if not chart_data or (request.user_id and chart_data.get("user_id") != request.user_id):
             raise HTTPException(status_code=404, detail=f"Gantt chart not found for user {request.user_id} and ID '{chart_id}'")
 
     tasks = chart_data.get("tasks", [])
