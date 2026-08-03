@@ -52,6 +52,19 @@ class HollandAssessmentTests(unittest.TestCase):
 
         self.assertNotEqual(first.assessment_id, retake.assessment_id)
 
+    def test_outdated_holland_form_is_rejected(self):
+        answers = [
+            HollandAnswer(question_id=question.id, score=3)
+            for question in HOLLAND_QUESTIONS
+        ]
+        with self.assertRaises(HTTPException) as context:
+            score_holland_answers(HollandScoreRequest(
+                user_id="test-user",
+                answers=answers,
+                question_set_hash="outdated",
+            ))
+        self.assertEqual(context.exception.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()

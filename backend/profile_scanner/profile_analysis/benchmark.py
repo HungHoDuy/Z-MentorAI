@@ -1,5 +1,5 @@
 BENCHMARK_VERSION = "cv-benchmark-v2.2"
-SCORING_VERSION = "cv-scoring-v2.2"
+SCORING_VERSION = "cv-scoring-v2.3"
 
 BENCHMARK_NOTES = [
     "Occupation and skill mappings use an internal, versioned subset derived from O*NET and ESCO concepts.",

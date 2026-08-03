@@ -32,6 +32,7 @@ from profile_analysis.benchmark import (
     SKILL_ALIASES,
 )
 from profile_analysis.schemas import ProfileAnalysisResult, ScoreDimension
+from profile_analysis.levels import infer_current_level, normalize_target_level
 
 
 SECTION_PATTERNS = {
@@ -709,8 +710,29 @@ def build_strengths(dimensions: list[ScoreDimension], skills: list[str]) -> list
 def build_recommendations(dimensions: list[ScoreDimension]) -> list[str]:
     recommendations = []
     for dimension in sorted(dimensions, key=lambda item: item.score):
-        if dimension.missing:
-            recommendations.append(f"Improve {dimension.label}: {dimension.missing[0]}.")
+        if not dimension.missing:
+            continue
+        missing = dimension.missing[0]
+        if dimension.key == "role_skill_fit":
+            recommendations.append(
+                f"Nếu bạn đã sử dụng {missing}, hãy bổ sung dự án hoặc công việc thể hiện hành động và kết quả cụ thể; nếu chưa, đây là kỹ năng nên ưu tiên học cho role mục tiêu."
+            )
+        elif dimension.key == "experience_evidence":
+            recommendations.append(
+                "Bổ sung bằng chứng có thể kiểm chứng cho kinh nghiệm: phạm vi công việc, hành động của bạn và kết quả định lượng nếu có."
+            )
+        elif dimension.key == "education_certification":
+            recommendations.append(
+                "Làm rõ học vấn, chứng chỉ hoặc khóa học liên quan đang có trong CV; không thêm chứng chỉ chưa hoàn thành."
+            )
+        elif dimension.key == "career_readiness":
+            recommendations.append(
+                f"Bổ sung một ví dụ thực tế thể hiện {missing} trong dự án hoặc công việc, thay vì chỉ liệt kê như một kỹ năng mềm."
+            )
+        elif dimension.key == "cv_clarity":
+            recommendations.append(
+                f"Hoàn thiện cấu trúc CV dựa trên dữ liệu thật: {missing}."
+            )
     return recommendations[:5]
 
 
@@ -871,7 +893,7 @@ def infer_candidate_benchmark_level(
     parsed_text: str,
 ) -> str:
     """Resolve a market cohort without allowing body keywords to override an explicit target."""
-    explicit_level = infer_level(role_query)
+    explicit_level = normalize_target_level(role_query) or infer_level(role_query)
     if explicit_level != "unspecified":
         return explicit_level
 
@@ -882,12 +904,18 @@ def infer_candidate_benchmark_level(
     ]
     title_text = normalize_text(" | ".join(titles))
     if contains_any(title_text, ["manager", "head", "director"]):
-        return "senior"
-    if contains_any(title_text, ["senior", "principal", "architect"]) or re.search(
+        return "manager"
+    if re.search(
         r"\b(?:(?:tech|team|engineering)\s+lead|lead\s+(?:engineer|developer|scientist))\b",
         title_text,
     ):
+        return "lead"
+    if contains_any(title_text, ["senior", "principal", "architect"]):
         return "senior"
+
+    inferred_level, _, _ = infer_current_level(structured_profile)
+    if inferred_level:
+        return inferred_level
 
     profile_text = compact_parts([
         structured_profile.headline if structured_profile else "",
@@ -909,7 +937,7 @@ def infer_candidate_benchmark_level(
         normalized_profile,
         ["intern", "internship", "fresher", "junior", "student", "undergraduate", "graduate"],
     ):
-        return "entry"
+        return "intern"
 
     years = [
         float(match)
@@ -917,12 +945,17 @@ def infer_candidate_benchmark_level(
     ]
     if years and max(years) >= 5:
         return "senior"
+    if years and max(years) >= 3:
+        return "middle"
     if years and max(years) <= 2:
-        return "entry"
+        return "junior"
     return "unspecified"
 
 
-async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
+async def analyze_cv_profile(
+    document: dict,
+    structured_profile_override: StructuredProfile | None = None,
+) -> ProfileAnalysisResult:
     skill_normalization_version = "skill-normalization-v3"
     existing = document.get("profile_analysis")
     can_reuse_existing = (
@@ -932,6 +965,8 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         and existing.get("scoring_version") == SCORING_VERSION
         and existing.get("skill_normalization_version") == skill_normalization_version
         and analysis_benchmark_is_fresh(existing)
+        and structured_profile_override is None
+        and existing.get("target_level") == document.get("requested_target_level")
         and (
             not settings.profile_ai_extraction_enabled
             or existing.get("ai_extraction_used") is True
@@ -961,12 +996,14 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         text_char_count=len(parsed_text),
         requested_target_role_present=bool(document.get("requested_target_role")),
     )
-    structured_profile = await asyncio.to_thread(
-        extract_structured_profile_with_ai,
-        parsed_text=parsed_text,
-        target_role=document.get("requested_target_role"),
-        message=document.get("message"),
-    )
+    structured_profile = structured_profile_override
+    if structured_profile is None:
+        structured_profile = await asyncio.to_thread(
+            extract_structured_profile_with_ai,
+            parsed_text=parsed_text,
+            target_role=document.get("requested_target_role"),
+            message=document.get("message"),
+        )
 
     raw_skills = unique_keep_order(extract_matching_skills(parsed_text) + skills_from_ai(structured_profile))
     normalized_skills = normalize_skills(raw_skills, parsed_text)
@@ -1009,6 +1046,10 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         source=role_resolution.source,
         confidence=role_resolution.confidence,
     )
+    await update_cv_document(cv_document_id, {
+        "processing_stage": "loading_benchmark",
+        "processing_stage_updated_at": utc_now(),
+    })
 
     benchmark = role_resolution.benchmark
     static_benchmark = benchmark
@@ -1018,10 +1059,9 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     role_query = (document.get("requested_target_role") or role_resolution.label or "").strip()
     if settings.dynamic_benchmark_enabled and role_query:
         try:
-            candidate_level = infer_candidate_benchmark_level(
-                role_query,
-                structured_profile,
-                parsed_text,
+            candidate_level = (
+                document.get("requested_target_level")
+                or infer_candidate_benchmark_level(role_query, structured_profile, parsed_text)
             )
             dynamic_snapshot = await asyncio.to_thread(
                 compile_dynamic_benchmark,
@@ -1096,6 +1136,10 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
     total_score = None
     grade = None
     if benchmark:
+        await update_cv_document(cv_document_id, {
+            "processing_stage": "scoring_profile",
+            "processing_stage_updated_at": utc_now(),
+        })
         dimensions = [
             score_role_skill_fit(skills, benchmark, scoring_text, work_lines, project_lines),
             score_experience_evidence(
@@ -1128,6 +1172,10 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         },
     )
     analyzed_at = utc_now()
+    await update_cv_document(cv_document_id, {
+        "processing_stage": "building_feedback",
+        "processing_stage_updated_at": analyzed_at,
+    })
     candidate_identity = extract_candidate_identity(parsed_text, structured_profile)
 
     missing_signals = unique_keep_order(
@@ -1139,6 +1187,10 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         target_role=role_resolution.label,
         target_role_source=role_resolution.source,
         target_role_confidence=role_resolution.confidence,
+        target_level=document.get("requested_target_level"),
+        target_level_source=(
+            "user_selected" if document.get("requested_target_level") else "unresolved"
+        ),
         benchmark_status=benchmark_status,
         benchmark_profile_id=(
             dynamic_snapshot.benchmark_id
@@ -1214,6 +1266,8 @@ async def analyze_cv_profile(document: dict) -> ProfileAnalysisResult:
         "target_role": result.target_role,
         "target_role_source": role_resolution.source,
         "target_role_confidence": role_resolution.confidence,
+        "target_level": result.target_level,
+        "target_level_source": result.target_level_source,
         "benchmark_status": result.benchmark_status,
         "benchmark_profile_id": result.benchmark_profile_id,
         "benchmark_version": result.benchmark_version,

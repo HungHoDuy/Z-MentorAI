@@ -64,7 +64,9 @@ class FakeRepository:
 
 
 def test_infer_level_from_role_title():
-    assert infer_level("Junior AI Engineer") == "entry"
+    assert infer_level("Junior AI Engineer") == "junior"
+    assert infer_level("Middle AI Engineer") == "middle"
+    assert infer_level("AI Engineer Intern") == "intern"
     assert infer_level("Senior Data Engineer") == "senior"
     assert infer_level("Product Manager") == "manager"
     assert infer_level("Data Analyst") == "unspecified"

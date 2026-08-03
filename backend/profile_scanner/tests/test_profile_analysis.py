@@ -317,7 +317,7 @@ Deployed a model service to Google Cloud Platform using Docker.
 
         self.assertEqual(
             infer_candidate_benchmark_level("Junior AI Engineer", senior_profile, ""),
-            "entry",
+            "junior",
         )
         self.assertEqual(
             infer_candidate_benchmark_level("AI Engineer", senior_profile, ""),
@@ -325,7 +325,7 @@ Deployed a model service to Google Cloud Platform using Docker.
         )
         self.assertEqual(
             infer_candidate_benchmark_level("AI Engineer", student_profile, ""),
-            "entry",
+            "intern",
         )
 
     def test_generic_project_leader_does_not_force_senior_market_cohort(self):
@@ -336,7 +336,7 @@ Deployed a model service to Google Cloud Platform using Docker.
 
         self.assertEqual(
             infer_candidate_benchmark_level("AI Engineer", profile, ""),
-            "entry",
+            "junior",
         )
 
     def test_education_student_signal_selects_entry_market_cohort(self):
@@ -353,7 +353,7 @@ Deployed a model service to Google Cloud Platform using Docker.
 
         self.assertEqual(
             infer_candidate_benchmark_level("AI Engineer", profile, ""),
-            "entry",
+            "intern",
         )
 
 

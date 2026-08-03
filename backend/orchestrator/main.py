@@ -20,6 +20,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 import logging
 
+from chat_actions import build_structured_tool_request
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orchestrator")
 
@@ -181,6 +183,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = "default_session"
     attachment: Optional[dict[str, Any]] = None
+    action: Optional[dict[str, Any]] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -349,7 +352,13 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
         elif name == "market_scout":
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
         elif name == "profile_scanner":
-            if output.get("feature") == "profile_confirmation":
+            if output.get("feature") == "cv_draft":
+                return "Đã tạo CV Draft và đang chờ người dùng xác nhận hoặc yêu cầu chỉnh sửa."
+            elif output.get("feature") == "cv_draft_edit_prompt":
+                return "Đang chờ người dùng mô tả thông tin cần chỉnh sửa trong CV Draft."
+            elif output.get("feature") == "target_level_confirmation":
+                return "Đang chờ người dùng chọn cấp độ mục tiêu để áp dụng đúng benchmark."
+            elif output.get("feature") == "profile_confirmation":
                 return output.get("message_vi", "Đã cập nhật trạng thái hồ sơ cá nhân.")
             elif output.get("feature") == "career_alignment":
                 return "Đã tổng hợp mức độ phù hợp giữa CV, Holland và MI."
@@ -590,10 +599,11 @@ async def save_chat_exchange(
         write_chat_db(db)
 
 agent = None
+mcp_tools_by_name: dict[str, Any] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent
+    global agent, mcp_tools_by_name
     MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-server:8080/sse")
     
     # Initialize MultiServerMCPClient to connect to the MCP server
@@ -609,6 +619,7 @@ async def lifespan(app: FastAPI):
     for attempt in range(15):
         try:
             tools = await client.get_tools()
+            mcp_tools_by_name = {tool.name: tool for tool in tools}
             agent = create_react_agent(llm, tools)
             print("Successfully retrieved tools from MCP server.")
             break
@@ -616,6 +627,7 @@ async def lifespan(app: FastAPI):
             print(f"Attempt {attempt + 1}/15: Failed to fetch tools from MCP server: {e}")
             if attempt == 14:
                 print(f"CRITICAL: Failed to connect to MCP server after 15 attempts. Proceeding with empty tools list: {e}")
+                mcp_tools_by_name = {}
                 agent = create_react_agent(llm, [])
             else:
                 await asyncio.sleep(2)
@@ -770,6 +782,19 @@ async def upload_cv_to_profile_scanner(
             detail = response.text
         raise HTTPException(status_code=response.status_code, detail=detail)
 
+    return response.json()
+
+
+@app.get("/profile-scanner/cv/status/{cv_document_id}")
+async def get_profile_scanner_cv_status(cv_document_id: str, x_user_id: str = Header(...)):
+    profile_scanner_url = os.getenv("PROFILE_SCANNER_URL", "http://profile-scanner:8080")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(
+            f"{profile_scanner_url}/cv/{cv_document_id}/status",
+            params={"user_id": x_user_id},
+        )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
 
 def trim_history(messages_list: list, limit: int = 8000) -> list:
@@ -1071,7 +1096,7 @@ def get_system_message(user_id: str) -> SystemMessage:
         "When an assessment attempt_id is present, pass it unchanged to profile_scanner while scoring. "
         "If the latest user message explicitly says to call profile_scanner with task='holland_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "The MI / Multiple Intelligences assessment is a Profile Scanner capability for learning style and intelligence tendency, not an official MBTI test. "
-        "If the user asks for MI, Multiple Intelligences, tri thong minh da dang, learning style, study style, MBTI, or personality-style testing, call profile_scanner with task='assessment_start' and assessment_type='multiple_intelligences'. "
+        "If the user asks for MI, Multiple Intelligences, tri thong minh da dang, learning style, or study style, call profile_scanner with task='assessment_start' and assessment_type='multiple_intelligences'. Do not treat MBTI as MI; MBTI is not supported yet. "
         "When the user provides MI answers, convert them into answers_json and call profile_scanner with task='assessment_score' and assessment_type='multiple_intelligences'. "
         "If the latest user message explicitly says to call profile_scanner with task='assessment_score' and includes answers_json, call profile_scanner immediately and do not ask the user to reformat the answers. "
         "If the latest user message includes a cv_document_id from an uploaded CV, call profile_scanner with task='scan_profile' and pass that exact cv_document_id. "
@@ -1108,6 +1133,36 @@ def get_system_message(user_id: str) -> SystemMessage:
 async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = Header(...)):
     async def event_generator():
         try:
+            structured_tool_request = build_structured_tool_request(request.action, x_user_id)
+            if structured_tool_request:
+                tool_name = structured_tool_request["tool"]
+                tool_input = structured_tool_request["input"]
+                tool = mcp_tools_by_name.get(tool_name)
+                if tool is None:
+                    raise RuntimeError(f"Required MCP tool is unavailable: {tool_name}")
+
+                tool_call_id = f"structured-{tool_name}-{uuid.uuid4()}"
+                yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'tool_call_id': tool_call_id, 'input': tool_input})}\n\n"
+                raw_tool_output = await tool.ainvoke(tool_input)
+                serializable_output = serialize_tool_output(raw_tool_output)
+                assistant_tool_calls = [{
+                    "id": tool_call_id,
+                    "name": tool_name,
+                    "input": tool_input,
+                    "output": serializable_output,
+                    "status": "completed",
+                }]
+                yield f"data: {json.dumps({'type': 'tool_end', 'tool': tool_name, 'tool_call_id': tool_call_id, 'output': serializable_output})}\n\n"
+                await save_chat_exchange(
+                    x_user_id,
+                    request.session_id,
+                    request.message,
+                    "",
+                    assistant_tool_calls,
+                    request.attachment,
+                )
+                return
+
             session = await get_session_details(x_user_id, request.session_id)
             
             history_messages = build_history_messages(session)

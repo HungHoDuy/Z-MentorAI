@@ -14,6 +14,10 @@ class Settings:
         "CV_DOCUMENTS_COLLECTION",
         "profile_scanner_cv_documents",
     )
+    cv_extractions_collection: str = os.getenv(
+        "PROFILE_SCANNER_CV_EXTRACTIONS_COLLECTION",
+        "profile_scanner_cv_extractions",
+    )
     profiles_collection: str = os.getenv(
         "PROFILE_SCANNER_PROFILES_COLLECTION",
         "profile_scanner_profiles",
