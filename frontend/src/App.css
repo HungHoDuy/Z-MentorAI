@@ -1706,6 +1706,61 @@
   font-size: 0.82rem;
 }
 
+.assessment-guidance-grid,
+.alignment-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  padding: 1rem 1.15rem 1.1rem;
+  border-top: 1px solid #dbe7e5;
+}
+
+.assessment-guidance-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+.assessment-guidance-grid > div,
+.alignment-insight-grid > section {
+  min-width: 0;
+}
+
+.alignment-summary,
+.alignment-action-plan,
+.alignment-learning-strategy {
+  padding-top: 0.9rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.alignment-summary p,
+.alignment-learning-strategy p {
+  margin: 0.45rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.alignment-insight-grid {
+  padding: 0.9rem 0 0;
+  border-top-color: #e2e8f0;
+}
+
+.alignment-action-plan ol {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.55rem 0 0;
+  padding-left: 1.35rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.alignment-action-plan li,
+.assessment-guidance-grid li,
+.alignment-insight-grid li {
+  overflow-wrap: anywhere;
+}
+
 .welcome-container {
   flex: 1;
   min-height: 0;
@@ -2322,7 +2377,9 @@
 
   .profile-scan-header,
   .profile-scan-grid,
-  .alignment-metrics {
+  .alignment-metrics,
+  .assessment-guidance-grid,
+  .alignment-insight-grid {
     grid-template-columns: 1fr;
   }
 

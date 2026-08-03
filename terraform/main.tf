@@ -313,6 +313,14 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
         value = "gemini-2.5-flash"
       }
       env {
+        name  = "PROFILE_AI_GUIDANCE_ENABLED"
+        value = "true"
+      }
+      env {
+        name  = "PROFILE_AI_GUIDANCE_MODEL_NAME"
+        value = "gemini-2.5-flash"
+      }
+      env {
         name  = "DYNAMIC_BENCHMARK_ENABLED"
         value = "true"
       }

@@ -56,6 +56,11 @@ class AssessmentScoreResponse(BaseModel):
     result_label_vi: str
     interpretation_vi: str
     recommendations_vi: list[str]
+    learning_profile_summary_vi: str = ""
+    learning_strategies_vi: list[str] = Field(default_factory=list)
+    application_examples_vi: list[str] = Field(default_factory=list)
+    guidance_source: str = "deterministic_fallback"
+    guidance_version: str = "profile-guidance-v1"
     question_set_hash: str
     tied_top_dimensions: list[str] = Field(default_factory=list)
     score_margin: float | None = None
