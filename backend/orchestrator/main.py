@@ -494,7 +494,20 @@ def build_history_messages(session: Optional[dict]) -> list:
                 if isinstance(out, dict) and name == "academic_architect_create_gantt":
                     chart_id = out.get("chart_id")
                     if chart_id:
-                        tool_summary += f"\n[System Note: Tool {name} succeeded. The generated chart_id is {chart_id}]"
+                        tool_summary += f"\n[System Note: Tool {name} succeeded. The generated chart_id is {chart_id}."
+                        tasks = out.get("gantt_chart", {}).get("tasks", [])
+                        if tasks:
+                            tool_summary += " Tasks: " + ", ".join(f"{t.get('task_id')} ({t.get('course_name')})" for t in tasks)
+                        tool_summary += "]"
+                elif isinstance(out, dict) and name == "academic_architect_get_alternatives":
+                    chart_id = out.get("chart_id")
+                    task_id = out.get("task_id")
+                    alts = out.get("alternatives", [])
+                    if chart_id and task_id:
+                        tool_summary += f"\n[System Note: Tool {name} succeeded for chart {chart_id}, task {task_id}."
+                        if alts:
+                            tool_summary += " Options: " + ", ".join(f"{c.get('course_id')} ({c.get('name')})" for c in alts)
+                        tool_summary += "]"
             
             final_content = (content + tool_summary).strip()
             if final_content:
