@@ -17,6 +17,7 @@ WORKDIR /app
 # Install backend dependencies
 COPY backend/orchestrator/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip check && python -c "from langchain_mcp_adapters.client import MultiServerMCPClient"
 
 # Copy backend orchestrator code
 COPY backend/orchestrator/ .
