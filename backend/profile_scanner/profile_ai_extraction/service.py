@@ -145,3 +145,39 @@ def extract_structured_profile_with_ai(
             extra={"error_type": type(exc).__name__},
         )
         return None
+
+
+def revise_structured_profile_with_ai(
+    *,
+    current_profile: StructuredProfile,
+    instruction: str,
+) -> StructuredProfile | None:
+    """Map a user's extraction correction onto the current draft without inventing facts."""
+    llm = get_profile_extraction_llm()
+    if llm is None:
+        return None
+
+    messages = [
+        SystemMessage(content=(
+            "You edit a structured CV extraction using one user correction. "
+            "Keep every field that the instruction does not change. "
+            "Apply only facts explicitly supplied by the user; never add career advice, inferred skills, employers, dates, or achievements. "
+            "Return one complete JSON object matching the supplied profile schema, without markdown or null values."
+        )),
+        HumanMessage(content=json.dumps({
+            "task": "Apply the correction to the CV draft.",
+            "instruction": instruction.strip(),
+            "current_profile": current_profile.as_firestore_payload(),
+        }, ensure_ascii=False)),
+    ]
+    try:
+        response = llm.invoke(messages)
+        payload = parse_json_object(message_content_to_text(response.content))
+        payload["extraction_source"] = "user_correction_ai_mapped"
+        return StructuredProfile(**payload)
+    except Exception as exc:
+        logger.exception(
+            "AI CV draft revision failed",
+            extra={"error_type": type(exc).__name__},
+        )
+        return None

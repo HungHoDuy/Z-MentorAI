@@ -142,8 +142,12 @@ def profile_scanner(
     cv_document_id: str = "",
     assessment_type: str = "",
     attempt_id: str = "",
+    question_set_hash: str = "",
     decision: str = "",
-    target_role: str = ""
+    target_role: str = "",
+    target_level: str = "",
+    extraction_id: str = "",
+    edit_instruction: str = ""
 ) -> dict:
     """Use this Profile Scanner agent tool for CV/profile scanning and career/profile assessments.
 
@@ -154,6 +158,10 @@ def profile_scanner(
     - assessment_start: start a supported assessment, for example assessment_type="multiple_intelligences".
     - assessment_score: score and save a supported assessment.
     - profile_confirm: accept, update, overwrite, or reject a CV profile proposal.
+    - cv_draft_confirm: confirm an extracted CV draft and continue scoring.
+    - cv_draft_edit_requested: ask the user what should be corrected in the CV draft.
+    - cv_draft_apply_edit: apply a user correction to a CV draft, then continue scoring.
+    - target_level_select: select the target seniority cohort and continue scoring.
     - career_alignment: synthesize canonical CV profile, Holland, and MI results.
 
     For scoring tasks, answers_json must be a JSON array like:
@@ -210,6 +218,21 @@ def profile_scanner(
             "decision": decision,
         })
 
+    if normalized_task == "cv_draft_edit_requested":
+        if not cv_document_id or not extraction_id:
+            return {
+                "status": "error",
+                "feature": "cv_draft_edit_prompt",
+                "error": "cv_document_id and extraction_id are required.",
+            }
+        return {
+            "status": "success",
+            "feature": "cv_draft_edit_prompt",
+            "cv_document_id": cv_document_id,
+            "extraction_id": extraction_id,
+            "message_vi": "Bạn hãy nhắn thông tin cần chỉnh sửa trong CV Draft. Hệ thống sẽ cập nhật đúng trường và hiển thị kết quả mới.",
+        }
+
     if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:
         return fetch_data_sync(PROFILE_SCANNER_URL, f"/alignment/synthesize/{user_id}", {})
 
@@ -253,6 +276,7 @@ def profile_scanner(
             "user_id": user_id,
             "answers": answers,
             "attempt_id": attempt_id or None,
+            "question_set_hash": question_set_hash or None,
             "source": "orchestrator_chat"
         })
 
@@ -282,6 +306,7 @@ def profile_scanner(
             "user_id": user_id,
             "answers": answers,
             "attempt_id": attempt_id or None,
+            "question_set_hash": question_set_hash or None,
             "source": "orchestrator_chat"
         })
 
@@ -293,6 +318,14 @@ def profile_scanner(
             "background_info": background_info,
             "cv_document_id": cv_document_id,
             "target_role": target_role,
+            "target_level": target_level,
+            "extraction_id": extraction_id or None,
+            "edit_instruction": edit_instruction or None,
+            "operation": {
+                "cv_draft_confirm": "confirm_draft",
+                "cv_draft_apply_edit": "apply_draft_edit",
+                "target_level_select": "select_target_level",
+            }.get(normalized_task, "extract_draft"),
         },
         timeout_seconds=PROFILE_SCANNER_SCAN_TIMEOUT_SECONDS,
     )

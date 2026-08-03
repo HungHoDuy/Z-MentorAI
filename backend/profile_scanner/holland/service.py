@@ -23,6 +23,12 @@ def utc_now() -> str:
 
 
 def score_holland_answers(request: HollandScoreRequest) -> HollandScoreResponse:
+    expected_question_set_hash = build_question_set_hash(HOLLAND_QUESTIONS)
+    if request.question_set_hash and request.question_set_hash != expected_question_set_hash:
+        raise HTTPException(
+            status_code=409,
+            detail="This Holland form is outdated. Please start a new assessment.",
+        )
     answered_by_id = {answer.question_id: answer for answer in request.answers}
     unknown_ids = sorted(set(answered_by_id) - set(QUESTION_BY_ID))
     if unknown_ids:
@@ -69,7 +75,7 @@ def score_holland_answers(request: HollandScoreRequest) -> HollandScoreResponse:
             attempt_id=request.attempt_id or request.session_id,
         ),
         assessment_version=HOLLAND_ASSESSMENT_VERSION,
-        question_set_hash=build_question_set_hash(HOLLAND_QUESTIONS),
+        question_set_hash=expected_question_set_hash,
         user_id=request.user_id,
         session_id=request.session_id,
         attempt_id=request.attempt_id,

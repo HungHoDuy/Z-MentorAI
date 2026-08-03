@@ -265,6 +265,10 @@ resource "google_cloud_run_v2_service" "profile_scanner" {
         value = "profile_scanner_cv_documents"
       }
       env {
+        name  = "PROFILE_SCANNER_CV_EXTRACTIONS_COLLECTION"
+        value = "profile_scanner_cv_extractions"
+      }
+      env {
         name  = "PROFILE_SCANNER_PROFILES_COLLECTION"
         value = "profile_scanner_profiles"
       }

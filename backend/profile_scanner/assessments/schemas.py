@@ -36,6 +36,7 @@ class AssessmentScoreRequest(BaseModel):
     answers: list[AssessmentAnswer]
     session_id: Optional[str] = None
     attempt_id: Optional[str] = None
+    question_set_hash: Optional[str] = None
     source: str = "chat"
 
 

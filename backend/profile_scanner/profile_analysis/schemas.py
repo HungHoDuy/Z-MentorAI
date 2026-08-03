@@ -43,6 +43,8 @@ class ProfileAnalysisResult(BaseModel):
     target_role: str | None = None
     target_role_source: str = "unresolved"
     target_role_confidence: float = 0.0
+    target_level: str | None = None
+    target_level_source: str = "unresolved"
     benchmark_status: str = "resolved"
     benchmark_profile_id: str | None = None
     benchmark_version: str

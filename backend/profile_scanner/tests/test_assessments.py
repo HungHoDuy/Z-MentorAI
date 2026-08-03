@@ -60,6 +60,22 @@ class AssessmentTests(unittest.TestCase):
                 ),
             )
 
+    def test_outdated_question_set_is_rejected(self):
+        answers = [
+            AssessmentAnswer(question_id=question.id, score=3)
+            for question in MULTIPLE_INTELLIGENCES.questions
+        ]
+        with self.assertRaises(HTTPException) as context:
+            score_assessment_answers(
+                "multiple_intelligences",
+                AssessmentScoreRequest(
+                    user_id="test-user",
+                    answers=answers,
+                    question_set_hash="outdated",
+                ),
+            )
+        self.assertEqual(context.exception.status_code, 409)
+
     def test_equal_scores_report_tied_dimensions(self):
         answers = [
             AssessmentAnswer(question_id=question.id, score=3)

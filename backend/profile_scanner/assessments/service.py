@@ -32,6 +32,12 @@ def score_assessment_answers(
     request: AssessmentScoreRequest,
 ) -> AssessmentScoreResponse:
     definition = get_assessment_definition(assessment_type)
+    expected_question_set_hash = build_question_set_hash(definition.questions)
+    if request.question_set_hash and request.question_set_hash != expected_question_set_hash:
+        raise HTTPException(
+            status_code=409,
+            detail="This assessment form is outdated. Please start a new assessment.",
+        )
     question_by_id = {question.id: question for question in definition.questions}
     answered_by_id = {answer.question_id: answer for answer in request.answers}
     unknown_ids = sorted(set(answered_by_id) - set(question_by_id))
@@ -94,7 +100,7 @@ def score_assessment_answers(
         result_label_vi=definition.result_label_vi,
         interpretation_vi=definition.interpretation_by_dimension[top_dimension],
         recommendations_vi=recommendations[:5],
-        question_set_hash=build_question_set_hash(definition.questions),
+        question_set_hash=expected_question_set_hash,
         tied_top_dimensions=tied_top_dimensions,
         score_margin=score_margin,
         answered_count=len(request.answers),

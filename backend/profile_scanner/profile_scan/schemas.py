@@ -8,6 +8,10 @@ class ProfileRequest(BaseModel):
     background_info: str = ""
     cv_document_id: Optional[str] = None
     target_role: Optional[str] = None
+    target_level: Optional[str] = None
+    operation: str = "extract_draft"
+    extraction_id: Optional[str] = None
+    edit_instruction: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -24,9 +28,21 @@ class ProfileResponse(BaseModel):
     parsed_result_gcs_uri: Optional[str] = None
     extracted_at: Optional[str] = None
     ocr_fallback_used: Optional[bool] = None
+    extraction_id: Optional[str] = None
+    draft_status: Optional[str] = None
+    draft_version: Optional[int] = None
+    cv_draft: Optional[dict] = None
+    available_actions: Optional[list[dict]] = None
+    processing_steps: Optional[list[dict]] = None
     target_role: Optional[str] = None
     target_role_source: Optional[str] = None
     target_role_confidence: Optional[float] = None
+    target_level: Optional[str] = None
+    target_level_source: Optional[str] = None
+    current_level_estimate: Optional[str] = None
+    current_level_confidence: Optional[float] = None
+    current_level_evidence: Optional[list[str]] = None
+    level_options: Optional[list[dict]] = None
     benchmark_status: Optional[str] = None
     benchmark_profile_id: Optional[str] = None
     benchmark_version: Optional[str] = None

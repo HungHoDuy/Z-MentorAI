@@ -157,13 +157,24 @@ class DynamicBenchmarkRepository:
 
 def _matches_level(title: str, seniority: str, level: str) -> bool:
     normalized_title = title.casefold()
-    if level == "entry":
-        return not any(token in normalized_title for token in ("senior", "lead", "manager", "head", "principal"))
+    management_tokens = ("senior", "lead", "manager", "head", "principal", "director", "architect")
+    if level == "intern":
+        return any(token in normalized_title for token in ("intern", "internship"))
+    if level == "fresher":
+        return any(token in normalized_title for token in ("fresher", "graduate", "trainee"))
+    if level == "junior":
+        return "junior" in normalized_title or not any(token in normalized_title for token in management_tokens)
+    if level == "middle":
+        return not any(
+            token in normalized_title
+            for token in ("intern", "fresher", "trainee", "junior", *management_tokens)
+        )
     if level == "senior":
-        return any(token in normalized_title for token in ("senior", "lead", "principal", "architect")) or seniority in {
+        return any(token in normalized_title for token in ("senior", "principal", "architect")) or seniority in {
             "truong-nhom-giam-sat",
-            "quan-ly",
         }
+    if level == "lead":
+        return any(token in normalized_title for token in ("lead", "principal", "architect")) or seniority == "truong-nhom-giam-sat"
     if level == "manager":
         return any(token in normalized_title for token in ("manager", "head", "director")) or seniority in {
             "quan-ly",

@@ -17,7 +17,7 @@ from profile_analysis.benchmark import SKILL_ALIASES
 from skill_normalization.service import display_name, normalize_key
 
 
-DYNAMIC_BENCHMARK_VERSION = "market-benchmark-v1.2"
+DYNAMIC_BENCHMARK_VERSION = "market-benchmark-v1.3"
 DYNAMIC_BENCHMARK_NOTES = [
     "Role candidates are retrieved from versioned internal job facts with multilingual vector similarity.",
     "Gemini proposes a skill vocabulary, but deterministic code counts job frequency and calculates weights.",
@@ -35,9 +35,15 @@ def infer_level(role_query: str) -> str:
         r"\b(senior|principal|architect|tech lead|team lead|lead engineer|lead developer|lead scientist)\b",
         normalized,
     ):
-        return "senior"
-    if re.search(r"\b(intern|internship|fresher|junior|entry level|graduate)\b", normalized):
-        return "entry"
+        return "lead" if "lead" in normalized else "senior"
+    if re.search(r"\b(mid[- ]?level|middle|intermediate)\b", normalized):
+        return "middle"
+    if re.search(r"\b(junior|entry level)\b", normalized):
+        return "junior"
+    if re.search(r"\b(fresher|new graduate|graduate)\b", normalized):
+        return "fresher"
+    if re.search(r"\b(intern|internship)\b", normalized):
+        return "intern"
     return "unspecified"
 
 
