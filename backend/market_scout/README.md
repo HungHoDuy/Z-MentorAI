@@ -80,6 +80,18 @@ Salary Benchmark tra loi cac cau hoi nhu:
 5. `SalaryBenchmarkService` loc record hop le, loai outlier, roi aggregate salary range.
 6. `SalarySummaryService` viet cau tra loi cuoi va append 3-5 JD links lien quan.
 
+### Salary aggregation method
+
+Salary Benchmark khong con dung cong thuc `mean(min_salary) -> mean(max_salary)`.
+Sau khi vector search va loai midpoint outlier bang IQR, range hien duoc tinh theo percentile:
+
+```text
+salary_range.min = P25(salary_min_vnd)
+salary_range.max = P75(salary_max_vnd)
+```
+
+Cach nay giup range on dinh hon mean vi it bi keo lech boi mot vai JD co luong qua cao hoac qua thap. Output van giu contract cu `salary_range.min/max`, khong hien thi median trong cau tra loi mac dinh.
+
 ### Rule truy van salary
 
 | Job | Location | Experience | Cach truy van |
@@ -507,7 +519,7 @@ Each raw record includes `batch_id`, `scope`, `source`, `crawled_at`, and `sourc
 
 ## Current Limitations
 
-- Salary aggregation hien van la deterministic aggregation sau retrieval; weighted percentile la huong can enhance tiep.
+- Salary aggregation hien dung percentile sau retrieval: `P25(salary_min_vnd) -> P75(salary_max_vnd)` sau khi loc outlier. Salary matrix theo role/level/location la huong enhance tiep.
 - Current demand theo role phu thuoc chat luong semantic search va du lieu JD da crawl.
 - Current skill demand van dua tren keyword taxonomy, co the bo sot ky nang viet theo cach khac.
 - External outlook phu thuoc Tavily va chat luong snippet/content tu allowlisted domains.
