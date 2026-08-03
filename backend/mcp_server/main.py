@@ -33,10 +33,12 @@ def _log_upstream_response(endpoint: str, data: dict[str, Any], duration_ms: flo
         return
     answer = str(data.get("answer") or "")
     job_sources = _extract_job_sources(data)
+    trend_details = _extract_market_scout_trend_details(data)
     _log_event(
         "mcp_market_scout_response",
         endpoint=endpoint,
         intent=data.get("intent"),
+        **trend_details,
         confidence=data.get("confidence"),
         duration_ms=duration_ms,
         answer_preview=_short_text(answer, max_length=1000),
@@ -46,6 +48,21 @@ def _log_upstream_response(endpoint: str, data: dict[str, Any], duration_ms: flo
         job_sources_preview=[_job_source_preview(item) for item in job_sources[:5]],
     )
 
+
+
+def _extract_market_scout_trend_details(data: dict[str, Any]) -> dict[str, Any]:
+    data_payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+    query = data_payload.get("query") if isinstance(data_payload.get("query"), dict) else {}
+    signal = data_payload.get("signal") if isinstance(data_payload.get("signal"), dict) else {}
+    summary = data_payload.get("summary") if isinstance(data_payload.get("summary"), dict) else {}
+    return {
+        "trend_intent": query.get("intent") or signal.get("intent"),
+        "trend_signal": signal.get("signal"),
+        "job_family_id": query.get("job_family_id") or signal.get("job_family_id"),
+        "job_category_id": query.get("job_category_id") or signal.get("job_category_id"),
+        "location_id": query.get("location_id") or signal.get("location_id"),
+        "summary_sources_count": len(summary.get("sources") or []) if isinstance(summary.get("sources"), list) else 0,
+    }
 
 def _extract_job_sources(data: dict[str, Any]) -> list[dict[str, Any]]:
     data_payload = data.get("data") if isinstance(data.get("data"), dict) else {}
