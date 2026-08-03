@@ -81,6 +81,7 @@ class MarketScoutAgent:
             step="resolve_intent",
             duration_ms=_duration_ms(intent_start),
             user_query=_short_query(request.user_query),
+            **_query_understanding_log_fields(self._query_understanding_cache.get(request.user_query)),
         )
 
         if intent == MarketScoutIntent.SALARY_BENCHMARK:
@@ -199,6 +200,7 @@ class MarketScoutAgent:
                 step="trend_build_query_input",
                 duration_ms=_duration_ms(input_start),
                 user_query=_short_query(request.user_query),
+                **_trend_query_input_log_fields(trend_input),
             )
             flow_start = perf_counter()
             trend_flow = self.trend_flow or TrendTrackerFlow()
@@ -210,6 +212,7 @@ class MarketScoutAgent:
                 step="trend_flow_total",
                 duration_ms=_duration_ms(flow_start),
                 user_query=_short_query(request.user_query),
+                **_trend_query_input_log_fields(trend_input),
             )
         except ValueError as exc:
             return self._compose_trend_clarification_response(market_intent, str(exc))
@@ -312,6 +315,12 @@ class MarketScoutAgent:
             )
             return None
         self._query_understanding_cache[user_query] = understanding
+        _log_event(
+            "market_scout_query_understanding",
+            agent="market_scout",
+            user_query=_short_query(user_query),
+            **_query_understanding_log_fields(understanding),
+        )
         return understanding
 
     @staticmethod
@@ -377,6 +386,37 @@ def _run_trend_flow(trend_flow: Any, trend_input: TrendQueryInput, user_query: s
     if "user_query" in inspect.signature(trend_flow.run).parameters:
         return trend_flow.run(trend_input, user_query=user_query)
     return trend_flow.run(trend_input)
+
+
+
+def _query_understanding_log_fields(understanding: Any | None) -> dict[str, Any]:
+    if understanding is None:
+        return {}
+    trend_query = getattr(understanding, "trend_query", None)
+    trend_intent = getattr(trend_query, "intent", None)
+    return {
+        "query_understanding_intent": getattr(getattr(understanding, "intent", None), "value", None),
+        "query_understanding_source": getattr(understanding, "source", None),
+        "query_understanding_confidence": getattr(understanding, "confidence", None),
+        "query_understanding_trend_intent": getattr(trend_intent, "value", trend_intent),
+        "query_understanding_role_mention": getattr(trend_query, "role_mention", None),
+        "query_understanding_location_text": getattr(trend_query, "location_text", None),
+        "query_understanding_job_category_hint": getattr(trend_query, "job_category_hint", None),
+        "query_understanding_job_family_hint": getattr(trend_query, "job_family_hint", None),
+    }
+
+
+def _trend_query_input_log_fields(trend_input: TrendQueryInput) -> dict[str, Any]:
+    return {
+        "trend_intent": getattr(trend_input.intent, "value", trend_input.intent),
+        "role_mention": trend_input.role_mention,
+        "job_family_id": trend_input.job_family_id,
+        "job_category_id": trend_input.job_category_id,
+        "job_category": trend_input.job_category,
+        "location_id": trend_input.location_id,
+        "location": trend_input.location,
+        "job_sources_count": len(trend_input.job_sources or []),
+    }
 
 
 async def _maybe_await(value: Any) -> Any:
@@ -690,7 +730,3 @@ _TREND_KEYWORDS = (
     "con hot",
     "con phat trien",
 )
-
-
-
-
