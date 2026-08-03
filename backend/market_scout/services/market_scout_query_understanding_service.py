@@ -60,6 +60,44 @@ class MarketScoutQueryUnderstandingService:
         self.use_llm_for_intent = use_llm_for_intent
 
     def understand(self, user_query: str) -> MarketScoutQueryUnderstanding:
+        try:
+            return self._understand_with_llm(user_query)
+        except Exception:
+            return self._understand_with_fallback(user_query)
+
+    def _understand_with_llm(self, user_query: str) -> MarketScoutQueryUnderstanding:
+        parsed = self._invoke_llm(user_query)
+        llm_intent = MarketScoutIntent.from_value(_optional_text(parsed.get("intent")))
+        confidence = _confidence(parsed.get("confidence"))
+
+        if llm_intent is MarketScoutIntent.SALARY_BENCHMARK:
+            return MarketScoutQueryUnderstanding(
+                intent=llm_intent,
+                salary_query=self.salary_query_understanding_service.extract(user_query),
+                confidence=confidence,
+                source="llm",
+            )
+
+        if llm_intent is MarketScoutIntent.TREND_TRACKER:
+            trend_query = _market_scout_trend_understanding_from_payload(parsed, user_query)
+            return MarketScoutQueryUnderstanding(
+                intent=llm_intent,
+                trend_query=trend_query,
+                confidence=trend_query.confidence,
+                source="llm",
+            )
+
+        return MarketScoutQueryUnderstanding(
+            intent=MarketScoutIntent.TREND_TRACKER,
+            trend_query=TrendQueryUnderstanding(
+                intent=TrendQueryIntent.EXTERNAL_OUTLOOK,
+                confidence=confidence,
+            ),
+            confidence=confidence,
+            source="llm",
+        )
+
+    def _understand_with_fallback(self, user_query: str) -> MarketScoutQueryUnderstanding:
         heuristic_intent = _classify_intent(user_query)
 
         if heuristic_intent is MarketScoutIntent.SALARY_BENCHMARK:
@@ -71,32 +109,16 @@ class MarketScoutQueryUnderstandingService:
             )
 
         if heuristic_intent is MarketScoutIntent.TREND_TRACKER:
-            trend_query = self._understand_trend(user_query)
+            trend_query = _with_deterministic_external_outlook_intent(
+                self._understand_trend(user_query),
+                user_query,
+            )
             return MarketScoutQueryUnderstanding(
                 intent=heuristic_intent,
                 trend_query=trend_query,
                 confidence=trend_query.confidence,
-                source="llm" if self._llm is not None else "trend_fallback",
+                source="trend_fallback",
             )
-
-        if self.use_llm_for_intent:
-            parsed = self._invoke_llm(user_query)
-            llm_intent = MarketScoutIntent.from_value(_optional_text(parsed.get("intent")))
-            if llm_intent is MarketScoutIntent.SALARY_BENCHMARK:
-                return MarketScoutQueryUnderstanding(
-                    intent=llm_intent,
-                    salary_query=self.salary_query_understanding_service.extract(user_query),
-                    confidence=_confidence(parsed.get("confidence")),
-                    source="llm",
-                )
-            if llm_intent is MarketScoutIntent.TREND_TRACKER:
-                trend_query = _trend_understanding_from_payload(parsed)
-                return MarketScoutQueryUnderstanding(
-                    intent=llm_intent,
-                    trend_query=trend_query,
-                    confidence=trend_query.confidence,
-                    source="llm",
-                )
 
         return MarketScoutQueryUnderstanding(intent=MarketScoutIntent.UNCLEAR, confidence="low")
 
@@ -136,6 +158,43 @@ class MarketScoutQueryUnderstandingService:
         )
 
 
+def _with_deterministic_external_outlook_intent(
+    trend_query: TrendQueryUnderstanding,
+    user_query: str,
+) -> TrendQueryUnderstanding:
+    if _fallback_trend_intent(user_query) is not TrendQueryIntent.EXTERNAL_OUTLOOK:
+        return trend_query
+    return TrendQueryUnderstanding(
+        intent=TrendQueryIntent.EXTERNAL_OUTLOOK,
+        role_mention=trend_query.role_mention,
+        location_text=trend_query.location_text,
+        job_category_hint=trend_query.job_category_hint,
+        job_family_hint=trend_query.job_family_hint,
+        requested_signal=trend_query.requested_signal,
+        confidence=trend_query.confidence,
+    )
+
+def _market_scout_trend_understanding_from_payload(
+    payload: dict[str, Any],
+    user_query: str,
+) -> TrendQueryUnderstanding:
+    trend_query = _with_deterministic_external_outlook_intent(
+        _trend_understanding_from_payload(payload),
+        user_query,
+    )
+    if trend_query.intent is TrendQueryIntent.CURRENT_DEMAND:
+        return trend_query
+    return TrendQueryUnderstanding(
+        intent=TrendQueryIntent.EXTERNAL_OUTLOOK,
+        role_mention=trend_query.role_mention,
+        location_text=trend_query.location_text,
+        job_category_hint=trend_query.job_category_hint,
+        job_family_hint=trend_query.job_family_hint,
+        requested_signal=trend_query.requested_signal,
+        confidence=trend_query.confidence,
+    )
+
+
 def _trend_understanding_from_payload(payload: dict[str, Any]) -> TrendQueryUnderstanding:
     return TrendQueryUnderstanding(
         intent=_trend_intent(payload.get("trend_intent")),
@@ -161,7 +220,7 @@ def _fallback_trend_intent(query: str) -> TrendQueryIntent:
     normalized = _text_key(query)
     if _is_broad_external_outlook_question(normalized):
         return TrendQueryIntent.EXTERNAL_OUTLOOK
-    if any(keyword in normalized for keyword in ("automation", "tu dong hoa", "ai thay the", "thay the", "bi thay the", "mat viec", "ai")):
+    if any(keyword in normalized for keyword in ("automation", "tu dong hoa", "ai thay the", "thay the", "bi thay the", "mat viec")):
         return TrendQueryIntent.EXTERNAL_OUTLOOK
     if any(keyword in normalized for keyword in ("skill", "ky nang", "yeu cau")):
         return TrendQueryIntent.CURRENT_SKILL_DEMAND
@@ -177,7 +236,14 @@ def _fallback_trend_intent(query: str) -> TrendQueryIntent:
             "xu huong",
             "trien vong",
             "phat trien",
+            "sap toi",
+            "nam toi",
+            "cac nam toi",
+            "nhung nam toi",
+            "thoi gian toi",
             "vai nam toi",
+            "con hot",
+            "hot",
             "con phat trien",
         )
     ):
@@ -188,7 +254,7 @@ def _fallback_trend_intent(query: str) -> TrendQueryIntent:
 def _is_broad_external_outlook_question(normalized: str) -> bool:
     if any(keyword in normalized for keyword in ("nganh nao", "nghe nao", "cong viec nao", "job nao")):
         return True
-    if any(keyword in normalized for keyword in ("xu huong", "trien vong", "du bao", "tuong lai", "2026", "2027")):
+    if any(keyword in normalized for keyword in ("xu huong", "trien vong", "du bao", "tuong lai", "2026", "2027", "sap toi", "nam toi", "cac nam toi", "nhung nam toi", "thoi gian toi", "con hot", "hot")):
         return True
     return False
 
@@ -308,6 +374,3 @@ _TREND_KEYWORDS = (
     "tu dong hoa",
     "mat viec",
 )
-
-
-
