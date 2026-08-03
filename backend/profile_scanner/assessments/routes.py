@@ -7,7 +7,9 @@ from assessments.repository import get_latest_assessment_result, save_assessment
 from assessments.scoring import build_question_set_hash
 from assessments.schemas import AssessmentScoreRequest, AssessmentScoreResponse, AssessmentStartResponse
 from assessments.service import get_assessment_definition, score_assessment_answers
+from canonical_profile.repository import get_canonical_profile
 from core.config import logger, settings
+from guidance.service import generate_mi_guidance
 
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
@@ -75,6 +77,30 @@ async def start_assessment(assessment_type: str, user_id: str):
 async def score_assessment(assessment_type: str, request: AssessmentScoreRequest):
     result = score_assessment_answers(assessment_type, request)
     result_payload = result.model_dump() if hasattr(result, "model_dump") else result.dict()
+    definition = get_assessment_definition(assessment_type)
+    if definition.assessment_type == "multiple_intelligences":
+        try:
+            profile = await get_canonical_profile(request.user_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not load canonical profile for MI guidance",
+                extra={"user_id": request.user_id, "error_type": type(exc).__name__},
+            )
+            profile = None
+        guidance, guidance_source = await generate_mi_guidance(
+            result=result_payload,
+            dimension_labels=definition.dimension_labels,
+            fallback_recommendations=result_payload.get("recommendations_vi", []),
+            profile=profile,
+        )
+        result_payload.update({
+            "interpretation_vi": guidance.learning_profile_summary_vi,
+            "recommendations_vi": guidance.learning_strategies_vi,
+            "learning_profile_summary_vi": guidance.learning_profile_summary_vi,
+            "learning_strategies_vi": guidance.learning_strategies_vi,
+            "application_examples_vi": guidance.application_examples_vi,
+            "guidance_source": guidance_source,
+        })
     saved_result = await save_assessment_result(result_payload)
     return AssessmentScoreResponse(**saved_result)
 
