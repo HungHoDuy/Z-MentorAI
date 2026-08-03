@@ -235,6 +235,10 @@ function hasHollandInteractiveToolCall(toolCalls = []) {
     return (isAssessmentOutput
       && (output?.questions || output?.top_code || output?.top_dimensions || output?.result_code))
       || hasProfileAction
+      || output?.feature === 'cv_draft'
+      || output?.feature === 'target_level_confirmation'
+      || output?.feature === 'cv_draft_edit_prompt'
+      || output?.feature === 'profile_scan'
       || output?.feature === 'profile_confirmation'
       || output?.feature === 'career_alignment';
   });
@@ -292,6 +296,11 @@ void multipleIntelligenceLabels;
 const localizedMiLabels = {
   vi: { linguistic: 'Ngôn ngữ', logical_math: 'Logic / Toán học', spatial: 'Không gian / Hình ảnh', bodily_kinesthetic: 'Vận động / Thực hành', musical: 'Âm nhạc / Nhịp điệu', interpersonal: 'Giao tiếp / Thấu hiểu người khác', intrapersonal: 'Tự nhận thức', naturalistic: 'Thiên nhiên / Phân loại hệ thống' },
   en: { linguistic: 'Linguistic', logical_math: 'Logical / Mathematical', spatial: 'Spatial / Visual', bodily_kinesthetic: 'Bodily / Kinesthetic', musical: 'Musical / Rhythmic', interpersonal: 'Interpersonal', intrapersonal: 'Intrapersonal', naturalistic: 'Naturalistic' }
+};
+
+const targetLevelLabels = {
+  vi: { intern: 'Thực tập sinh', fresher: 'Fresher', junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead', manager: 'Quản lý' },
+  en: { intern: 'Intern', fresher: 'Fresher', junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead', manager: 'Manager' }
 };
 
 function getAssessmentDisplayConfig(result, locale = 'vi') {
@@ -435,7 +444,6 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
   const dimensions = Array.isArray(result?.score_dimensions) ? result.score_dimensions : [];
   const skills = Array.isArray(result?.extracted_skills) ? result.extracted_skills : [];
   const recommendations = Array.isArray(result?.recommendations) ? result.recommendations.map((item) => localizeRecommendation(item, locale)) : [];
-  const strengths = Array.isArray(result?.strengths) ? result.strengths : [];
   const resultSummary = getCvScoreCopy(grade, locale);
 
   return (
@@ -447,6 +455,7 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
         <div className="profile-scan-title">
           <div className="profile-scan-eyebrow">{locale === 'vi' ? 'Kết quả đánh giá CV' : 'CV assessment result'}</div>
           <h3>{result?.target_role || 'Profile Scanner'}</h3>
+          {result?.target_level && <span className="profile-target-level">Benchmark cấp độ: {targetLevelLabels[locale]?.[result.target_level] || result.target_level}</span>}
           <p>{resultSummary}</p>
         </div>
         <div className="profile-total-score">
@@ -454,6 +463,8 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
           <span>{hasGrade ? '/100' : 'chưa chấm'}</span>
         </div>
       </div>
+
+      <ProcessingSteps steps={result?.processing_steps} />
 
       {dimensions.length > 0 && (
         <div className="profile-dimension-list">
@@ -474,7 +485,7 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
         </div>
       )}
 
-      <div className="profile-scan-grid">
+      <div className={`profile-scan-grid ${recommendations.length ? '' : 'single-column'}`}>
         <div>
           <span className="profile-scan-section-title">{locale === 'vi' ? 'Kỹ năng nổi bật' : 'Highlighted skills'}</span>
           <div className="profile-skill-cloud">
@@ -482,17 +493,177 @@ function ProfileScanResultCard({ result, onSendMessage, locale = 'vi' }) {
             {!skills.length && <em>Chưa phát hiện kỹ năng rõ ràng.</em>}
           </div>
         </div>
-        <div>
-          <span className="profile-scan-section-title">{locale === 'vi' ? 'Ưu tiên cải thiện' : 'Improvement priorities'}</span>
-          <ul className="profile-recommendations">
-            {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
-            {!recommendations.length && strengths.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
-          </ul>
-        </div>
+        {recommendations.length > 0 && (
+          <div>
+            <span className="profile-scan-section-title">{locale === 'vi' ? 'Đề xuất từ bằng chứng CV' : 'Evidence-based suggestions'}</span>
+            <ul className="profile-recommendations">
+              {recommendations.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        )}
       </div>
       {result?.profile_action && (
         <ProfileConfirmationActions action={result.profile_action} onSendMessage={onSendMessage} />
       )}
+    </div>
+  );
+}
+
+function ProcessingSteps({ steps = [] }) {
+  if (!Array.isArray(steps) || !steps.length) return null;
+  return (
+    <ol className="processing-steps" aria-label="Tiến trình xử lý CV">
+      {steps.map((step) => (
+        <li className={step.status || 'pending'} key={step.key}>
+          <span className="processing-step-mark">
+            {step.status === 'completed' ? <CheckCircle2 size={15} /> : <span />}
+          </span>
+          <strong>{step.label_vi}</strong>
+          <small>{step.status === 'waiting_user' ? 'Chờ xác nhận' : step.status === 'completed' ? 'Hoàn tất' : step.status === 'running' ? 'Đang xử lý' : 'Chưa bắt đầu'}</small>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function CvDraftCard({ result, onSendMessage, locale = 'vi' }) {
+  const [submitting, setSubmitting] = useState('');
+  const [error, setError] = useState('');
+  const draft = result?.cv_draft || {};
+  const experiences = Array.isArray(draft.work_experiences) ? draft.work_experiences : [];
+  const education = Array.isArray(draft.education) ? draft.education : [];
+  const projects = Array.isArray(draft.projects) ? draft.projects : [];
+  const skills = Array.isArray(draft.skills) ? draft.skills : [];
+
+  const sendDraftAction = async (type) => {
+    if (submitting) return;
+    setSubmitting(type);
+    setError('');
+    const ok = await onSendMessage({
+      displayText: type === 'cv_draft.confirm'
+        ? 'Tôi xác nhận CV Draft này. Hãy tiếp tục chấm điểm.'
+        : 'Tôi muốn chỉnh sửa thông tin trong CV Draft.',
+      action: {
+        type,
+        cv_document_id: result.cv_document_id,
+        extraction_id: result.extraction_id
+      }
+    });
+    setSubmitting('');
+    if (!ok) setError('Không thể gửi thao tác. Vui lòng thử lại.');
+  };
+
+  return (
+    <div className="cv-draft-card">
+      <div className="cv-draft-heading">
+        <div>
+          <span className="profile-scan-eyebrow">CV Draft · Phiên bản {result?.draft_version || 1}</span>
+          <h3>{draft.full_name || 'Chưa nhận diện được họ tên'}</h3>
+          <p>{draft.headline || draft.summary || 'Kiểm tra lại các trường đã được trích xuất trước khi chấm điểm.'}</p>
+        </div>
+        <span className="cv-draft-status"><CheckCircle2 size={15} /> Đã trích xuất</span>
+      </div>
+
+      <ProcessingSteps steps={result?.processing_steps} />
+
+      <div className="cv-draft-facts">
+        <div><span>Vai trò mục tiêu</span><strong>{result?.target_role || draft.target_role_hint || 'Chưa xác định'}</strong></div>
+        <div><span>Cấp độ hiện tại ước tính</span><strong>{targetLevelLabels[locale]?.[result?.current_level_estimate] || 'Chưa đủ dữ liệu'}</strong></div>
+        <div><span>Email</span><strong>{draft.email || 'Không tìm thấy'}</strong></div>
+        <div><span>Địa điểm</span><strong>{draft.location || 'Không tìm thấy'}</strong></div>
+      </div>
+
+      <section className="cv-draft-section">
+        <h4>Kỹ năng được trích xuất</h4>
+        <div className="profile-skill-cloud">
+          {skills.map((skill) => <span key={skill}>{skill}</span>)}
+          {!skills.length && <em>Chưa tìm thấy kỹ năng rõ ràng.</em>}
+        </div>
+      </section>
+
+      <div className="cv-draft-columns">
+        <section className="cv-draft-section">
+          <h4>Kinh nghiệm</h4>
+          {experiences.length ? experiences.map((item, index) => (
+            <article key={`${item.title}-${item.organization}-${index}`}>
+              <strong>{item.title || 'Kinh nghiệm chưa có chức danh'}</strong>
+              <span>{[item.organization, item.duration].filter(Boolean).join(' · ')}</span>
+              {item.summary && <p>{item.summary}</p>}
+            </article>
+          )) : <p>Chưa tìm thấy mục kinh nghiệm.</p>}
+        </section>
+        <section className="cv-draft-section">
+          <h4>Học vấn và dự án</h4>
+          {education.map((item, index) => (
+            <article key={`${item.institution}-${index}`}>
+              <strong>{item.degree || item.field || 'Học vấn'}</strong>
+              <span>{[item.institution, item.duration].filter(Boolean).join(' · ')}</span>
+            </article>
+          ))}
+          {projects.map((item, index) => (
+            <article key={`${item.name}-${index}`}>
+              <strong>{item.name || 'Dự án'}</strong>
+              {item.summary && <p>{item.summary}</p>}
+            </article>
+          ))}
+          {!education.length && !projects.length && <p>Chưa tìm thấy học vấn hoặc dự án.</p>}
+        </section>
+      </div>
+
+      {Array.isArray(draft.missing_or_unclear) && draft.missing_or_unclear.length > 0 && (
+        <div className="cv-draft-warning"><AlertCircle size={16} /><span>{draft.missing_or_unclear.slice(0, 3).join(' ')}</span></div>
+      )}
+
+      <div className="cv-draft-actions">
+        <button disabled={Boolean(submitting)} onClick={() => sendDraftAction('cv_draft.confirm')} type="button">
+          {submitting === 'cv_draft.confirm' ? 'Đang xử lý...' : 'Xác nhận và chấm điểm'}
+        </button>
+        <button className="secondary" disabled={Boolean(submitting)} onClick={() => sendDraftAction('cv_draft.edit_requested')} type="button">
+          {submitting === 'cv_draft.edit_requested' ? 'Đang mở...' : 'Chỉnh sửa'}
+        </button>
+      </div>
+      {error && <div className="holland-form-error">{error}</div>}
+    </div>
+  );
+}
+
+function TargetLevelCard({ result, onSendMessage, locale = 'vi' }) {
+  const [submitting, setSubmitting] = useState('');
+  const [error, setError] = useState('');
+  const options = Array.isArray(result?.level_options) ? result.level_options : [];
+  const chooseLevel = async (targetLevel) => {
+    if (submitting) return;
+    setSubmitting(targetLevel);
+    setError('');
+    const option = options.find((item) => item.value === targetLevel);
+    const ok = await onSendMessage({
+      displayText: `Cấp độ mục tiêu của tôi là ${option?.label_vi || targetLevel}.`,
+      action: {
+        type: 'target_level.select',
+        cv_document_id: result.cv_document_id,
+        extraction_id: result.extraction_id,
+        target_level: targetLevel
+      }
+    });
+    setSubmitting('');
+    if (!ok) setError('Chưa lưu được cấp độ mục tiêu. Vui lòng thử lại.');
+  };
+  return (
+    <div className="target-level-card">
+      <span className="profile-scan-eyebrow">Benchmark theo cấp độ</span>
+      <h3>Chọn cấp độ bạn muốn ứng tuyển</h3>
+      <p>{result?.message_vi}</p>
+      {result?.current_level_estimate && (
+        <div className="level-estimate">CV hiện thể hiện gần mức <strong>{targetLevelLabels[locale]?.[result.current_level_estimate] || result.current_level_estimate}</strong>. Đây chỉ là gợi ý, không tự động thay đổi benchmark.</div>
+      )}
+      <div className="level-options">
+        {options.map((option) => (
+          <button disabled={Boolean(submitting)} key={option.value} onClick={() => chooseLevel(option.value)} type="button">
+            {submitting === option.value ? 'Đang chọn...' : targetLevelLabels[locale]?.[option.value] || option.label_vi}
+          </button>
+        ))}
+      </div>
+      {error && <div className="holland-form-error">{error}</div>}
     </div>
   );
 }
@@ -596,24 +767,17 @@ function HollandTestForm({ output, onSendMessage }) {
     const displayText = isGenericAssessment
       ? `Mình đã hoàn thành ${assessmentTitle} với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả vào hồ sơ của mình.`
       : `Mình đã hoàn thành Holland Test với ${questions.length} câu trả lời. Hãy chấm điểm và lưu kết quả RIASEC vào hồ sơ của mình.`;
-    const backendText = isGenericAssessment
-      ? [
-        `Mình đã hoàn thành ${assessmentTitle}. Hãy chấm điểm bằng profile_scanner tool với task="assessment_score", assessment_type="${assessmentType}", attempt_id="${attemptId}" và answers_json sau:`,
-        '```json',
-        JSON.stringify(payload, null, 2),
-        '```'
-      ].join('\n')
-      : [
-        `Mình đã hoàn thành Holland Test. Hãy chấm điểm bằng profile_scanner tool với task="holland_score", attempt_id="${attemptId}" và answers_json sau:`,
-        '```json',
-        JSON.stringify(payload, null, 2),
-        '```'
-      ].join('\n');
     setSubmitting(true);
     setSubmitError('');
     const ok = await onSendMessage({
       displayText,
-      backendText
+      action: {
+        type: 'assessment.submit',
+        assessment_type: isGenericAssessment ? assessmentType : 'holland_riasec',
+        attempt_id: attemptId,
+        question_set_hash: output?.question_set_hash || '',
+        answers: payload
+      }
     });
     setSubmitting(false);
     if (ok) {
@@ -1174,8 +1338,10 @@ function CalendarSyncWidget({ output, user, backendUrl }) {
   );
 }
 
-function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfileDocuments, locale = 'vi' }) {
+function ToolCallWidget({ toolName, input, output, status, onSendMessage, user, backendUrl, resolvedProfileDocuments, locale = 'vi' }) {
   const [expanded, setExpanded] = useState(true);
+  const [liveProgress, setLiveProgress] = useState(null);
+  const cvDocumentId = input?.cv_document_id;
   const info = agentInfo[toolName] || {
     label: toolName,
     icon: Terminal,
@@ -1186,6 +1352,8 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfi
   const isHollandOutput = normalizedOutput?.feature === 'holland_assessment';
   const isAssessmentOutput = normalizedOutput?.feature === 'assessment';
   const isProfileScanOutput = normalizedOutput?.feature === 'profile_scan';
+  const isCvDraftOutput = normalizedOutput?.feature === 'cv_draft';
+  const isTargetLevelOutput = normalizedOutput?.feature === 'target_level_confirmation';
   const isProfileConfirmationOutput = normalizedOutput?.feature === 'profile_confirmation';
   const isCareerAlignmentOutput = normalizedOutput?.feature === 'career_alignment';
   const shouldRenderHollandForm = (isHollandOutput || isAssessmentOutput)
@@ -1213,6 +1381,31 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfi
   const toolLabel = (isHollandOutput || isAssessmentOutput) && toolName === 'profile_scanner'
     ? `${info.label} · ${normalizedOutput?.title || 'Assessment'}`
     : info.label;
+
+  useEffect(() => {
+    if (toolName !== 'profile_scanner' || status !== 'running' || !cvDocumentId || !user?.google_id) {
+      return undefined;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(`${backendUrl}/profile-scanner/cv/status/${cvDocumentId}`, {
+          headers: { 'X-User-Id': user.google_id }
+        });
+        if (!response.ok || cancelled) return;
+        const payload = await response.json();
+        if (!cancelled) setLiveProgress(payload);
+      } catch {
+        // Progress polling is best-effort and must not interrupt the scan request.
+      }
+    };
+    poll();
+    const intervalId = window.setInterval(poll, 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [backendUrl, cvDocumentId, status, toolName, user?.google_id]);
 
   return (
     <div className={`tool-call-widget ${info.themeClass}`}>
@@ -1246,6 +1439,9 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfi
 
       {expanded && (
         <div className="tool-content">
+          {status === 'running' && liveProgress?.processing_steps && (
+            <ProcessingSteps steps={liveProgress.processing_steps} />
+          )}
           {output && (
             <div className="tool-section">
               {shouldRenderHollandForm ? (
@@ -1254,6 +1450,10 @@ function ToolCallWidget({ toolName, output, status, onSendMessage, resolvedProfi
                 <HollandResultCard result={normalizedOutput} locale={locale} />
               ) : shouldRenderProfileScanResult ? (
                 <ProfileScanResultCard result={profileScanResult} onSendMessage={onSendMessage} locale={locale} />
+              ) : isCvDraftOutput && status === 'completed' ? (
+                <CvDraftCard result={normalizedOutput} onSendMessage={onSendMessage} locale={locale} />
+              ) : isTargetLevelOutput && status === 'completed' ? (
+                <TargetLevelCard result={normalizedOutput} onSendMessage={onSendMessage} locale={locale} />
               ) : isCareerAlignmentOutput && status === 'completed' ? (
                 <CareerAlignmentCard result={normalizedOutput} />
               ) : isProfileConfirmationOutput && status === 'completed' ? (
@@ -2211,6 +2411,22 @@ export default function App() {
     const structuredMessage = textToSend && typeof textToSend === 'object' ? textToSend : null;
     const query = String(structuredMessage?.displayText || (!structuredMessage ? textToSend : '') || inputValue).trim();
     const backendQuery = String(structuredMessage?.backendText || query).trim();
+    const latestStructuredOutput = [...messages].reverse().flatMap((message) => (
+      [...(message.toolCalls || [])].reverse().map((toolCall) => normalizeToolOutput(toolCall.output))
+    )).find(Boolean);
+    const pendingDraftEdit = latestStructuredOutput?.feature === 'cv_draft_edit_prompt'
+      ? latestStructuredOutput
+      : null;
+    const structuredAction = structuredMessage?.action || (
+      !structuredMessage && pendingDraftEdit && query
+        ? {
+          type: 'cv_draft.apply_edit',
+          cv_document_id: pendingDraftEdit.cv_document_id,
+          extraction_id: pendingDraftEdit.extraction_id,
+          instruction: query
+        }
+        : null
+    );
     const activeCvAttachment = cvAttachment;
     if ((!query && !activeCvAttachment) || isLoading || !activeSessionId || !user) return false;
 
@@ -2284,7 +2500,8 @@ export default function App() {
         body: JSON.stringify({
           message: backendMessage,
           session_id: activeSessionId,
-          attachment: attachmentMeta
+          attachment: attachmentMeta,
+          action: structuredAction
         })
       });
 
@@ -2343,6 +2560,14 @@ export default function App() {
                 };
               }));
             } else if (data.type === 'tool_end') {
+              const normalizedToolOutput = normalizeToolOutput(data.output);
+              const toolFailed = normalizedToolOutput?.status === 'error' || Boolean(normalizedToolOutput?.error);
+              if (toolFailed) {
+                streamError = normalizedToolOutput?.message
+                  || normalizedToolOutput?.detail
+                  || normalizedToolOutput?.error
+                  || 'Agent không thể hoàn tất thao tác.';
+              }
               const existingLegacyCall = !data.tool_call_id
                 ? Array.from(streamedToolCalls.entries()).find(([, call]) => (
                   call.name === data.tool && call.status === 'running'
@@ -2355,7 +2580,7 @@ export default function App() {
                 name: data.tool,
                 input: previousToolCall?.input || data.input,
                 output: data.output,
-                status: 'completed'
+                status: toolFailed ? 'error' : 'completed'
               });
               setActiveAgents((prev) => prev.filter((tool) => tool !== data.tool));
               setMessages((prev) => prev.map((msg) => {
@@ -2369,7 +2594,7 @@ export default function App() {
                       name: data.tool,
                       input: data.input,
                       output: data.output,
-                      status: 'completed'
+                      status: toolFailed ? 'error' : 'completed'
                     }]
                   };
                 }
@@ -2377,7 +2602,7 @@ export default function App() {
                   ...msg,
                   toolCalls: msg.toolCalls.map((toolCall) => (
                     toolCall.id === toolCallKey
-                      ? { ...toolCall, output: data.output, status: 'completed' }
+                      ? { ...toolCall, output: data.output, status: toolFailed ? 'error' : 'completed' }
                       : toolCall
                   ))
                 };
@@ -2420,13 +2645,15 @@ export default function App() {
             });
           }
           if (data.type === 'tool_end') {
+            const normalizedToolOutput = normalizeToolOutput(data.output);
+            const toolFailed = normalizedToolOutput?.status === 'error' || Boolean(normalizedToolOutput?.error);
             const previousToolCall = streamedToolCalls.get(toolCallKey);
             streamedToolCalls.set(toolCallKey, {
               id: previousToolCall?.id || toolCallKey,
               name: data.tool,
               input: previousToolCall?.input || data.input,
               output: data.output,
-              status: 'completed'
+              status: toolFailed ? 'error' : 'completed'
             });
           }
         } catch (err) {
@@ -2471,7 +2698,7 @@ export default function App() {
       setIsLoading(false);
       setActiveAgents([]);
     }
-  }, [activeSessionId, backendUrl, cvAttachment, fetchSessions, inputValue, isLoading, uploadCvAttachment, user]);
+  }, [activeSessionId, backendUrl, cvAttachment, fetchSessions, inputValue, isLoading, messages, uploadCvAttachment, user]);
 
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
