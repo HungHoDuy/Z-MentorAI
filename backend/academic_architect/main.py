@@ -681,6 +681,7 @@ Format bài viết bằng GitHub Markdown đẹp mắt.
 @app.post("/chart/{chart_id}/get-alternatives")
 async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest):
     """Course Swap Step 1: Search top 5 alternative courses in Coursera vector database for a specified task."""
+    logger.info(f"get_course_alternatives called - chart_id: '{chart_id}', task_id: '{request.task_id}', skill_name: '{request.skill_name}'")
     db = get_firestore_client() if USE_FIRESTORE else None
     doc_ref = db.collection(GANTT_COLLECTION_NAME).document(chart_id).get() if USE_FIRESTORE else None
     
@@ -722,6 +723,7 @@ async def get_course_alternatives(chart_id: str, request: GetAlternativesRequest
 @app.post("/chart/{chart_id}/swap-course")
 async def swap_course(chart_id: str, request: SwapCourseRequest):
     """Course Swap Step 2: Replace specified task course with selected alternative ID and recalculate Gantt timeline."""
+    logger.info(f"swap_course called - chart_id: '{chart_id}', task_id: '{request.task_id}', selected_course_id: '{request.selected_course_id}'")
     chart_data = {}
     if USE_FIRESTORE:
         db = get_firestore_client()

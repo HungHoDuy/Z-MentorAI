@@ -387,8 +387,11 @@ def compact_tool_output_for_history(tool_name: str, output: Any) -> Any:
         compact.pop("alternative_courses", None)
         compact.pop("academic_plan", None)
     encoded = json.dumps(compact, ensure_ascii=False, default=str).encode("utf-8")
-    if len(encoded) <= 200_000:
+    size_bytes = len(encoded)
+    logger.info(f"Tool {tool_name} output size: {size_bytes} bytes")
+    if size_bytes <= 200_000:
         return compact
+    logger.warning(f"Tool {tool_name} output ({size_bytes} bytes) exceeded 200KB limit! Truncating...")
     summary = normalize_tool_output(compact) or {}
     return {
         "status": summary.get("status", "success"),
@@ -516,6 +519,8 @@ def build_history_messages(session: Optional[dict]) -> list:
                         tool_summary += "]"
             
             final_content = (content + tool_summary).strip()
+            if tool_summary:
+                logger.info(f"Appended system note to assistant memory: {tool_summary}")
             if final_content:
                 history_messages.append(AIMessage(content=final_content))
 
