@@ -380,6 +380,12 @@ def compact_tool_output_for_history(tool_name: str, output: Any) -> Any:
         compact.pop("structured_profile", None)
         compact.pop("benchmark_sources", None)
         compact.pop("raw_extracted_skills", None)
+    elif tool_name == "academic_architect_create_gantt" and normalized:
+        compact = dict(normalized)
+        compact.pop("matched_jobs", None)
+        compact.pop("courses", None)
+        compact.pop("alternative_courses", None)
+        compact.pop("academic_plan", None)
     encoded = json.dumps(compact, ensure_ascii=False, default=str).encode("utf-8")
     if len(encoded) <= 200_000:
         return compact
