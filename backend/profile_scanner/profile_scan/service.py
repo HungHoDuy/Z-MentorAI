@@ -13,6 +13,7 @@ from cv_intake.repository import (
     get_latest_cv_document,
     update_cv_document,
 )
+from cv_intake.progress import processing_steps
 from profile_analysis.service import analyze_cv_profile
 from profile_analysis.levels import infer_current_level, level_options, normalize_target_level
 from profile_ai_extraction.schemas import StructuredProfile
@@ -25,15 +26,7 @@ def build_profile_response(document: dict, analysis, profile_action: dict | None
         scan_status=analysis.scan_status,
         cv_document_id=analysis.cv_document_id,
         message_vi=analysis.message_vi,
-        next_status=(
-            "profile_updated"
-            if profile_action and profile_action.get("action_required") in {
-                "auto_update_profile",
-                "profile_current",
-                "profile_refreshed",
-            }
-            else "pending_profile_confirmation"
-        ),
+        next_status="pending_profile_confirmation" if profile_action else "completed",
         parser_type=document.get("parser_type"),
         text_char_count=document.get("text_char_count"),
         page_count=document.get("page_count"),
@@ -77,19 +70,20 @@ def build_profile_response(document: dict, analysis, profile_action: dict | None
         profile_action=profile_action,
         analysis_artifact_gcs_uri=analysis.analysis_artifact_gcs_uri,
         analyzed_at=analysis.analyzed_at,
-        processing_steps=[
-            {"key": "extract", "label_vi": "Trích xuất nội dung CV", "status": "completed"},
-            {"key": "draft", "label_vi": "Xác nhận CV Draft", "status": "completed"},
-            {"key": "benchmark", "label_vi": "Đối chiếu benchmark vai trò và cấp độ", "status": "completed"},
-            {"key": "score", "label_vi": "Chấm điểm theo bằng chứng", "status": "completed"},
-            {"key": "feedback", "label_vi": "Tạo nhận xét cải thiện", "status": "completed"},
-        ],
+        processing_steps=processing_steps("completed"),
     )
 
 
 def build_draft_response(document: dict, draft: dict) -> ProfileResponse:
     profile = StructuredProfile(**draft["structured_profile"])
     current_level, level_confidence, level_evidence = infer_current_level(profile)
+    profile_payload = profile.as_firestore_payload()
+    profile_issues = list(profile_payload.get("profile_issues") or [])
+    existing_issue_fields = {issue.get("field") for issue in profile_issues if isinstance(issue, dict)}
+    for field in ("email", "phone", "location"):
+        if not getattr(profile, field) and field not in existing_issue_fields:
+            profile_issues.append({"field": field, "code": "missing", "severity": "warning"})
+    profile_payload["profile_issues"] = profile_issues
     return ProfileResponse(
         status="success",
         feature="cv_draft",
@@ -98,8 +92,8 @@ def build_draft_response(document: dict, draft: dict) -> ProfileResponse:
         extraction_id=draft["extraction_id"],
         draft_status=draft.get("status", "draft"),
         draft_version=draft.get("version", 1),
-        cv_draft=profile.as_firestore_payload(),
-        message_vi="Hệ thống đã trích xuất CV. Vui lòng kiểm tra bản nháp trước khi chấm điểm.",
+        cv_draft=profile_payload,
+        message_vi="Hệ thống đã đọc CV. Vui lòng kiểm tra hồ sơ được nhận diện trước khi đánh giá.",
         next_status="pending_draft_confirmation",
         parser_type=document.get("parser_type"),
         text_char_count=document.get("text_char_count"),
@@ -110,15 +104,10 @@ def build_draft_response(document: dict, draft: dict) -> ProfileResponse:
         current_level_confidence=level_confidence,
         current_level_evidence=level_evidence,
         available_actions=[
-            {"type": "cv_draft.confirm", "label_vi": "Xác nhận và chấm điểm"},
-            {"type": "cv_draft.edit_requested", "label_vi": "Chỉnh sửa"},
+            {"type": "cv_draft.confirm", "label_vi": "Xác nhận thông tin và đánh giá"},
+            {"type": "cv_draft.edit_requested", "label_vi": "Chỉnh sửa thông tin"},
         ],
-        processing_steps=[
-            {"key": "extract", "label_vi": "Trích xuất nội dung CV", "status": "completed"},
-            {"key": "draft", "label_vi": "Kiểm tra CV Draft", "status": "waiting_user"},
-            {"key": "benchmark", "label_vi": "Đối chiếu benchmark", "status": "pending"},
-            {"key": "score", "label_vi": "Chấm điểm theo bằng chứng", "status": "pending"},
-        ],
+        processing_steps=processing_steps("draft_ready"),
     )
 
 
@@ -139,9 +128,10 @@ def build_level_confirmation_response(document: dict, draft: dict) -> ProfileRes
         current_level_evidence=level_evidence,
         level_options=level_options(),
         message_vi=(
-            "CV chưa nêu rõ cấp độ mục tiêu. Hãy chọn cấp độ bạn muốn ứng tuyển để hệ thống dùng đúng benchmark."
+            "CV chưa nêu rõ cấp độ mục tiêu. Hãy chọn cấp độ bạn muốn ứng tuyển để hệ thống dùng tiêu chí đánh giá phù hợp."
         ),
         next_status="pending_target_level",
+        processing_steps=processing_steps("awaiting_target_level"),
     )
 
 

@@ -271,7 +271,14 @@ def get_profile_workspace(user_id: str) -> dict:
             "headline": canonical.get("headline"),
             "summary": canonical.get("summary"),
             "skills": canonical.get("normalized_skills") or canonical.get("skills") or [],
+            "work_experiences": canonical.get("work_experiences") or [],
+            "education_records": canonical.get("education_records") or [],
+            "projects": canonical.get("projects") or [],
+            "score_dimensions": canonical.get("score_dimensions") or [],
+            "target_role": canonical.get("target_role"),
+            "target_level": canonical.get("target_level"),
             "profile_version": canonical.get("profile_version"),
+            "updated_at": canonical.get("updated_at"),
         },
     }
 
@@ -353,11 +360,11 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
             return "Đã tìm kiếm xu hướng thị trường và thông tin tuyển dụng."
         elif name == "profile_scanner":
             if output.get("feature") == "cv_draft":
-                return "Đã tạo CV Draft và đang chờ người dùng xác nhận hoặc yêu cầu chỉnh sửa."
+                return "Đã nhận diện thông tin trong CV và đang chờ người dùng xác nhận hoặc yêu cầu chỉnh sửa."
             elif output.get("feature") == "cv_draft_edit_prompt":
-                return "Đang chờ người dùng mô tả thông tin cần chỉnh sửa trong CV Draft."
+                return "Đang chờ người dùng mô tả thông tin cần chỉnh sửa trong hồ sơ được nhận diện."
             elif output.get("feature") == "target_level_confirmation":
-                return "Đang chờ người dùng chọn cấp độ mục tiêu để áp dụng đúng benchmark."
+                return "Đang chờ người dùng chọn cấp độ mục tiêu để áp dụng tiêu chí đánh giá phù hợp."
             elif output.get("feature") == "profile_confirmation":
                 return output.get("message_vi", "Đã cập nhật trạng thái hồ sơ cá nhân.")
             elif output.get("feature") == "career_alignment":

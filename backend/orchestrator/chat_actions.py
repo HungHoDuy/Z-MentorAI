@@ -12,6 +12,21 @@ def build_structured_tool_request(
         return None
 
     action_type = str(action.get("type") or "").strip().lower()
+    if action_type == "profile.save_decision":
+        cv_document_id = str(action.get("cv_document_id") or "").strip()
+        decision = str(action.get("decision") or "").strip().lower()
+        if not cv_document_id or decision not in {"accept", "update", "overwrite", "reject"}:
+            raise HTTPException(status_code=400, detail="cv_document_id and a valid profile decision are required.")
+        return {
+            "tool": "profile_scanner",
+            "input": {
+                "user_id": user_id,
+                "task": "profile_confirm",
+                "cv_document_id": cv_document_id,
+                "decision": decision,
+            },
+        }
+
     if action_type in {
         "cv_draft.confirm",
         "cv_draft.edit_requested",

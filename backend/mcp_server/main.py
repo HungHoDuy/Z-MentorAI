@@ -158,9 +158,9 @@ def profile_scanner(
     - assessment_start: start a supported assessment, for example assessment_type="multiple_intelligences".
     - assessment_score: score and save a supported assessment.
     - profile_confirm: accept, update, overwrite, or reject a CV profile proposal.
-    - cv_draft_confirm: confirm an extracted CV draft and continue scoring.
-    - cv_draft_edit_requested: ask the user what should be corrected in the CV draft.
-    - cv_draft_apply_edit: apply a user correction to a CV draft, then continue scoring.
+    - cv_draft_confirm: confirm the recognized profile and continue scoring.
+    - cv_draft_edit_requested: ask the user what should be corrected in the recognized profile.
+    - cv_draft_apply_edit: apply a user correction to the recognized profile, then continue scoring.
     - target_level_select: select the target seniority cohort and continue scoring.
     - career_alignment: synthesize canonical CV profile, Holland, and MI results.
 
@@ -230,7 +230,7 @@ def profile_scanner(
             "feature": "cv_draft_edit_prompt",
             "cv_document_id": cv_document_id,
             "extraction_id": extraction_id,
-            "message_vi": "Bạn hãy nhắn thông tin cần chỉnh sửa trong CV Draft. Hệ thống sẽ cập nhật đúng trường và hiển thị kết quả mới.",
+            "message_vi": "Bạn hãy nhắn thông tin cần chỉnh sửa trong hồ sơ được nhận diện. Hệ thống sẽ cập nhật đúng trường và hiển thị kết quả mới.",
         }
 
     if normalized_task in {"career_alignment", "alignment", "synthesize_alignment"}:

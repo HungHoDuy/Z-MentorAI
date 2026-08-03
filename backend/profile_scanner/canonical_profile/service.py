@@ -108,8 +108,8 @@ def build_profile_action(
             "identity_match_version": IDENTITY_MATCH_VERSION,
             "message_vi": f"CV này đang có tên {display_name}. Bạn có muốn lưu thông tin thành hồ sơ cá nhân không?",
             "options": [
-                {"decision": "accept", "label_vi": "Có, lưu hồ sơ"},
-                {"decision": "reject", "label_vi": "Không"},
+                {"decision": "accept", "label_vi": "Lưu làm hồ sơ hiện tại", "label_en": "Save as current profile"},
+                {"decision": "reject", "label_vi": "Không lưu", "label_en": "Do not save"},
             ],
         }
 
@@ -118,23 +118,19 @@ def build_profile_action(
         **candidate_identity,
     }
     match_score, signals = identity_match_score(existing_profile, comparison_candidate)
-    if match_score >= 0.80:
-        action_required = "auto_update_profile"
-        message = f"Đã xác nhận CV thuộc {display_name} và cập nhật hồ sơ bằng dữ liệu mới nhất."
-        options = []
-    elif match_score >= 0.50:
+    if match_score >= 0.50:
         action_required = "confirm_profile_update"
-        message = f"CV mới có nhiều thông tin trùng với hồ sơ {display_name}. Bạn có muốn cập nhật hồ sơ không?"
+        message = f"CV mới có thông tin phù hợp với hồ sơ {display_name}. Bạn có muốn dùng kết quả này để cập nhật hồ sơ nghề nghiệp hiện tại không?"
         options = [
-            {"decision": "update", "label_vi": "Cập nhật"},
-            {"decision": "reject", "label_vi": "Giữ hồ sơ cũ"},
+            {"decision": "update", "label_vi": "Cập nhật bằng CV này", "label_en": "Update with this CV"},
+            {"decision": "reject", "label_vi": "Giữ hồ sơ hiện tại", "label_en": "Keep current profile"},
         ]
     else:
         action_required = "confirm_profile_overwrite"
         message = f"Thông tin người trong CV mới không khớp rõ với hồ sơ hiện tại. Bạn có muốn ghi đè bằng hồ sơ {display_name} không?"
         options = [
-            {"decision": "overwrite", "label_vi": "Ghi đè hồ sơ"},
-            {"decision": "reject", "label_vi": "Không"},
+            {"decision": "overwrite", "label_vi": "Thay thế hồ sơ hiện tại", "label_en": "Replace current profile"},
+            {"decision": "reject", "label_vi": "Không thay đổi", "label_en": "Make no changes"},
         ]
 
     return {
@@ -171,6 +167,7 @@ def build_canonical_payload(
         "benchmark_status": analysis.get("benchmark_status"),
         "skill_normalization_version": analysis.get("skill_normalization_version"),
         "target_role": analysis.get("target_role"),
+        "target_level": analysis.get("target_level"),
         "grade": analysis.get("grade"),
         "total_score": analysis.get("total_score"),
         "normalized_skills": analysis.get("normalized_skills", []),
@@ -201,6 +198,7 @@ def build_canonical_payload(
         "education_records": analysis.get("education_records", []),
         "projects": analysis.get("projects", []),
         "target_role": analysis.get("target_role"),
+        "target_level": analysis.get("target_level"),
         "benchmark_profile_id": analysis.get("benchmark_profile_id"),
         "benchmark_version": analysis.get("benchmark_version"),
         "benchmark_type": analysis.get("benchmark_type"),
@@ -234,32 +232,39 @@ async def prepare_profile_action(document: dict, analysis: dict) -> dict:
         and document.get("profile_link_status") == "active"
     ):
         if existing_profile.get("analysis_fingerprint") != candidate_profile_payload.get("analysis_fingerprint"):
-            saved_profile = await save_profile_version(
-                profile=candidate_profile_payload,
-                previous_profile=existing_profile,
-                cv_document_id=document["cv_document_id"],
-            )
-            return {
-                "action_required": "profile_refreshed",
+            action = {
+                "action_required": "confirm_profile_refresh",
                 "cv_document_id": document["cv_document_id"],
                 "candidate_identity": analysis.get("candidate_identity", {}),
-                "profile_version": saved_profile.get("profile_version"),
-                "profile_status": "updated",
                 "message_vi": (
-                    "CV hiện hành đã được phân tích lại bằng phiên bản benchmark mới. "
-                    "Hồ sơ cá nhân đã được đồng bộ và lưu thành một phiên bản mới."
+                    "CV hiện tại đã được đánh giá lại bằng dữ liệu mới. "
+                    "Bạn có muốn lưu kết quả này thành một phiên bản hồ sơ mới không?"
                 ),
-                "options": [],
+                "options": [
+                    {"decision": "update", "label_vi": "Lưu phiên bản đánh giá mới", "label_en": "Save new assessment version"},
+                    {"decision": "reject", "label_vi": "Giữ phiên bản đang lưu", "label_en": "Keep saved version"},
+                ],
             }
-        return {
-            "action_required": "profile_current",
-            "cv_document_id": document["cv_document_id"],
-            "candidate_identity": analysis.get("candidate_identity", {}),
-            "profile_version": existing_profile.get("profile_version"),
-            "profile_status": "unchanged",
-            "message_vi": "CV này đang là nguồn dữ liệu hiện hành của hồ sơ cá nhân.",
-            "options": [],
-        }
+        else:
+            action = {
+                "action_required": "confirm_profile_current",
+                "cv_document_id": document["cv_document_id"],
+                "candidate_identity": analysis.get("candidate_identity", {}),
+                "message_vi": (
+                    "Kết quả đánh giá trùng với phiên bản hồ sơ đang lưu. "
+                    "Bạn có muốn tiếp tục giữ CV này làm hồ sơ nghề nghiệp hiện tại không?"
+                ),
+                "options": [
+                    {"decision": "accept", "label_vi": "Giữ làm hồ sơ hiện tại", "label_en": "Keep as current profile"},
+                    {"decision": "reject", "label_vi": "Không thay đổi", "label_en": "Make no changes"},
+                ],
+            }
+        await mark_profile_decision(document["cv_document_id"], {
+            "profile_action": action,
+            "profile_link_status": "pending_confirmation",
+        })
+        return action
+
     candidate_identity = analysis.get("candidate_identity", {})
     candidate_profile = {
         "education_records": analysis.get("education_records", []),
@@ -284,15 +289,6 @@ async def prepare_profile_action(document: dict, analysis: dict) -> dict:
             "identity_match_score": action.get("identity_match_score"),
         },
     )
-
-    if action["action_required"] == "auto_update_profile":
-        saved_profile = await save_profile_version(
-            profile=candidate_profile_payload,
-            previous_profile=existing_profile,
-            cv_document_id=document["cv_document_id"],
-        )
-        action["profile_version"] = saved_profile["profile_version"]
-        action["profile_status"] = "updated"
     return action
 
 
@@ -312,22 +308,7 @@ async def confirm_profile_decision(request: ProfileDecisionRequest) -> ProfileDe
         analysis=analysis,
         previous_profile=existing_profile,
     )
-    if (
-        existing_profile
-        and existing_profile.get("active_cv_document_id") == request.cv_document_id
-        and document.get("profile_link_status") == "active"
-        and existing_profile.get("analysis_fingerprint") == candidate_profile_payload.get("analysis_fingerprint")
-    ):
-        return ProfileDecisionResponse(
-            user_id=request.user_id,
-            cv_document_id=request.cv_document_id,
-            decision=request.decision,
-            profile_status="unchanged",
-            profile_version=existing_profile.get("profile_version"),
-            active_cv_document_id=request.cv_document_id,
-            message_vi="CV này đã là nguồn dữ liệu hiện hành của hồ sơ cá nhân.",
-        )
-    action = build_profile_action(
+    action = document.get("profile_action") or build_profile_action(
         existing_profile=existing_profile,
         candidate_identity=analysis.get("candidate_identity", {}),
         cv_document_id=request.cv_document_id,
@@ -339,8 +320,13 @@ async def confirm_profile_decision(request: ProfileDecisionRequest) -> ProfileDe
 
     if request.decision == "reject":
         await mark_profile_decision(request.cv_document_id, {
-            "profile_link_status": "rejected",
+            "profile_link_status": (
+                "active"
+                if existing_profile and existing_profile.get("active_cv_document_id") == request.cv_document_id
+                else "rejected"
+            ),
             "profile_decided_at": utc_now(),
+            "profile_decision": request.decision,
         })
         return ProfileDecisionResponse(
             user_id=request.user_id,
@@ -356,13 +342,34 @@ async def confirm_profile_decision(request: ProfileDecisionRequest) -> ProfileDe
         "confirm_profile_creation": {"accept"},
         "confirm_profile_update": {"update", "accept"},
         "confirm_profile_overwrite": {"overwrite"},
-        "auto_update_profile": {"update", "accept"},
+        "confirm_profile_refresh": {"update", "accept"},
+        "confirm_profile_current": {"accept"},
     }
-    allowed = expected_decisions[action["action_required"]]
+    allowed = expected_decisions.get(action.get("action_required"), set())
     if request.decision not in allowed:
         raise HTTPException(
             status_code=409,
             detail=f"Decision {request.decision} is invalid for {action['action_required']}.",
+        )
+
+    if (
+        existing_profile
+        and existing_profile.get("active_cv_document_id") == request.cv_document_id
+        and existing_profile.get("analysis_fingerprint") == candidate_profile_payload.get("analysis_fingerprint")
+    ):
+        await mark_profile_decision(request.cv_document_id, {
+            "profile_link_status": "active",
+            "profile_decided_at": utc_now(),
+            "profile_decision": request.decision,
+        })
+        return ProfileDecisionResponse(
+            user_id=request.user_id,
+            cv_document_id=request.cv_document_id,
+            decision=request.decision,
+            profile_status="unchanged",
+            profile_version=existing_profile.get("profile_version"),
+            active_cv_document_id=request.cv_document_id,
+            message_vi="CV này đã là nguồn dữ liệu hiện hành của hồ sơ cá nhân.",
         )
 
     saved_profile = await save_profile_version(
@@ -370,6 +377,10 @@ async def confirm_profile_decision(request: ProfileDecisionRequest) -> ProfileDe
         previous_profile=existing_profile,
         cv_document_id=request.cv_document_id,
     )
+    await mark_profile_decision(request.cv_document_id, {
+        "profile_decided_at": utc_now(),
+        "profile_decision": request.decision,
+    })
     logger.info(
         "Saved canonical profile version",
         extra={

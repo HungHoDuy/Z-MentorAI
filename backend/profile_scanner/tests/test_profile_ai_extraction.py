@@ -33,6 +33,19 @@ def test_structured_profile_uses_defaults_for_null_model_fields():
     assert profile.projects[0].skills == ["Python"]
 
 
+def test_structured_profile_accepts_localizable_profile_issues():
+    profile = StructuredProfile(
+        full_name="Candidate",
+        profile_issues=[
+            {"field": "email", "code": "missing", "severity": "warning"},
+            {"field": "location", "code": "unclear", "severity": "info"},
+        ],
+    )
+
+    assert profile.profile_issues[0].field == "email"
+    assert profile.as_firestore_payload()["profile_issues"][1]["code"] == "unclear"
+
+
 class ProfileAiExtractionTests(unittest.TestCase):
     def test_extraction_and_revision_use_separate_prompts(self):
         extraction_payload = {

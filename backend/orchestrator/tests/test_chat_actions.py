@@ -30,6 +30,20 @@ class ChatActionTests(unittest.TestCase):
         self.assertEqual(request["input"]["user_id"], "authenticated-user")
         self.assertEqual(request["input"]["task"], "cv_draft_confirm")
 
+    def test_profile_save_decision_routes_without_llm(self):
+        request = build_structured_tool_request({
+            "type": "profile.save_decision",
+            "user_id": "attacker",
+            "cv_document_id": "cv-1",
+            "decision": "update",
+        }, "authenticated-user")
+        self.assertEqual(request["input"], {
+            "user_id": "authenticated-user",
+            "task": "profile_confirm",
+            "cv_document_id": "cv-1",
+            "decision": "update",
+        })
+
     def test_invalid_score_is_rejected(self):
         with self.assertRaises(HTTPException):
             build_structured_tool_request({

@@ -113,7 +113,14 @@ def build_extraction_prompt(parsed_text: str, target_role: str | None, message: 
             "certifications": ["string"],
             "achievements": ["string"],
             "career_readiness_signals": ["communication|teamwork|leadership|critical thinking|professionalism|technology|career self-development"],
-            "missing_or_unclear": ["string"],
+            "missing_or_unclear": ["legacy free-text warning; keep empty for new extractions"],
+            "profile_issues": [
+                {
+                    "field": "email|phone|location|target_role|experience|education|skills|other",
+                    "code": "missing|unclear|needs_review",
+                    "severity": "info|warning"
+                }
+            ],
             "confidence": 0.0
         },
         "cv_text": clipped_text,
