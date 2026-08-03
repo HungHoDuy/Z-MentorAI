@@ -37,6 +37,9 @@ def _heuristic_profile(parsed_text: str) -> StructuredProfile:
             if any(token in line.lower() for token in ("experience", "developer", "engineer"))
         ][:8],
         missing_or_unclear=["Một số trường cần được người dùng kiểm tra lại do AI extraction không khả dụng."],
+        profile_issues=[
+            {"field": "other", "code": "needs_review", "severity": "warning"},
+        ],
         confidence=0.35,
     )
 

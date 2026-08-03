@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -43,6 +43,12 @@ class StructuredProject(NullSafeExtractionModel):
     url: str = ""
 
 
+class ProfileIssue(NullSafeExtractionModel):
+    field: str
+    code: Literal["missing", "unclear", "needs_review"] = "needs_review"
+    severity: Literal["info", "warning"] = "warning"
+
+
 class StructuredProfile(NullSafeExtractionModel):
     extraction_source: str = "ai"
     full_name: str = ""
@@ -63,6 +69,7 @@ class StructuredProfile(NullSafeExtractionModel):
     achievements: list[str] = Field(default_factory=list)
     career_readiness_signals: list[str] = Field(default_factory=list)
     missing_or_unclear: list[str] = Field(default_factory=list)
+    profile_issues: list[ProfileIssue] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
     def as_firestore_payload(self) -> dict[str, Any]:
