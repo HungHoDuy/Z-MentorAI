@@ -49,6 +49,11 @@ class FakeEvidenceRepository:
         return self.evidence
 
 
+class RaisingEvidenceRepository:
+    def list_for_external_outlook(self, **kwargs: object) -> list[TrendEvidenceMatch]:
+        raise AssertionError("cached evidence repository should not be called without job_family_id")
+
+
 class FakeLiveSearchService:
     def __init__(self, evidence: list[TrendEvidenceMatch], *, raises: bool = False) -> None:
         self.evidence = evidence
@@ -209,6 +214,26 @@ def test_external_outlook_falls_back_to_cached_evidence_when_live_search_times_o
     assert result.signal == "external_outlook"
     assert result.data["claims"][0]["exact_claim"] == "Sales marketing cached outlook."
     assert evidence.calls == 1
+
+def test_external_outlook_without_family_does_not_query_cached_evidence() -> None:
+    live_search = FakeLiveSearchService([])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        RaisingEvidenceRepository(),
+        live_search=live_search,
+    ).evaluate(
+        TrendQuery(
+            intent=TrendQueryIntent.EXTERNAL_OUTLOOK,
+            job_family_id=None,
+            location_id="vietnam",
+        ),
+        user_query="Nhung nganh nghe nao dang co nhu cau tuyen dung cao nhat hien nay?",
+    )
+
+    assert result.signal == "insufficient_evidence"
+    assert result.confidence == "low"
+    assert result.data["evidence_count"] == 0
 
 def _service(
     snapshot_read: TrendSnapshotReadResult | None,
