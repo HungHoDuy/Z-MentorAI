@@ -28,6 +28,9 @@ ALLOWED_MIME_TYPES = {
 }
 MAX_DOCX_ARCHIVE_ENTRIES = 2000
 MAX_DOCX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+PDF_HEADER_SCAN_BYTES = 1024
+PDF_LEADING_WHITESPACE = b"\t\n\f\r "
+UTF8_BOM = b"\xef\xbb\xbf"
 
 
 def utc_now() -> str:
@@ -59,7 +62,11 @@ def file_kind_from_extension(extension: str) -> str:
 
 def validate_file_signature(content: bytes, extension: str) -> None:
     if extension == "pdf":
-        if not content.startswith(b"%PDF-"):
+        header_offset = content[:PDF_HEADER_SCAN_BYTES].find(b"%PDF-")
+        leading_bytes = content[:header_offset] if header_offset >= 0 else b""
+        if leading_bytes.startswith(UTF8_BOM):
+            leading_bytes = leading_bytes[len(UTF8_BOM):]
+        if header_offset < 0 or leading_bytes.strip(PDF_LEADING_WHITESPACE):
             raise HTTPException(
                 status_code=400,
                 detail="The uploaded file is not a valid PDF document.",

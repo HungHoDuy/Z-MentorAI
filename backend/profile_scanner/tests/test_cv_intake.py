@@ -32,6 +32,21 @@ def test_pdf_signature_validation_rejects_fake_pdf():
         raise AssertionError("Expected fake PDF to be rejected")
 
 
+@pytest.mark.parametrize(
+    "prefix",
+    [b"\n", b"\r\n", b" \t\n", b"\xef\xbb\xbf\r\n"],
+)
+def test_pdf_signature_validation_accepts_safe_leading_bytes(prefix):
+    validate_file_signature(prefix + b"%PDF-1.7\n%%EOF", "pdf")
+
+
+def test_pdf_signature_validation_rejects_non_whitespace_preamble():
+    with pytest.raises(HTTPException) as error:
+        validate_file_signature(b"untrusted-prefix%PDF-1.7\n%%EOF", "pdf")
+
+    assert error.value.status_code == 400
+
+
 def test_docx_signature_validation_accepts_required_parts():
     validate_file_signature(build_minimal_docx(), "docx")
 
