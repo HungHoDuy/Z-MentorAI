@@ -47,6 +47,49 @@ def test_reads_mcp_text_content_blocks() -> None:
     assert "[ILO - Report](https://ilo.org/report)" in answer
 
 
+def test_deduplicates_existing_markdown_link_with_tracking_variants() -> None:
+    answer = (
+        "Both roles have potential.\n\n"
+        "Nguồn tham khảo:\n"
+        "- [TopDev - Comparison](https://topdev.vn/compare-role/)"
+    )
+    tool_call = {
+        "name": "market_scout",
+        "output": {
+            "sources": [
+                {
+                    "publisher": "TopDev",
+                    "source_name": "Comparison",
+                    "url": "https://topdev.vn/compare-role?utm_source=tavily",
+                },
+                {
+                    "publisher": "TopDev",
+                    "source_name": "Comparison duplicate",
+                    "url": "https://topdev.vn/compare-role#summary",
+                },
+            ]
+        },
+    }
+
+    assert market_scout_source_suffix(answer, [tool_call]) == ""
+
+
+def test_deduplicates_same_source_label_with_different_urls() -> None:
+    tool_call = {
+        "name": "market_scout",
+        "output": {
+            "sources": [
+                {"publisher": "TopDev", "source_name": "Role comparison", "url": "https://topdev.vn/article/1"},
+                {"publisher": "TopDev", "source_name": "Role comparison", "url": "https://topdev.vn/article/2"},
+            ]
+        },
+    }
+
+    answer = append_market_scout_sources("Answer.", [tool_call])
+
+    assert answer.count("TopDev - Role comparison") == 1
+
+
 def _tool_call() -> dict:
     return {
         "name": "market_scout",
