@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 import logging
 
 from chat_actions import build_structured_tool_request
+from market_scout_citations import market_scout_source_suffix
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orchestrator")
@@ -385,6 +386,23 @@ def summarize_tool_calls(tool_calls: list[dict]) -> str:
                     return profile_action["message_vi"]
                 return "Đã quét và phân tích hồ sơ/CV của bạn."
     return "Agent đã hoàn tất bước xử lý."
+
+
+def tool_calls_from_agent_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    tool_calls: list[dict[str, Any]] = []
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        tool_calls.append(
+            {
+                "id": str(getattr(message, "tool_call_id", "") or ""),
+                "name": str(getattr(message, "name", "") or ""),
+                "input": None,
+                "output": serialize_tool_output(getattr(message, "content", None)),
+                "status": "completed",
+            }
+        )
+    return tool_calls
 
 
 def compact_tool_output_for_history(tool_name: str, output: Any) -> Any:
@@ -1245,7 +1263,12 @@ async def chat_with_orchestrator_stream(request: ChatRequest, x_user_id: str = H
                             if text:
                                 assistant_content += text
                                 yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
-                                
+
+            source_suffix = market_scout_source_suffix(assistant_content, assistant_tool_calls)
+            if source_suffix:
+                assistant_content += source_suffix
+                yield f"data: {json.dumps({'type': 'token', 'content': source_suffix})}\n\n"
+
             # Save the exchange to history
             await save_chat_exchange(
                 x_user_id,
@@ -1273,6 +1296,7 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
         
         result = await agent.ainvoke({"messages": messages})
         content = result["messages"][-1].content
+        assistant_tool_calls = tool_calls_from_agent_messages(result.get("messages", []))
         
         if isinstance(content, list):
             final_response = "".join(
@@ -1281,12 +1305,15 @@ async def chat_with_orchestrator(request: ChatRequest, x_user_id: str = Header(.
             )
         else:
             final_response = str(content)
-            
+
+        final_response += market_scout_source_suffix(final_response, assistant_tool_calls)
+
         await save_chat_exchange(
             x_user_id,
             request.session_id,
             request.message,
             final_response,
+            assistant_tool_calls,
             user_attachment=request.attachment,
         )
         
