@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 def append_market_scout_sources(answer: str, tool_calls: list[dict[str, Any]]) -> str:
@@ -13,10 +15,15 @@ def market_scout_source_suffix(answer: str, tool_calls: list[dict[str, Any]]) ->
     if not sources:
         return ""
 
-    existing_urls = {url for url in (_source_url(source) for source in sources) if url in answer}
+    existing_url_keys = {_canonical_url(url) for url in _urls_in_text(answer)}
+    existing_label_keys = {_canonical_label(label) for label in _markdown_link_labels(answer)}
     has_source_heading = "nguồn tham khảo" in answer.casefold() or "nguon tham khao" in answer.casefold()
     if has_source_heading:
-        lines = _source_lines(sources, excluded_urls=existing_urls)
+        lines = _source_lines(
+            sources,
+            excluded_url_keys=existing_url_keys,
+            excluded_label_keys=existing_label_keys,
+        )
         return "\n" + "\n".join(lines) if lines else ""
 
     lines = _source_lines(sources)
@@ -46,18 +53,23 @@ def _market_scout_sources(tool_calls: list[dict[str, Any]]) -> list[dict[str, An
 def _source_lines(
     sources: list[dict[str, Any]],
     *,
-    excluded_urls: set[str] | None = None,
+    excluded_url_keys: set[str] | None = None,
+    excluded_label_keys: set[str] | None = None,
 ) -> list[str]:
     lines: list[str] = []
-    seen_urls: set[str] = set(excluded_urls or set())
+    seen_url_keys: set[str] = set(excluded_url_keys or set())
+    seen_label_keys: set[str] = set(excluded_label_keys or set())
     for source in sources:
         url = _source_url(source)
-        if not url or url in seen_urls:
-            continue
-        seen_urls.add(url)
+        url_key = _canonical_url(url)
         publisher = _label(source.get("publisher"))
         source_name = _label(source.get("source_name") or source.get("citation") or source.get("title"))
         label = " - ".join(part for part in (publisher, source_name) if part) or "Nguồn tham khảo"
+        label_key = _canonical_label(label)
+        if not url or not url_key or url_key in seen_url_keys or label_key in seen_label_keys:
+            continue
+        seen_url_keys.add(url_key)
+        seen_label_keys.add(label_key)
         lines.append(f"- [{label}]({url})")
         if len(lines) >= 5:
             break
@@ -87,6 +99,42 @@ def _source_url(source: dict[str, Any]) -> str:
     return str(source.get("url") or "").strip()
 
 
+def _urls_in_text(value: str) -> list[str]:
+    return re.findall(r"https?://[^\s)>\]]+", value)
+
+
+def _markdown_link_labels(value: str) -> list[str]:
+    return re.findall(r"\[([^\]]+)\]\(https?://", value)
+
+
+def _canonical_url(value: str) -> str:
+    try:
+        parts = urlsplit(value.strip())
+    except ValueError:
+        return ""
+    if not parts.scheme or not parts.netloc:
+        return ""
+    filtered_query = [
+        (key, item)
+        for key, item in parse_qsl(parts.query, keep_blank_values=True)
+        if not key.casefold().startswith("utm_") and key.casefold() not in {"src", "source", "ref"}
+    ]
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit(
+        (
+            parts.scheme.casefold(),
+            parts.netloc.casefold(),
+            path,
+            urlencode(filtered_query),
+            "",
+        )
+    )
+
+
 def _label(value: Any) -> str:
     text = " ".join(str(value or "").replace("[", "").replace("]", "").split())
     return text[:100].strip()
+
+
+def _canonical_label(value: str) -> str:
+    return " ".join(value.casefold().split())
