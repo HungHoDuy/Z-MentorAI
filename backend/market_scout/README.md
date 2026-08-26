@@ -225,9 +225,10 @@ Logic hien tai:
 1. Dung `AllowlistedWebSearchService` goi Tavily Search.
 2. Search chi trong cac domain/source da cau hinh.
 3. `ExternalOutlookLiveSearchService` lay snippet/content tu ket qua search.
-4. `ExternalOutlookEvidenceExtractor` dung LLM de extract claim co cau truc.
-5. Neu live search loi/timeout/khong co evidence tot, fallback sang cached `trend_evidence`.
-6. Summary bat buoc dua link nguon markdown de user bam duoc.
+4. Lay toi da 5 ket qua, loc source reliability va gioi han toi da 8.000 ky tu moi nguon.
+5. Dua web results da kiem soat truc tiep cho Trend LLM de summarize, khong filter theo `job_family_id`.
+6. Neu live search loi/timeout/khong co ket qua, fallback sang cached `trend_evidence` khi query co job family.
+7. Summary bat buoc dua link nguon markdown de user bam duoc.
 
 Allowed source config:
 

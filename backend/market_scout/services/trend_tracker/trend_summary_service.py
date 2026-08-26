@@ -54,6 +54,27 @@ def _compose_answer(signal: str, data: dict[str, Any], result: TrendTrackerFlowR
         )
 
     if signal == "external_outlook":
+        web_results = data.get("web_results") if isinstance(data.get("web_results"), list) else []
+        if web_results:
+            result_lines = [
+                f"- {_excerpt(item.get('content'))}"
+                for item in web_results[:5]
+                if isinstance(item, dict) and item.get("content")
+            ]
+            source_lines = [
+                f"- [{_display(source.get('publisher'))} - {_display(source.get('source_name'))}]({source.get('url')})"
+                for source in result.signal.sources[:5]
+                if isinstance(source, dict) and source.get("url")
+            ]
+            body = "\n".join(result_lines) or "Chua co noi dung nguon co the hien thi."
+            source_text = "\n".join(source_lines)
+            suffix = f"\nNguon tham khao:\n{source_text}" if source_text else ""
+            return (
+                "Dua tren cac ket qua web tu nguon duoc phep, co mot so thong tin lien quan:\n"
+                f"{body}{suffix}\n"
+                "Day la boi canh tu nguon ben ngoai, khong phai du bao chac chan."
+            )
+
         claims = data.get("claims") if isinstance(data.get("claims"), list) else []
         claim_lines = [
             f"- {item.get('exact_claim')}"
@@ -99,6 +120,13 @@ def _integer(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _excerpt(value: Any, limit: int = 300) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3].rstrip()}..."
 
 
 def _task_text(value: Any) -> str:

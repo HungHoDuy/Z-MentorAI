@@ -1,6 +1,7 @@
 from datetime import date
 
 from backend.market_scout.schemas.trend_tracker.current_skill_demand import CurrentSkillDemandSignal, SkillFrequency
+from backend.market_scout.schemas.trend_tracker.external_outlook_web_result import ExternalOutlookWebResult
 from backend.market_scout.schemas.trend_tracker.job_family_trend_snapshot import JobFamilyTrendSnapshot
 from backend.market_scout.schemas.trend_tracker.trend_external_evidence import (
     TrendEvidence,
@@ -55,16 +56,16 @@ class RaisingEvidenceRepository:
 
 
 class FakeLiveSearchService:
-    def __init__(self, evidence: list[TrendEvidenceMatch], *, raises: bool = False) -> None:
-        self.evidence = evidence
+    def __init__(self, results: list[ExternalOutlookWebResult], *, raises: bool = False) -> None:
+        self.results = results
         self.raises = raises
         self.calls: list[dict[str, object]] = []
 
-    def search(self, user_query: str, query: TrendQuery) -> list[TrendEvidenceMatch]:
-        self.calls.append({"user_query": user_query, "query": query})
+    def search(self, user_query: str) -> list[ExternalOutlookWebResult]:
+        self.calls.append({"user_query": user_query})
         if self.raises:
             raise TimeoutError("live search timed out")
-        return self.evidence
+        return self.results
 
 
 def test_insufficient_internal_sample_stops_all_downstream_signals() -> None:
@@ -146,7 +147,7 @@ def test_external_outlook_does_not_require_internal_snapshot() -> None:
 
 
 def test_external_outlook_uses_live_search_when_cache_is_empty() -> None:
-    live_search = FakeLiveSearchService([_evidence_match()])
+    live_search = FakeLiveSearchService([_web_result()])
     result = _service(
         None,
         FakeSkillFrequencyService(),
@@ -155,12 +156,12 @@ def test_external_outlook_uses_live_search_when_cache_is_empty() -> None:
     ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
 
     assert result.signal == "external_outlook"
-    assert result.data["evidence_count"] == 1
+    assert result.data["web_result_count"] == 1
     assert live_search.calls[0]["user_query"] == "Sales marketing 2026 outlook"
 
 
 def test_external_outlook_uses_live_search_when_cached_evidence_is_not_relevant() -> None:
-    live_search = FakeLiveSearchService([_evidence_match(claim="Marketing roles need customer and digital skills.")])
+    live_search = FakeLiveSearchService([_web_result(content="Marketing roles need customer and digital skills.")])
     result = _service(
         None,
         FakeSkillFrequencyService(),
@@ -169,11 +170,11 @@ def test_external_outlook_uses_live_search_when_cached_evidence_is_not_relevant(
     ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
 
     assert result.signal == "external_outlook"
-    assert result.data["claims"][0]["exact_claim"] == "Marketing roles need customer and digital skills."
+    assert result.data["web_results"][0]["content"] == "Marketing roles need customer and digital skills."
     assert live_search.calls[0]["user_query"] == "Sales marketing 2026 outlook"
 
 def test_external_outlook_prefers_live_search_before_cached_evidence() -> None:
-    live_search = FakeLiveSearchService([_evidence_match(claim="Live search claim.")])
+    live_search = FakeLiveSearchService([_web_result(content="Live search content.")])
     result = _service(
         None,
         FakeSkillFrequencyService(),
@@ -182,7 +183,7 @@ def test_external_outlook_prefers_live_search_before_cached_evidence() -> None:
     ).evaluate(_query(intent=TrendQueryIntent.EXTERNAL_OUTLOOK), user_query="Sales marketing 2026 outlook")
 
     assert result.signal == "external_outlook"
-    assert result.data["claims"][0]["exact_claim"] == "Live search claim."
+    assert result.data["web_results"][0]["content"] == "Live search content."
     assert live_search.calls[0]["user_query"] == "Sales marketing 2026 outlook"
 
 
@@ -234,6 +235,27 @@ def test_external_outlook_without_family_does_not_query_cached_evidence() -> Non
     assert result.signal == "insufficient_evidence"
     assert result.confidence == "low"
     assert result.data["evidence_count"] == 0
+
+
+def test_external_outlook_without_family_uses_live_web_results() -> None:
+    live_search = FakeLiveSearchService([_web_result(content="Several routine roles face automation exposure.")])
+    result = _service(
+        None,
+        FakeSkillFrequencyService(),
+        FakeEvidenceRepository([]),
+        live_search=live_search,
+    ).evaluate(
+        TrendQuery(
+            intent=TrendQueryIntent.EXTERNAL_OUTLOOK,
+            job_family_id=None,
+            location_id="vietnam",
+        ),
+        user_query="Nhung cong viec nao dang co nguy co bi AI thay the?",
+    )
+
+    assert result.signal == "external_outlook"
+    assert result.data["web_result_count"] == 1
+    assert result.data["web_results"][0]["content"] == "Several routine roles face automation exposure."
 
 def _service(
     snapshot_read: TrendSnapshotReadResult | None,
@@ -317,6 +339,28 @@ def _evidence_match(*, claim: str = "A reviewed external outlook claim.") -> Tre
             citation="Page 12",
             confidence="medium",
         ),
+    )
+
+
+def _web_result(*, content: str = "Allowlisted live search content.") -> ExternalOutlookWebResult:
+    return ExternalOutlookWebResult(
+        source=TrendSource(
+            source_id="topdev__live__123",
+            source_name="Vietnam outlook",
+            publisher="TopDev",
+            source_type="allowlisted_web_result",
+            published_at=date(2026, 1, 1),
+            fetched_at=date(2026, 8, 25),
+            reliability_score=0.8,
+            scope_location_ids=["vietnam"],
+            scope_period="2026",
+            url="https://topdev.vn/report",
+            content_hash=None,
+            notes=None,
+        ),
+        content=content,
+        snippet="Market outlook.",
+        search_score=0.9,
     )
 
 

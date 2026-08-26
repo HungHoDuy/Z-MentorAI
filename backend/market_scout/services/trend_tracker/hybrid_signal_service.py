@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import logging
 import re
 import unicodedata
 from typing import Any, Protocol
@@ -8,6 +9,7 @@ from typing import Any, Protocol
 from backend.market_scout.repositories.trend_tracker.trend_evidence_repository import TrendEvidenceRepository
 from backend.market_scout.repositories.trend_tracker.trend_snapshot_repository import TrendSnapshotRepository
 from backend.market_scout.schemas.trend_tracker.hybrid_signal import HybridSignalResult
+from backend.market_scout.schemas.trend_tracker.external_outlook_web_result import ExternalOutlookWebResult
 from backend.market_scout.schemas.trend_tracker.trend_external_evidence import TrendEvidenceMatch
 from backend.market_scout.schemas.trend_tracker.trend_query import TrendQuery, TrendQueryIntent
 from backend.market_scout.schemas.trend_tracker.trend_snapshot_read import TrendSnapshotReadResult
@@ -17,10 +19,11 @@ from backend.market_scout.services.trend_tracker.skill_frequency_service import 
 
 DEFAULT_MIN_EXTERNAL_RELIABILITY_SCORE = 0.7
 DEFAULT_EXTERNAL_EVIDENCE_LIMIT = 5
+logger = logging.getLogger("market_scout")
 
 
 class ExternalOutlookLiveSearcher(Protocol):
-    def search(self, user_query: str, query: TrendQuery) -> list[TrendEvidenceMatch]:
+    def search(self, user_query: str) -> list[ExternalOutlookWebResult]:
         ...
 
 
@@ -141,6 +144,29 @@ class HybridSignalService:
         external_published_after: date | None,
         user_query: str | None,
     ) -> HybridSignalResult:
+        live_results = self._live_external_results(user_query)
+        if live_results:
+            return HybridSignalResult(
+                intent=query.intent.value,
+                signal="external_outlook",
+                job_family_id=query.job_family_id,
+                job_category_id=query.job_category_id,
+                location_id=query.location_id,
+                snapshot_id=None,
+                period=None,
+                confidence="medium",
+                directional_trend=False,
+                data={
+                    "web_result_count": len(live_results),
+                    "web_results": [_web_result_payload(item) for item in live_results],
+                },
+                sources=[_web_result_source(item) for item in live_results],
+                limitations=[
+                    "External web results are contextual outlook and do not replace internal current-demand data.",
+                    "This is not a guaranteed forecast; it summarizes allowlisted sources returned by live search.",
+                ],
+            )
+
         evidence = self._external_evidence(query, external_published_after, user_query=user_query)
         if not evidence:
             return HybridSignalResult(
@@ -186,14 +212,6 @@ class HybridSignalService:
         *,
         user_query: str | None = None,
     ) -> list[TrendEvidenceMatch]:
-        if user_query and self.live_search_service is not None:
-            try:
-                live_evidence = self.live_search_service.search(user_query, query)
-            except Exception:
-                live_evidence = []
-            if live_evidence:
-                return live_evidence
-
         if not query.job_family_id:
             return []
 
@@ -205,6 +223,16 @@ class HybridSignalService:
             limit=self.external_evidence_limit,
         )
         return _select_relevant_cached_evidence(cached_evidence, user_query)
+
+    def _live_external_results(self, user_query: str | None) -> list[ExternalOutlookWebResult]:
+        if not user_query or self.live_search_service is None:
+            return []
+        try:
+            return self.live_search_service.search(user_query)
+        except Exception:
+            logger.exception("external_outlook_live_search_failed", extra={"user_query": user_query})
+            return []
+
     def _insufficient(
         self,
         query: TrendQuery,
@@ -345,6 +373,29 @@ def _evidence_source(match: TrendEvidenceMatch) -> dict[str, Any]:
         "published_at": match.source.published_at.isoformat(),
         "reliability_score": match.source.reliability_score,
         "citation": match.evidence.citation,
+    }
+
+
+def _web_result_source(result: ExternalOutlookWebResult) -> dict[str, Any]:
+    return {
+        "source_id": result.source.source_id,
+        "source_name": result.source.source_name,
+        "publisher": result.source.publisher,
+        "url": result.source.url,
+        "published_at": result.source.published_at.isoformat(),
+        "reliability_score": result.source.reliability_score,
+    }
+
+
+def _web_result_payload(result: ExternalOutlookWebResult) -> dict[str, Any]:
+    return {
+        "source_id": result.source.source_id,
+        "title": result.source.source_name,
+        "publisher": result.source.publisher,
+        "url": result.source.url,
+        "content": result.content,
+        "search_score": result.search_score,
+        "reliability_score": result.source.reliability_score,
     }
 
 
