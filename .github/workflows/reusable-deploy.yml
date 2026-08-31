@@ -17,6 +17,10 @@ on:
         required: false
         type: string
         default: ''
+      min_instances:
+        required: false
+        type: string
+        default: '0'
 
 env:
   PROJECT_ID: z-mentorai
@@ -62,7 +66,7 @@ jobs:
     - name: Deploy to Cloud Run
       run: |
         if [ -n "${{ inputs.env_vars }}" ]; then
-          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --min-instances=1 --set-env-vars="${{ inputs.env_vars }}" --quiet
+          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --min-instances=${{ inputs.min_instances }} --set-env-vars="${{ inputs.env_vars }}" --quiet
         else
-          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --min-instances=1 --quiet
+          gcloud run deploy ${{ inputs.service_name }} --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ inputs.service_name }}:latest --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --min-instances=${{ inputs.min_instances }} --quiet
         fi
